@@ -2,10 +2,10 @@
   import '@fontsource-variable/fraunces';
   import '@fontsource-variable/public-sans';
   import '@fontsource-variable/jetbrains-mono';
-  import type { Instance, Preflight } from '../types.ts';
+  import type { Preflight } from '../types.ts';
   import DashboardApp from '../components/DashboardApp.svelte';
 
-  let { instances, preflight }: { instances: Instance[]; preflight: Preflight } = $props();
+  let { preflight }: { preflight: Preflight } = $props();
 </script>
 
-<DashboardApp {instances} {preflight} mochi:hydrate />
+<DashboardApp {preflight} mochi:hydrate />

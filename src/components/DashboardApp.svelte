@@ -2,10 +2,10 @@
   import { ideUrl, type Instance, type Preflight } from '../types.ts';
   import FolderBrowser from './FolderBrowser.svelte';
 
-  let { instances: initial, preflight }: { instances: Instance[]; preflight: Preflight } = $props();
+  let { preflight }: { preflight: Preflight } = $props();
 
-  // svelte-ignore state_referenced_locally
-  let instances = $state<Instance[]>(initial);
+  let instances = $state<Instance[]>([]);
+  let loaded = $state(false);
   let browserOpen = $state(false);
   let creating = $state(false);
   let actionError = $state<string | null>(null);
@@ -13,21 +13,19 @@
   // svelte-ignore state_referenced_locally
   const ready = preflight.docker && preflight.cli;
 
-  async function refresh() {
-    try {
-      const res = await fetch('/api/instances/');
-      if (!res.ok) return;
-      const data = (await res.json()) as { instances: Instance[] };
-      instances = data.instances;
-    } catch {
-      /* transient; next tick retries */
-    }
-  }
-
-  // Poll so statuses (creating → running) and Docker state stay fresh.
+  // Live instance list over SSE — the first message carries current state,
+  // and the server pushes again on every change (boot progress, start/stop/delete).
   $effect(() => {
-    const timer = setInterval(refresh, 3000);
-    return () => clearInterval(timer);
+    const source = new EventSource('/api/instances/stream');
+    source.onmessage = (event) => {
+      try {
+        instances = JSON.parse(event.data) as Instance[];
+        loaded = true;
+      } catch {
+        /* ignore malformed frame */
+      }
+    };
+    return () => source.close();
   });
 
   async function createFrom(sourcePath: string) {
@@ -35,14 +33,14 @@
     creating = true;
     actionError = null;
     try {
-      const res = await fetch('/api/instances/', {
+      const res = await fetch('/api/instances', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sourcePath }),
       });
       const data = (await res.json()) as { instance?: Instance; error?: { message: string } };
       if (!res.ok || !data.instance) throw new Error(data.error?.message ?? 'Failed to create instance');
-      instances = [data.instance, ...instances];
+      // The SSE stream delivers the new instance; no manual insert needed.
     } catch (err) {
       actionError = (err as Error).message;
     } finally {
@@ -54,13 +52,12 @@
     actionError = null;
     if (action === 'delete' && !confirm('Delete this instance and its copied files?')) return;
     try {
-      const res = await fetch(`/api/instances/${id}/${action}/`, { method: 'POST' });
+      const res = await fetch(`/api/instances/${id}/${action}`, { method: 'POST' });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { error?: { message: string } } | null;
         throw new Error(data?.error?.message ?? `Failed to ${action}`);
       }
-      if (action === 'delete') instances = instances.filter((i) => i.id !== id);
-      else await refresh();
+      // The SSE stream reflects the resulting state.
     } catch (err) {
       actionError = (err as Error).message;
     }
@@ -94,7 +91,9 @@
     <div class="banner error"><strong>Error.</strong> <span>{actionError}</span></div>
   {/if}
 
-  {#if instances.length === 0}
+  {#if !loaded}
+    <div class="empty"><p class="empty-sub">Loading…</p></div>
+  {:else if instances.length === 0}
     <div class="empty">
       <p class="empty-title">No instances yet</p>
       <p class="empty-sub">Pick a project folder to spin up an isolated devcontainer.</p>
@@ -124,9 +123,9 @@
             {:else if instance.status === 'stopped'}
               <button class="btn" onclick={() => act(instance.id, 'start')}>Start</button>
             {:else if instance.status === 'creating'}
-              <a class="btn" href={`/instances/${instance.id}/`}>View logs</a>
+              <a class="btn" href={`/instances/${instance.id}`}>View logs</a>
             {/if}
-            <a class="btn ghost" href={`/instances/${instance.id}/`}>Details</a>
+            <a class="btn ghost" href={`/instances/${instance.id}`}>Details</a>
             <button class="btn danger" onclick={() => act(instance.id, 'delete')}>Delete</button>
           </div>
         </li>

@@ -7,7 +7,7 @@ await Mochi.serve({
   port: PORT,
   development: process.env.MODE === 'development',
   htmlShell: './src/shell.html',
-  trailingSlash: 'always',
+  trailingSlash: 'never',
   filters: {
     'consoleLogger:line': silenceInternalRoutes,
   },

@@ -8,6 +8,7 @@ import {
   listInstances,
   startInstance,
   stopInstance,
+  subscribeInstances,
   subscribeLogs,
 } from './lib/instances.server.ts';
 import { getInstance } from './lib/db.server.ts';
@@ -19,17 +20,15 @@ async function preflight() {
 
 export const routes: Record<string, MochiRouteValue> = {
   '/': Mochi.page('./src/pages/Dashboard.svelte', {
-    serverProps: async () => ({
-      instances: await listInstances(),
-      preflight: await preflight(),
-    }),
+    // Instance data comes from the SSE stream; only the static capability check is SSR'd.
+    serverProps: async () => ({ preflight: await preflight() }),
   }),
 
   '/instances/:id': Mochi.page('./src/pages/Instance.svelte', {
     serverProps: (_req, params) => {
-      const instance = params.id ? getInstance(params.id) : null;
-      if (!instance) error(404, 'Instance not found');
-      return { instance };
+      // Validate the instance exists, but the view hydrates its data from the stream.
+      if (!params.id || !getInstance(params.id)) error(404, 'Instance not found');
+      return { id: params.id };
     },
   }),
 
@@ -40,6 +39,12 @@ export const routes: Record<string, MochiRouteValue> = {
     } catch (err) {
       return apiError(400, (err as Error).message);
     }
+  }),
+
+  // Live instance list over SSE — first message is the full current state.
+  '/api/instances/stream': Mochi.sse((stream) => {
+    const unsubscribe = subscribeInstances((list) => stream.send(JSON.stringify(list)));
+    stream.onClose(unsubscribe);
   }),
 
   '/api/instances': Mochi.api(async ({ method, request }) => {

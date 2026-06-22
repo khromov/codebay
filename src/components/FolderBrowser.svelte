@@ -11,7 +11,7 @@
     loading = true;
     errorMsg = null;
     try {
-      const url = path ? `/api/browse/?path=${encodeURIComponent(path)}` : '/api/browse/';
+      const url = path ? `/api/browse?path=${encodeURIComponent(path)}` : '/api/browse';
       const res = await fetch(url);
       const data = (await res.json()) as BrowseResult & { error?: { message: string } };
       if (!res.ok) throw new Error(data.error?.message ?? 'Could not list folder');

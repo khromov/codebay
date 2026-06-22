@@ -1,10 +1,9 @@
 <script lang="ts">
   import { ideUrl, type Instance } from '../types.ts';
 
-  let { instance: initial }: { instance: Instance } = $props();
+  let { id }: { id: string } = $props();
 
-  // svelte-ignore state_referenced_locally
-  let instance = $state<Instance>(initial);
+  let instance = $state<Instance | null>(null);
   let logs = $state('');
   let logBox = $state<HTMLDivElement | null>(null);
 
@@ -15,21 +14,9 @@
     error: 'Error',
   };
 
-  async function refresh() {
-    try {
-      const res = await fetch('/api/instances/');
-      if (!res.ok) return;
-      const data = (await res.json()) as { instances: Instance[] };
-      const found = data.instances.find((i) => i.id === instance.id);
-      if (found) instance = found;
-    } catch {
-      /* retry next tick */
-    }
-  }
-
   // Stream the boot/build log over SSE.
   $effect(() => {
-    const source = new EventSource(`/api/instances/${instance.id}/logs/`);
+    const source = new EventSource(`/api/instances/${id}/logs`);
     source.onmessage = (event) => {
       try {
         logs += JSON.parse(event.data) as string;
@@ -41,45 +28,53 @@
     return () => source.close();
   });
 
-  // Poll status so the iframe appears once the container is running.
+  // Track this instance's status from the live instance-list stream.
   $effect(() => {
-    const timer = setInterval(refresh, 3000);
-    return () => clearInterval(timer);
+    const source = new EventSource('/api/instances/stream');
+    source.onmessage = (event) => {
+      try {
+        const found = (JSON.parse(event.data) as Instance[]).find((i) => i.id === id);
+        if (found) instance = found;
+      } catch {
+        /* ignore malformed frame */
+      }
+    };
+    return () => source.close();
   });
 
-  const url = $derived(ideUrl(instance));
+  const url = $derived(instance ? ideUrl(instance) : '#');
 </script>
 
 <header class="topbar">
   <a class="back" href="/">← All instances</a>
   <div class="title">
-    <span class="name">{instance.name}</span>
-    <span class="status {instance.status}">{statusLabel[instance.status]}</span>
+    <span class="name">{instance?.name ?? 'Instance'}</span>
+    {#if instance}
+      <span class="status {instance.status}">{statusLabel[instance.status]}</span>
+    {:else}
+      <span class="skel skel-pill"></span>
+    {/if}
   </div>
-  {#if instance.status === 'running'}
+  {#if instance?.status === 'running'}
     <a class="open" href={url} target="_blank" rel="noopener">Open in new tab ↗</a>
   {/if}
 </header>
 
 <main class="stage">
   <div class="meta">
-    <span class="k">Source</span><code>{instance.source_path}</code>
-    <span class="k">Port</span><code>localhost:{instance.host_port}</code>
+    <span class="k">Source</span>
+    {#if instance}<code>{instance.source_path}</code>{:else}<span class="skel skel-wide"></span>{/if}
+    <span class="k">Port</span>
+    {#if instance}<code>localhost:{instance.host_port}</code>{:else}<span class="skel skel-narrow"></span>{/if}
   </div>
 
-  {#if instance.status === 'running'}
-    <div class="ide">
-      <iframe src={url} title="code-server"></iframe>
-    </div>
-  {:else}
-    <div class="logwrap">
-      <div class="logbar">Boot log</div>
-      <div class="logs" bind:this={logBox}><pre>{logs || 'Waiting for output…'}</pre></div>
-      {#if instance.status === 'error' && instance.error}
-        <div class="err">{instance.error}</div>
-      {/if}
-    </div>
-  {/if}
+  <div class="logwrap">
+    <div class="logbar">Boot log</div>
+    <div class="logs" bind:this={logBox}><pre>{logs || 'Waiting for output…'}</pre></div>
+    {#if instance?.status === 'error' && instance.error}
+      <div class="err">{instance.error}</div>
+    {/if}
+  </div>
 </main>
 
 <style>
@@ -163,19 +158,33 @@
     font-size: 13px;
     color: var(--ink-soft);
   }
-  .ide {
-    border: 1px solid var(--rule);
-    border-radius: 12px;
-    overflow: hidden;
-    background: #1e1e1e;
-    height: calc(100vh - 220px);
-    min-height: 480px;
+  .skel {
+    display: inline-block;
+    height: 0.95em;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--rule) 25%, var(--bg-card) 50%, var(--rule) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+    vertical-align: middle;
   }
-  .ide iframe {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    display: block;
+  .skel-wide {
+    width: min(420px, 60vw);
+  }
+  .skel-narrow {
+    width: 120px;
+  }
+  .skel-pill {
+    width: 64px;
+    height: 18px;
+    border-radius: 999px;
+  }
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
   }
   .logwrap {
     border: 1px solid var(--rule);

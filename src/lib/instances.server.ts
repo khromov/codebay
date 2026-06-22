@@ -47,6 +47,47 @@ export function subscribeLogs(id: string, onChunk: (chunk: string) => void): () 
   return () => state.subscribers.delete(onChunk);
 }
 
+// --- Live instance-list stream (SSE) ---------------------------------------
+// One hub broadcasts the reconciled instance list to all subscribers, ticking
+// periodically to pick up external Docker state changes and immediately on any
+// mutation. Subscribers receive the full list as their first message.
+
+interface InstancesHub {
+  listeners: Set<(list: InstanceRow[]) => void>;
+  timer: ReturnType<typeof setInterval> | null;
+  lastJson: string;
+}
+
+const globalForHub = globalThis as unknown as { __dcmHub?: InstancesHub };
+const hub: InstancesHub = (globalForHub.__dcmHub ??= { listeners: new Set(), timer: null, lastJson: '' });
+
+async function reconcileAndBroadcast(force = false): Promise<void> {
+  const list = await listInstances();
+  const json = JSON.stringify(list);
+  if (!force && json === hub.lastJson) return;
+  hub.lastJson = json;
+  for (const cb of hub.listeners) cb(list);
+}
+
+/** Notify all subscribers that the instance list changed (immediate push). */
+export function triggerReconcile(): void {
+  void reconcileAndBroadcast(true);
+}
+
+/** Subscribe to the live instance list; the callback fires immediately with current state. */
+export function subscribeInstances(cb: (list: InstanceRow[]) => void): () => void {
+  hub.listeners.add(cb);
+  if (!hub.timer) hub.timer = setInterval(() => void reconcileAndBroadcast(), 3000);
+  void listInstances().then(cb);
+  return () => {
+    hub.listeners.delete(cb);
+    if (hub.listeners.size === 0 && hub.timer) {
+      clearInterval(hub.timer);
+      hub.timer = null;
+    }
+  };
+}
+
 function allocatePort(): number {
   const taken = new Set(usedPorts());
   for (let port = PORT_BASE; port <= PORT_MAX; port++) {
@@ -94,6 +135,7 @@ async function boot(row: InstanceRow): Promise<void> {
     updateInstance(row.id, { status: 'error', error: message });
     appendLog(row.id, `\n✗ Error: ${message}\n`);
   }
+  triggerReconcile();
 }
 
 /** Create an instance row and kick off its boot in the background. */
@@ -114,6 +156,7 @@ export async function createInstance(sourcePath: string, name?: string): Promise
     created_at: Date.now(),
   };
   insertInstance(row);
+  triggerReconcile();
   void boot(row);
   return row;
 }
@@ -141,6 +184,7 @@ export async function startInstance(id: string): Promise<InstanceRow> {
   if (!row.container_id) throw new Error('Instance has no container yet');
   const ok = await startContainer(row.container_id);
   updateInstance(id, { status: ok ? 'running' : 'error', error: ok ? null : 'Failed to start container' });
+  triggerReconcile();
   return getInstance(id)!;
 }
 
@@ -149,6 +193,7 @@ export async function stopInstance(id: string): Promise<InstanceRow> {
   if (!row) throw new Error('Instance not found');
   if (row.container_id) await stopContainer(row.container_id);
   updateInstance(id, { status: 'stopped' });
+  triggerReconcile();
   return getInstance(id)!;
 }
 
@@ -159,4 +204,5 @@ export async function deleteInstance(id: string): Promise<void> {
   await rm(join(INSTANCES_DIR, id), { recursive: true, force: true });
   deleteInstanceRow(id);
   registry.delete(id);
+  triggerReconcile();
 }
