@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mochi": {
+      "type": "http",
+      "url": "https://mochi.fast/mcp"
+    },
+    "bun-docs": {
+      "type": "http",
+      "url": "https://bun.com/docs/mcp"
+    }
+  }
+}
