@@ -1,0 +1,33 @@
+{
+  "name": "devcontainers-manager",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "bun": ">=1.3.13"
+  },
+  "scripts": {
+    "build": "mochi-framework build",
+    "start": "bun src/index.ts",
+    "dev": "MODE=development bun src/index.ts",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
+    "test": "bun test",
+    "clean": "rimraf .mochi",
+    "update:mochi": "bash scripts/update-mochi.sh"
+  },
+  "dependencies": {
+    "mochi-framework": "file:./vendor/mochi-framework",
+    "svelte": "^5.56.3"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "svelte-check": "4.6.0",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*"
+  },
+  "patchedDependencies": {
+    "svelte-check@4.4.7": "patches/svelte-check@4.4.7.patch",
+    "svelte-check@4.6.0": "patches/svelte-check@4.6.0.patch"
+  }
+}
