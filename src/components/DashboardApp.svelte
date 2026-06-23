@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ideUrl, type Instance, type Preflight } from '../types.ts';
   import FolderBrowser from './FolderBrowser.svelte';
+  import { Package, Check, TriangleAlert, Plus } from '@lucide/svelte';
 
   let { preflight }: { preflight: Preflight } = $props();
 
@@ -114,7 +115,7 @@
 </script>
 
 <header class="topbar">
-  <div class="brand"><span class="logo">📦</span><span>Devcontainers Manager</span></div>
+  <div class="brand"><span class="logo"><Package size={22} /></span><span>Devcontainers Manager</span></div>
   <div class="topbar-actions">
     <div class="cred-menu">
       <button
@@ -122,8 +123,10 @@
         onclick={() => (credOpen = !credOpen)}
         aria-expanded={credOpen}
         aria-haspopup="menu"
+        aria-label="Credentials"
+        title="Credentials"
       >
-        {credIcon[credState]} Credentials
+        {credIcon[credState]}
       </button>
       {#if credOpen}
         <div class="cred-dropdown" role="menu">
@@ -260,29 +263,27 @@
   .cred {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    padding: 5px 11px;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    font-size: 14px;
+    line-height: 1;
     border: 0;
     border-radius: 999px;
+    color: #fff;
     cursor: pointer;
-    white-space: nowrap;
   }
   .cred:hover {
-    filter: brightness(0.97);
+    filter: brightness(0.94);
   }
   .cred.ok {
-    background: var(--green-100);
-    color: var(--green-700);
+    background: var(--green-700);
   }
   .cred.warn {
-    background: var(--amber-100);
-    color: var(--amber-600);
+    background: var(--amber-600);
   }
   .cred.error {
-    background: var(--red-100);
-    color: var(--red-600);
+    background: var(--red-600);
   }
   .cred-dropdown {
     position: absolute;
