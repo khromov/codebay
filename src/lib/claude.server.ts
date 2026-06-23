@@ -47,8 +47,13 @@ export async function claudeAuthAvailable(): Promise<boolean> {
 }
 
 /**
- * Write the credentials JSON to ~/.claude/.credentials.json inside a running container,
- * as the container's remote user. The secret is passed via stdin, never argv.
+ * Authorize Claude Code inside a running container as its remote user. Writes the
+ * credentials (via stdin, never argv) plus a `hasCompletedOnboarding` flag — the
+ * latter is what stops `claude` re-running its first-run setup/login wizard.
+ *
+ * Both paths honor the container's CLAUDE_CONFIG_DIR: credentials at
+ * $CLAUDE_CONFIG_DIR/.credentials.json (default ~/.claude/.credentials.json) and
+ * config at $CLAUDE_CONFIG_DIR/.claude.json (default ~/.claude.json).
  */
 export async function injectClaudeCredentials(
   containerId: string,
@@ -57,8 +62,10 @@ export async function injectClaudeCredentials(
 ): Promise<{ ok: boolean; error?: string }> {
   const user = remoteUser?.trim() || 'root';
   const script =
-    'h=$(eval echo ~$(id -un)); mkdir -p "$h/.claude"; ' +
-    'cat > "$h/.claude/.credentials.json"; chmod 600 "$h/.claude/.credentials.json"';
+    'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; mkdir -p "$d"; ' +
+    'cat > "$d/.credentials.json"; chmod 600 "$d/.credentials.json"; ' +
+    'cfg="${CLAUDE_CONFIG_DIR:+$CLAUDE_CONFIG_DIR/.claude.json}"; cfg="${cfg:-$h/.claude.json}"; ' +
+    'printf \'%s\' \'{"hasCompletedOnboarding":true}\' > "$cfg"; chmod 644 "$cfg"';
   try {
     const proc = Bun.spawn(['docker', 'exec', '-i', '-u', user, containerId, 'bash', '-lc', script], {
       stdin: 'pipe',
