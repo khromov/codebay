@@ -6,6 +6,7 @@ import {
   deleteInstanceRow,
   getInstance,
   insertInstance,
+  recordFolder,
   updateInstance,
   usedPorts,
   type InstanceRow,
@@ -189,6 +190,7 @@ export async function createInstance(sourcePath: string, name?: string): Promise
     created_at: Date.now(),
   };
   insertInstance(row);
+  recordFolder(sourcePath, row.name);
   triggerReconcile();
   void boot(row);
   return row;

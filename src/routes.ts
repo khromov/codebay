@@ -13,7 +13,7 @@ import {
   subscribeInstances,
   subscribeLogs,
 } from './lib/instances.server.ts';
-import { getInstance } from './lib/db.server.ts';
+import { deleteFolderHistory, getInstance, listFolderHistory } from './lib/db.server.ts';
 
 async function preflight() {
   const [docker, cli, claudeAuth] = await Promise.all([
@@ -73,6 +73,18 @@ export const routes: Record<string, MochiRouteValue> = {
       } catch (err) {
         return apiError(400, (err as Error).message);
       }
+    }
+    return apiError(405, 'Method Not Allowed');
+  }),
+
+  // Re-creation history of previously-used source folders.
+  '/api/history': Mochi.api(async ({ method, request }) => {
+    if (method === 'GET') return json({ history: listFolderHistory() });
+    if (method === 'DELETE') {
+      const body = (await request.json().catch(() => null)) as { sourcePath?: string } | null;
+      if (!body?.sourcePath) return apiError(400, 'sourcePath is required');
+      deleteFolderHistory(body.sourcePath);
+      return json({ ok: true });
     }
     return apiError(405, 'Method Not Allowed');
   }),

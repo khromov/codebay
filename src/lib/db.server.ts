@@ -5,6 +5,13 @@ import { DATA_DIR, DB_PATH } from './config.server.ts';
 /** Possible lifecycle states for an instance row. */
 export type InstanceStatus = 'creating' | 'running' | 'stopped' | 'error';
 
+/** One previously-used source folder, kept for quick re-creation. */
+export interface FolderHistoryRow {
+  source_path: string;
+  name: string;
+  last_used_at: number;
+}
+
 /** Durable record of one devcontainer instance. */
 export interface InstanceRow {
   id: string;
@@ -38,6 +45,13 @@ function open(): Database {
       status TEXT NOT NULL,
       error TEXT,
       created_at INTEGER NOT NULL
+    );
+  `);
+  database.run(`
+    CREATE TABLE IF NOT EXISTS folder_history (
+      source_path TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      last_used_at INTEGER NOT NULL
     );
   `);
   // Migrate databases created before remote_workspace_folder existed.
@@ -110,4 +124,27 @@ export function updateInstance(
 
 export function deleteInstanceRow(id: string): void {
   db.query('DELETE FROM instances WHERE id = $id').run({ $id: id });
+}
+
+/** Record (or refresh) a source folder in the re-creation history. */
+export function recordFolder(source_path: string, name: string): void {
+  db.query(
+    `INSERT INTO folder_history (source_path, name, last_used_at)
+     VALUES ($source_path, $name, $last_used_at)
+     ON CONFLICT(source_path) DO UPDATE SET
+       name = excluded.name,
+       last_used_at = excluded.last_used_at`,
+  ).run({ $source_path: source_path, $name: name, $last_used_at: Date.now() });
+}
+
+export function listFolderHistory(): FolderHistoryRow[] {
+  return db
+    .query('SELECT * FROM folder_history ORDER BY last_used_at DESC')
+    .all() as FolderHistoryRow[];
+}
+
+export function deleteFolderHistory(source_path: string): void {
+  db.query('DELETE FROM folder_history WHERE source_path = $source_path').run({
+    $source_path: source_path,
+  });
 }

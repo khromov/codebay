@@ -40,3 +40,10 @@ export interface BrowseResult {
   parent: string | null;
   entries: DirEntry[];
 }
+
+/** A previously-used source folder, shown for quick re-creation. */
+export interface FolderHistoryEntry {
+  source_path: string;
+  name: string;
+  last_used_at: number;
+}

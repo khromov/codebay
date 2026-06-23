@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { BrowseResult } from '../types.ts';
+  import type { BrowseResult, FolderHistoryEntry } from '../types.ts';
 
   let { onpick, onclose }: { onpick: (path: string) => void; onclose: () => void } = $props();
 
@@ -7,12 +7,40 @@
   let loading = $state(true);
   let errorMsg = $state<string | null>(null);
   let query = $state('');
+  let history = $state<FolderHistoryEntry[]>([]);
+  let showAll = $state(false);
 
   const filtered = $derived(
     result
       ? result.entries.filter((e) => e.name.toLowerCase().includes(query.trim().toLowerCase()))
       : [],
   );
+
+  const shownHistory = $derived(showAll ? history : history.slice(0, 5));
+
+  async function loadHistory() {
+    try {
+      const res = await fetch('/api/history');
+      const data = (await res.json()) as { history?: FolderHistoryEntry[] };
+      history = data.history ?? [];
+    } catch {
+      /* history is a convenience; ignore failures */
+    }
+  }
+
+  async function removeHistory(path: string) {
+    const prev = history;
+    history = history.filter((h) => h.source_path !== path);
+    try {
+      await fetch('/api/history', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourcePath: path }),
+      });
+    } catch {
+      history = prev; // restore on failure
+    }
+  }
 
   async function load(path: string | null = null) {
     loading = true;
@@ -33,6 +61,7 @@
 
   $effect(() => {
     load();
+    loadHistory();
   });
 </script>
 
@@ -60,6 +89,39 @@
     <div class="crumbs">
       <code>{result?.path ?? '…'}</code>
     </div>
+
+    {#if history.length > 0}
+      <div class="recent">
+        <div class="recent-label">Recent</div>
+        {#each shownHistory as entry (entry.source_path)}
+          <div class="recent-row">
+            <button class="recent-pick" onclick={() => onpick(entry.source_path)}>
+              <span class="icon">🗂️</span>
+              <span class="recent-text">
+                <span class="recent-name">{entry.name}</span>
+                <span class="recent-path">{entry.source_path}</span>
+              </span>
+            </button>
+            <button
+              class="recent-x"
+              aria-label="Remove {entry.name} from history"
+              title="Remove from history"
+              onclick={(e) => {
+                e.stopPropagation();
+                removeHistory(entry.source_path);
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        {/each}
+        {#if history.length > 5}
+          <button class="recent-toggle" onclick={() => (showAll = !showAll)}>
+            {showAll ? 'Show fewer' : `Show all (${history.length})`}
+          </button>
+        {/if}
+      </div>
+    {/if}
 
     <div class="search">
       <input
@@ -163,6 +225,95 @@
     font-size: 12px;
     color: var(--ink-soft);
     white-space: nowrap;
+  }
+  .recent {
+    padding: 8px;
+    border-bottom: 1px solid var(--rule);
+    max-height: 220px;
+    overflow: auto;
+  }
+  .recent-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    padding: 2px 10px 6px;
+  }
+  .recent-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .recent-pick {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 8px 10px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    border-radius: 8px;
+    color: var(--ink);
+  }
+  .recent-pick:hover {
+    background: var(--green-100);
+  }
+  .recent-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .recent-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .recent-path {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .recent-x {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: none;
+    background: var(--bg-card);
+    color: var(--ink-soft);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    padding: 5px 7px;
+    border-radius: 6px;
+    opacity: 0;
+  }
+  .recent-row:hover .recent-x {
+    opacity: 1;
+  }
+  .recent-x:hover {
+    color: var(--red-600);
+    background: var(--green-100);
+  }
+  .recent-toggle {
+    margin: 4px 6px 2px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    color: var(--green-700);
+    padding: 4px 6px;
+  }
+  .recent-toggle:hover {
+    text-decoration: underline;
   }
   .search {
     padding: 10px 18px;

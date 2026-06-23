@@ -134,6 +134,7 @@
       {#each instances as instance (instance.id)}
         <li class="card">
           <div class="card-head">
+            <!-- Trusted: server-generated SVG from boring-avatars-vanilla, seeded by instance id (avatar.server.ts) -->
             <span class="avatar">{@html instance.avatar}</span>
             <div class="name">{instance.name}</div>
             <span class="status {instance.status}">{statusLabel[instance.status]}</span>
