@@ -21,7 +21,9 @@ bun test -t "renders Hello world"            # single test by name
 bun run clean      # remove .mochi build output
 ```
 
-**Port:** the server reads `PORT` (default 3333). When *you* (Claude Code) run the app, use `PORT=4444 bun run dev` so your instance stays separate from one the user may have running on 3333.
+**Port:** the server reads `PORT` (default 3333). When *you* (Claude Code) run the app, use `PORT=4444 DISABLE_OPEN_BROWSER=1 bun run dev` so your instance stays separate from one the user may have running on 3333.
+
+**Browser launch:** on startup the server opens the web UI in the user's default browser. Set `DISABLE_OPEN_BROWSER=1` to skip it — *you* (Claude Code) should always run with this set.
 
 ## Architecture
 
