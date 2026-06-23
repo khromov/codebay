@@ -2,11 +2,14 @@ import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import {
+  BRIDGE_ALLOWED_TOOLS,
+  BRIDGE_SHIM_FILE,
   CODE_SERVER_PORT,
   COPY_IGNORE,
   DEFAULT_IMAGE,
   devcontainerBin,
 } from './config.server.ts';
+import { BRIDGE_SHIM } from './bridge.server.ts';
 
 const CODE_SERVER_FEATURE = 'ghcr.io/coder/devcontainer-features/code-server:1';
 
@@ -32,6 +35,28 @@ const CODE_SERVER_LAUNCH =
   `pgrep -f 'code-server.*${CODE_SERVER_PORT}' >/dev/null 2>&1 || ` +
   `nohup code-server --bind-addr 0.0.0.0:${CODE_SERVER_PORT} --auth none ` +
   `--disable-workspace-trust \\"$PWD\\" >/tmp/code-server.log 2>&1 &"`;
+
+/**
+ * Install the staged bridge shim as /usr/local/bin/<tool> for every allowlisted
+ * tool (so it shadows the real binary in /usr/bin). Best-effort: direct write
+ * when root, else passwordless sudo; `|| true` so it never fails the chain.
+ *
+ * The whole postStartCommand is run by `sh -c`, which expands any unescaped
+ * $VAR — so this command uses NO shell variables (they'd be clobbered before the
+ * shell runs). The workspace path comes from the devcontainer CLI's
+ * `${containerWorkspaceFolder}` substitution (replaced textually before any
+ * shell sees it); paths are single-quoted; the brace group keeps the inner `;`
+ * from breaking the surrounding `&&` chain.
+ */
+function bridgeInstallCommand(): string {
+  const shim = `\${containerWorkspaceFolder}/.devcontainer/${BRIDGE_SHIM_FILE}`;
+  const installs = [...BRIDGE_ALLOWED_TOOLS].map(
+    (t) =>
+      `install -m 0755 '${shim}' '/usr/local/bin/${t}' 2>/dev/null || ` +
+      `sudo install -m 0755 '${shim}' '/usr/local/bin/${t}' 2>/dev/null || true;`,
+  );
+  return `{ ${installs.join(' ')} }`;
+}
 
 /** Whether the bundled @devcontainers/cli binary is runnable. */
 export async function devcontainerCliAvailable(): Promise<boolean> {
@@ -121,15 +146,27 @@ type DevcontainerConfig = {
   features?: Record<string, unknown>;
   appPort?: number | string | (number | string)[];
   postStartCommand?: unknown;
+  runArgs?: string[];
+  containerEnv?: Record<string, string>;
   [key: string]: unknown;
 };
+
+/** Host-auth CLI bridge wiring injected into each container. */
+export interface BridgeConfig {
+  url: string;
+  token: string;
+}
 
 /**
  * Inject code-server + a host port publish into the copied workspace's devcontainer.json,
  * creating a default-image config if the folder has none. Operates on the copy, so
  * rewriting/normalizing the file is safe.
  */
-export async function writeOverrideConfig(workspaceDir: string, hostPort: number): Promise<void> {
+export async function writeOverrideConfig(
+  workspaceDir: string,
+  hostPort: number,
+  bridge: BridgeConfig,
+): Promise<void> {
   const target = configPath(workspaceDir);
   let config: DevcontainerConfig = {};
 
@@ -162,12 +199,27 @@ export async function writeOverrideConfig(workspaceDir: string, hostPort: number
   ports.add(portMapping);
   config.appPort = [...ports];
 
-  // Launch code-server on container start, chaining any existing postStartCommand.
+  // Let the container reach the host (for the CLI bridge below) via host-gateway.
+  const ADD_HOST = '--add-host=host.docker.internal:host-gateway';
+  const runArgs = Array.isArray(config.runArgs) ? config.runArgs : [];
+  if (!runArgs.includes(ADD_HOST)) runArgs.push(ADD_HOST);
+  config.runArgs = runArgs;
+
+  // Point the in-container bridge shim at the host endpoint with its token.
+  config.containerEnv = {
+    ...(config.containerEnv ?? {}),
+    DCM_BRIDGE_URL: bridge.url,
+    DCM_BRIDGE_TOKEN: bridge.token,
+  };
+
+  // On container start: install the bridge shim, then launch code-server.
+  // The shim install is best-effort (always exits 0) so it can never block the
+  // code-server launch chained after it. Any existing command runs first.
   const existing = config.postStartCommand;
-  config.postStartCommand =
-    typeof existing === 'string' && existing.trim()
-      ? `${existing} && ${CODE_SERVER_LAUNCH}`
-      : CODE_SERVER_LAUNCH;
+  const steps: string[] = [];
+  if (typeof existing === 'string' && existing.trim()) steps.push(existing);
+  steps.push(bridgeInstallCommand(), CODE_SERVER_LAUNCH);
+  config.postStartCommand = steps.join(' && ');
 
   await mkdir(join(workspaceDir, '.devcontainer'), { recursive: true }).catch(() => {});
   await writeFile(target, JSON.stringify(config, null, 2) + '\n', 'utf8');
@@ -179,6 +231,10 @@ export async function writeOverrideConfig(workspaceDir: string, hostPort: number
     JSON.stringify(CODE_SERVER_SETTINGS, null, 2) + '\n',
     'utf8',
   );
+
+  // Stage the bridge shim next to the config; the install step copies it into
+  // /usr/local/bin for each allowlisted tool on container start.
+  await writeFile(join(workspaceDir, '.devcontainer', BRIDGE_SHIM_FILE), BRIDGE_SHIM, 'utf8');
 }
 
 export interface UpResult {

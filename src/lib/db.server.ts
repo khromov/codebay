@@ -21,6 +21,8 @@ export interface InstanceRow {
   host_port: number;
   container_id: string | null;
   remote_workspace_folder: string | null;
+  /** Per-instance bearer token authenticating the in-container CLI bridge. */
+  bridge_token: string | null;
   status: InstanceStatus;
   error: string | null;
   created_at: number;
@@ -42,6 +44,7 @@ function open(): Database {
       host_port INTEGER NOT NULL,
       container_id TEXT,
       remote_workspace_folder TEXT,
+      bridge_token TEXT,
       status TEXT NOT NULL,
       error TEXT,
       created_at INTEGER NOT NULL
@@ -54,10 +57,13 @@ function open(): Database {
       last_used_at INTEGER NOT NULL
     );
   `);
-  // Migrate databases created before remote_workspace_folder existed.
+  // Migrate databases created before later columns existed.
   const cols = database.query('PRAGMA table_info(instances)').all() as { name: string }[];
   if (!cols.some((c) => c.name === 'remote_workspace_folder')) {
     database.run('ALTER TABLE instances ADD COLUMN remote_workspace_folder TEXT;');
+  }
+  if (!cols.some((c) => c.name === 'bridge_token')) {
+    database.run('ALTER TABLE instances ADD COLUMN bridge_token TEXT;');
   }
   return database;
 }
@@ -67,8 +73,8 @@ export const db: Database = (globalForDb.__dcmDb ??= open());
 export function insertInstance(row: InstanceRow): void {
   db.query(
     `INSERT INTO instances
-       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at)
-     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at)`,
+       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, bridge_token, status, error, created_at)
+     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $bridge_token, $status, $error, $created_at)`,
   ).run({
     $id: row.id,
     $name: row.name,
@@ -77,6 +83,7 @@ export function insertInstance(row: InstanceRow): void {
     $host_port: row.host_port,
     $container_id: row.container_id,
     $remote_workspace_folder: row.remote_workspace_folder,
+    $bridge_token: row.bridge_token,
     $status: row.status,
     $error: row.error,
     $created_at: row.created_at,
@@ -85,6 +92,14 @@ export function insertInstance(row: InstanceRow): void {
 
 export function getInstance(id: string): InstanceRow | null {
   return db.query('SELECT * FROM instances WHERE id = $id').get({ $id: id }) as InstanceRow | null;
+}
+
+/** Look up an instance by its bridge bearer token (the CLI bridge's identity). */
+export function getInstanceByBridgeToken(token: string): InstanceRow | null {
+  if (!token) return null;
+  return db
+    .query('SELECT * FROM instances WHERE bridge_token = $token')
+    .get({ $token: token }) as InstanceRow | null;
 }
 
 export function allInstances(): InstanceRow[] {

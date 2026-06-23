@@ -15,6 +15,7 @@ import {
 } from './lib/instances.server.ts';
 import { deleteFolderHistory, getInstance, listFolderHistory } from './lib/db.server.ts';
 import { proxyWsRelay, PROXY_WS_PATTERN } from './lib/proxy.server.ts';
+import { handleBridgeExec } from './lib/bridge.server.ts';
 
 async function preflight() {
   const [docker, cli, claudeAuth] = await Promise.all([
@@ -137,6 +138,11 @@ export const routes: Record<string, MochiRouteValue> = {
     });
     stream.onClose(unsubscribe);
   }),
+
+  // Host-auth CLI bridge: the in-container shim forwards `gh` (etc.) here to run
+  // on the host with host credentials. Authenticated by a per-instance bearer
+  // token, so it's exempt from the global Basic Auth gate (see auth.server.ts).
+  '/api/bridge/exec': Mochi.api(({ request }) => handleBridgeExec(request)),
 
   // Registers the proxy WebSocket relay handlers in Mochi's websocket
   // dispatcher. Clients never navigate here — proxied sockets are upgraded from

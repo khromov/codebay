@@ -30,6 +30,23 @@ export const BASIC_AUTH_PASSWORD = process.env.BASIC_AUTH_PASSWORD || '';
 /** Directories skipped when copying a source folder into an instance workspace. */
 export const COPY_IGNORE = new Set(['node_modules', '.git']);
 
+/**
+ * Host CLIs the in-container bridge shim is allowed to forward to the host. The
+ * shim runs the *real* tool on the host with the host's auth (see bridge.server.ts).
+ * Keep this list tight — every entry is a command a container can run on the host.
+ * Add e.g. 'claude' here to bridge `claude -p`.
+ */
+export const BRIDGE_ALLOWED_TOOLS = new Set<string>(['gh']);
+
+/** Filename of the staged bridge shim inside each workspace's .devcontainer/. */
+export const BRIDGE_SHIM_FILE = 'dcm-bridge-shim.sh';
+
+/** Base URL the in-container shim uses to reach the host bridge endpoint. */
+export function bridgeUrl(): string {
+  const port = Number(process.env.PORT) || 3333;
+  return `http://host.docker.internal:${port}`;
+}
+
 /** Resolve the bundled @devcontainers/cli binary, preferring the local install. */
 export function devcontainerBin(): string {
   return join(process.cwd(), 'node_modules', '.bin', 'devcontainer');

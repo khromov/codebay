@@ -34,6 +34,10 @@ function credentialsOk(header: string | null): boolean {
  */
 export const basicAuth: Handle = async ({ event, resolve }) => {
   if (!BASIC_AUTH_PASSWORD) return resolve(event);
+  // The CLI bridge has its own per-instance bearer-token auth, and the
+  // in-container shim has no way to know the Basic Auth password. Let it through;
+  // handleBridgeExec rejects requests without a valid token.
+  if (new URL(event.request.url).pathname === '/api/bridge/exec') return resolve(event);
   if (credentialsOk(event.request.headers.get('Authorization'))) return resolve(event);
   return challenge();
 };

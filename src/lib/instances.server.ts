@@ -1,6 +1,6 @@
 import { rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { INSTANCES_DIR, PORT_BASE, PORT_MAX } from './config.server.ts';
+import { INSTANCES_DIR, PORT_BASE, PORT_MAX, bridgeUrl } from './config.server.ts';
 import {
   allInstances,
   deleteInstanceRow,
@@ -15,6 +15,7 @@ import {
 import { isRunning, removeContainer, startContainer, stopContainer } from './docker.server.ts';
 import { copyWorkspace, devcontainerUp, writeOverrideConfig } from './devcontainer.server.ts';
 import { injectClaudeCredentials, readClaudeCredentials } from './claude.server.ts';
+import { mintBridgeToken } from './bridge.server.ts';
 import { avatarFor, forgetAvatar } from './avatar.server.ts';
 import type { Instance } from '../types.ts';
 
@@ -131,8 +132,11 @@ async function boot(row: InstanceRow): Promise<void> {
     appendLog(row.id, `Copying ${row.source_path} → ${row.workspace_path}\n`);
     await copyWorkspace(row.source_path, row.workspace_path);
 
-    appendLog(row.id, `Injecting code-server (host port ${row.host_port})\n`);
-    await writeOverrideConfig(row.workspace_path, row.host_port);
+    appendLog(row.id, `Injecting code-server + host CLI bridge (host port ${row.host_port})\n`);
+    await writeOverrideConfig(row.workspace_path, row.host_port, {
+      url: bridgeUrl(),
+      token: row.bridge_token ?? mintBridgeToken(),
+    });
 
     appendLog(row.id, `Starting devcontainer…\n`);
     const result = await devcontainerUp(row.workspace_path, (chunk) => appendLog(row.id, chunk));
@@ -185,6 +189,7 @@ export async function createInstance(sourcePath: string, name?: string): Promise
     host_port: allocatePort(),
     container_id: null,
     remote_workspace_folder: null,
+    bridge_token: mintBridgeToken(),
     status: 'creating',
     error: null,
     created_at: Date.now(),
