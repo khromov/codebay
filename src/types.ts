@@ -10,8 +10,8 @@ export interface Instance {
   status: 'creating' | 'running' | 'stopped' | 'error';
   error: string | null;
   created_at: number;
-  /** Server-rendered SVG avatar markup, unique per instance. */
-  avatar: string;
+  /** Branch checked out in the container, polled per reconcile; null if unknown. */
+  git_branch: string | null;
 }
 
 /** One authorization the manager can inject into instances (e.g. Claude Code). */

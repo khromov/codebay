@@ -22,7 +22,7 @@ import {
 import { copyWorkspace, devcontainerUp, writeOverrideConfig } from './devcontainer.server.ts';
 import { injectClaudeCredentials, readClaudeCredentials } from './claude.server.ts';
 import { injectGhCredentials, readGhCredentials } from './gh.server.ts';
-import { avatarFor, forgetAvatar } from './avatar.server.ts';
+import { readGitBranch } from './git.server.ts';
 import type { Instance } from '../types.ts';
 
 /** Live, in-memory boot state for an instance (logs + SSE subscribers). */
@@ -225,6 +225,8 @@ export async function createInstance(sourcePath: string, name?: string): Promise
 /** List instances, reconciling persisted status against the live Docker state. */
 export async function listInstances(): Promise<Instance[]> {
   const rows = allInstances();
+  // Branch is polled per reconcile (not persisted) — it changes inside the container.
+  const branches = new Map<string, string | null>();
   await Promise.all(
     rows.map(async (row) => {
       if (!row.container_id || row.status === 'creating' || row.status === 'error') return;
@@ -234,9 +236,12 @@ export async function listInstances(): Promise<Instance[]> {
         updateInstance(row.id, { status: next });
         row.status = next;
       }
+      // The workspace is bind-mounted, so the host copy's .git/HEAD tracks the
+      // branch checked out inside the container.
+      branches.set(row.id, await readGitBranch(row.workspace_path));
     }),
   );
-  return rows.map((row) => ({ ...row, avatar: avatarFor(row.id) }));
+  return rows.map((row) => ({ ...row, git_branch: branches.get(row.id) ?? null }));
 }
 
 export async function startInstance(id: string): Promise<InstanceRow> {
@@ -265,7 +270,6 @@ export async function deleteInstance(id: string): Promise<void> {
   await rm(join(INSTANCES_DIR, id), { recursive: true, force: true });
   deleteInstanceRow(id);
   registry.delete(id);
-  forgetAvatar(id);
   triggerReconcile();
 }
 

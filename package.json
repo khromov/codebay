@@ -19,7 +19,6 @@
     "@fontsource-variable/doto": "^5.2.10",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@lucide/svelte": "^1.21.0",
-    "boring-avatars-vanilla": "^1.0.2",
     "mochi-framework": "file:./vendor/mochi-framework",
     "svelte": "^5.56.3",
     "svelte-french-toast": "^1.2.0"

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ideUrl, type Instance, type Preflight } from '../types.ts';
   import FolderBrowser from './FolderBrowser.svelte';
-  import { Package, Check, TriangleAlert, X, Plus } from '@lucide/svelte';
+  import { Package, Check, TriangleAlert, X, Plus, GitBranch } from '@lucide/svelte';
   import toast, { Toaster } from 'svelte-french-toast';
   import type { AuthProvider } from '../types.ts';
 
@@ -213,6 +213,11 @@
           </div>
           <div class="path" title={instance.source_path}>{instance.source_path}</div>
           <div class="port">localhost:{instance.host_port}</div>
+          {#if instance.git_branch}
+            <div class="branch" title="Branch checked out in the container">
+              <GitBranch size={12} /><span>{instance.git_branch}</span>
+            </div>
+          {/if}
           {#if instance.status === 'error' && instance.error}
             <div class="card-error">{instance.error}</div>
           {/if}
@@ -493,6 +498,26 @@
     font-family: var(--font-mono);
     font-size: 12px;
     color: var(--ink-faint);
+  }
+  .branch {
+    margin-top: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink);
+    border: 1px solid var(--ink-faint);
+    padding: 2px 7px;
+  }
+  .branch :global(svg) {
+    flex: none;
+  }
+  .branch span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .card-error {
     margin-top: 10px;
