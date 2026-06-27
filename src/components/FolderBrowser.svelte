@@ -442,15 +442,11 @@
     align-items: flex-start;
     gap: 8px;
     padding: 10px 18px;
-    background: repeating-linear-gradient(
-      45deg,
-      var(--rule-soft) 0 6px,
-      var(--bg-card) 6px 12px
-    );
-    color: var(--ink);
+    background: var(--warn-bg);
+    color: var(--warn-ink);
     font-family: var(--font-mono);
     font-size: 12.5px;
-    border-top: 1px solid var(--ink);
+    border-top: 1px solid var(--warn-line);
   }
   .warn :global(svg) {
     flex: none;
@@ -459,8 +455,8 @@
   .warn code {
     font-family: var(--font-mono);
     font-size: 0.9em;
-    background: var(--bg);
-    border: 1px solid var(--ink);
+    background: rgba(255, 255, 255, 0.35);
+    border: 1px solid var(--warn-line);
     padding: 0 5px;
   }
   .foot {

@@ -14,6 +14,10 @@
         --ink-faint: #7d7e74;
         --rule: #20211a; /* hard near-black hairline borders */
         --rule-soft: #b9bab2; /* subtle internal dividers */
+        /* The one accent: muted amber for warnings (instrument-panel convention). */
+        --warn-bg: #e4d98f;
+        --warn-line: #9c8729;
+        --warn-ink: #463b08;
         /* Semantic accent vars remapped to grayscale so any un-edited
            reference degrades to monochrome instead of leaking a hue. */
         --green-700: #14150f;
@@ -35,8 +39,9 @@
         box-sizing: border-box;
       }
       /* The whole theme is square — enforce it globally (covers third-party
-         widgets like the toaster too). Intentional, not a workaround. */
-      * {
+         widgets like the toaster too). Intentional, not a workaround.
+         Exclude Mochi's dev-only debug bar so it keeps its own styling. */
+      *:not(#mochi-dev-toolbar):not(#mochi-dev-toolbar *) {
         border-radius: 0 !important;
       }
       body {

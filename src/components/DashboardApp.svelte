@@ -549,15 +549,14 @@
     border-style: dashed;
   }
   .btn.ghost:hover {
+    background: var(--ink);
+    color: var(--bg);
     border-style: solid;
   }
   .btn.danger:hover:not(:disabled) {
-    background: repeating-linear-gradient(
-      45deg,
-      var(--ink) 0 3px,
-      transparent 3px 6px
-    );
-    color: var(--ink);
+    background: var(--warn-bg);
+    color: var(--warn-ink);
+    border-color: var(--warn-line);
   }
   .primary {
     display: inline-flex;
