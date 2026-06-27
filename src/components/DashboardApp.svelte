@@ -553,10 +553,29 @@
     color: var(--bg);
     border-style: solid;
   }
+  .btn.danger {
+    color: var(--danger);
+    border-color: var(--danger);
+  }
   .btn.danger:hover:not(:disabled) {
-    background: var(--warn-bg);
-    color: var(--warn-ink);
-    border-color: var(--warn-line);
+    color: var(--danger);
+    background-color: var(--danger-soft);
+    border-color: transparent;
+    /* Slowly marching red "ants" border, drawn as four animated edge gradients. */
+    background-image:
+      linear-gradient(90deg, var(--danger) 50%, transparent 0),
+      linear-gradient(90deg, var(--danger) 50%, transparent 0),
+      linear-gradient(0deg, var(--danger) 50%, transparent 0),
+      linear-gradient(0deg, var(--danger) 50%, transparent 0);
+    background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+    background-size: 14px 2px, 14px 2px, 2px 14px, 2px 14px;
+    background-position: 0 0, 0 100%, 0 0, 100% 0;
+    animation: marching-ants 2s linear infinite;
+  }
+  @keyframes marching-ants {
+    to {
+      background-position: 28px 0, -28px 100%, 0 -28px, 100% 28px;
+    }
   }
   .primary {
     display: inline-flex;
