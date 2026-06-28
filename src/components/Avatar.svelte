@@ -15,9 +15,9 @@
 
   // Clamp to a whole number ≥ 1 — fractional scales would blur the grid.
   const s = $derived(Math.max(1, Math.round(scale)));
-  // A 1px gutter reads as an LED gap at 3×+; below that the cells are too small
-  // to spare a pixel, so the dots butt together (still crisp).
-  const gap = $derived(s >= 3 ? 1 : 0);
+  // A thin 0.5px gutter reads as a hairline LED gap (a crisp 1 device-pixel on
+  // 2× displays). At 1× the cells are too small to spare any, so dots butt up.
+  const gap = $derived(s >= 2 ? 0.5 : 0);
 
   // 256 intensities (0 off / 1 dim / 2 on), row-major, for the chosen 16×16 art.
   const cells = $derived(decode(art ?? pickAvatar(id)));
