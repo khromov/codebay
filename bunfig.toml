@@ -1,0 +1,4 @@
+[test]
+# Only run our own tests under src/, not the vendored Mochi framework's
+# test suite (vendor/ is gitignored but still on disk).
+root = "src"
