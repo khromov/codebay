@@ -1,12 +1,18 @@
 <script lang="ts">
-  import { pickAvatar, decode } from '../avatars/index.ts';
+  import { pickAvatar, decode, type AvatarArt } from '../avatars/index.ts';
 
   // `id` selects the artwork (deterministic, stable per instance); `name` is for
-  // accessibility. `size` is the tile's pixel footprint on screen.
-  let { id, name, size = 48 }: { id: string; name: string; size?: number } = $props();
+  // accessibility. `size` is the tile's pixel footprint on screen. `art` lets a
+  // caller (e.g. the dev gallery) render a specific sprite instead of picking.
+  let {
+    id = '',
+    name,
+    size = 48,
+    art,
+  }: { id?: string; name: string; size?: number; art?: AvatarArt } = $props();
 
   // 256 intensities (0 off / 1 dim / 2 on), row-major, for the chosen 16×16 art.
-  const cells = $derived(decode(pickAvatar(id)));
+  const cells = $derived(decode(art ?? pickAvatar(id)));
 </script>
 
 <span
@@ -29,7 +35,7 @@
     display: grid;
     grid-template-columns: repeat(16, 1fr);
     grid-template-rows: repeat(16, 1fr);
-    gap: 1px;
+    gap: 0.5px;
     flex: none;
     box-sizing: border-box;
     padding: 2px;

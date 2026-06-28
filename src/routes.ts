@@ -185,4 +185,9 @@ export const routes: Record<string, MochiRouteValue> = {
   // Reverse proxy for each instance's code-server: /p/:id redirect, /p/:id/*
   // HTTP+WS handler, and the WebSocket relay sentinel.
   ...proxyRoutes,
+
+  // Dev-only gallery of every avatar sprite, for eyeballing the catalog.
+  ...(process.env.MODE === 'development'
+    ? { '/avatars': Mochi.page('./src/pages/Avatars.svelte') }
+    : {}),
 };
