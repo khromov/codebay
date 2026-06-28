@@ -2,7 +2,7 @@
   import { Package } from '@lucide/svelte';
 </script>
 
-<div class="brand"><span class="logo"><Package size={22} /></span><span>Devcontainers Manager</span></div>
+<a class="brand" href="/"><span class="logo"><Package size={22} /></span><span>Devcontainers Manager</span></a>
 
 <style>
   .brand {
@@ -14,6 +14,8 @@
     font-size: 22px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    color: inherit;
+    text-decoration: none;
   }
   .logo {
     display: inline-flex;
