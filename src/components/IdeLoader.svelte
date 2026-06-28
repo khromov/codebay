@@ -1,9 +1,13 @@
 <script lang="ts">
   // Dot-matrix "data streaming" loader shown while a code-server iframe boots.
-  // Each tick flips a random subset of bits so the readout looks like flowing
-  // data on the LCD-style panel rather than refreshing as pure static.
+  // Each tick flips a fixed number of randomly-chosen bits so the readout looks
+  // like flowing data on the LCD-style panel — a steady amount of change every
+  // tick (rather than a per-bit probability, which makes some frames churn and
+  // others barely move) keeps the cadence visually even.
   const ROWS = 3;
   const COLS = 22;
+  const TICK_MS = 140; // slower than a flicker; calm, readable pace
+  const FLIPS_PER_TICK = 7; // constant churn per tick → stable cadence
   const seed = () =>
     Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => (Math.random() < 0.5 ? 0 : 1)));
 
@@ -13,8 +17,14 @@
     // Honor reduced-motion: leave a static readout, skip the flicker interval.
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
     const timer = setInterval(() => {
-      grid = grid.map((row) => row.map((bit) => (Math.random() < 0.4 ? (bit ? 0 : 1) : bit)));
-    }, 55);
+      const next = grid.map((row) => row.slice());
+      for (let i = 0; i < FLIPS_PER_TICK; i++) {
+        const row = next[Math.floor(Math.random() * ROWS)]!;
+        const c = Math.floor(Math.random() * COLS);
+        row[c] = row[c] ? 0 : 1;
+      }
+      grid = next;
+    }, TICK_MS);
     return () => clearInterval(timer);
   });
 </script>
