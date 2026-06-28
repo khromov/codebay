@@ -1,8 +1,8 @@
 <script lang="ts">
   import { type Instance, type Preflight } from '../types.ts';
   import FolderBrowser from './FolderBrowser.svelte';
-  import Avatar from './Avatar.svelte';
-  import { Package, Check, TriangleAlert, X, Plus, GitBranch, Settings } from '@lucide/svelte';
+  import InstanceCard from './InstanceCard.svelte';
+  import { Package, Check, TriangleAlert, X, Plus, Settings } from '@lucide/svelte';
   import toast, { Toaster } from 'svelte-french-toast';
   import type { AuthProvider } from '../types.ts';
 
@@ -235,53 +235,16 @@
   {:else}
     <ul class="grid">
       {#each instances as instance (instance.id)}
-        <li class="card">
-          <div class="card-head">
-            <Avatar id={instance.id} name={instance.name} />
-            {#if editingId === instance.id}
-              <!-- svelte-ignore a11y_autofocus -->
-              <input
-                class="name-edit"
-                bind:value={editingName}
-                autofocus
-                onblur={() => commitRename(instance.id)}
-                onkeydown={(e) => {
-                  if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
-                  else if (e.key === 'Escape') cancelRename();
-                }}
-              />
-            {:else}
-              <button
-                class="name"
-                title="Click to rename"
-                onclick={() => startRename(instance)}
-              >{instance.name}</button>
-            {/if}
-            <span class="status {instance.status}">{statusLabel[instance.status]}</span>
-          </div>
-          <div class="path" title={instance.source_path}>{instance.source_path}</div>
-          <div class="port">localhost:{instance.host_port}</div>
-          {#if instance.git_branch}
-            <div class="branch" title="Branch checked out in the container">
-              <GitBranch size={12} /><span>{instance.git_branch}</span>
-            </div>
-          {/if}
-          {#if instance.status === 'error' && instance.error}
-            <div class="card-error">{instance.error}</div>
-          {/if}
-          <div class="actions">
-            {#if instance.status === 'running'}
-              <a class="btn open" href={`/ide/${instance.id}`}>Open IDE</a>
-              <button class="btn" onclick={() => act(instance.id, 'stop')}>Stop</button>
-            {:else if instance.status === 'stopped'}
-              <button class="btn" onclick={() => act(instance.id, 'start')}>Start</button>
-            {:else if instance.status === 'creating'}
-              <a class="btn" href={`/instances/${instance.id}`}>View logs</a>
-            {/if}
-            <a class="btn ghost" href={`/instances/${instance.id}`}>Details</a>
-            <button class="btn danger" onclick={() => act(instance.id, 'delete')}>Delete</button>
-          </div>
-        </li>
+        <InstanceCard
+          {instance}
+          {statusLabel}
+          editing={editingId === instance.id}
+          bind:editingName
+          onact={(action) => act(instance.id, action)}
+          onstartrename={() => startRename(instance)}
+          oncommitrename={() => commitRename(instance.id)}
+          oncancelrename={cancelRename}
+        />
       {/each}
     </ul>
   {/if}
@@ -463,149 +426,6 @@
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 18px;
   }
-  .card {
-    background: var(--bg-card);
-    border: 1px solid var(--ink);
-    padding: 16px 16px 14px;
-    box-shadow: 4px 4px 0 var(--ink);
-    transition: transform 0.08s steps(2), box-shadow 0.08s steps(2);
-  }
-  .card:hover {
-    transform: translate(-1px, -1px);
-    box-shadow: 6px 6px 0 var(--ink);
-  }
-  .card-head {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-  }
-  .name {
-    flex: 1;
-    min-width: 0;
-    font-family: var(--font-mono);
-    font-weight: 600;
-    font-size: 15px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    /* Reset button chrome so it reads as plain text until hovered. */
-    margin: 0;
-    padding: 2px 4px;
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--ink);
-    text-align: left;
-    cursor: pointer;
-  }
-  .name:hover {
-    border-color: var(--ink-faint);
-  }
-  .name-edit {
-    flex: 1;
-    min-width: 0;
-    font-family: var(--font-mono);
-    font-weight: 600;
-    font-size: 15px;
-    margin: 0;
-    padding: 2px 4px;
-    border: 1px solid var(--ink);
-    background: var(--bg);
-    color: var(--ink);
-    outline: none;
-  }
-  /* Monochrome theme: status reads via fill/pattern/animation, not hue. */
-  .status {
-    font-family: var(--font-mono);
-    font-weight: 600;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    padding: 3px 7px;
-    border: 1px solid var(--ink);
-    white-space: nowrap;
-  }
-  .status.running {
-    background: var(--ink);
-    color: var(--bg);
-  }
-  .status.stopped {
-    background: transparent;
-    color: var(--ink-soft);
-    border-color: var(--ink-faint);
-  }
-  .status.creating {
-    background: var(--ink);
-    color: var(--bg);
-    animation: lcd-blink 1.1s steps(1) infinite;
-  }
-  .status.error {
-    background: repeating-linear-gradient(
-      45deg,
-      var(--ink) 0 3px,
-      transparent 3px 6px
-    );
-    color: var(--ink);
-    border-width: 2px;
-    font-weight: 700;
-  }
-  @keyframes lcd-blink {
-    50% {
-      background: transparent;
-      color: var(--ink);
-    }
-  }
-  .path {
-    margin-top: 10px;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--ink-soft);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .port {
-    margin-top: 4px;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--ink-faint);
-  }
-  .branch {
-    margin-top: 6px;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    max-width: 100%;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--ink);
-    border: 1px solid var(--ink-faint);
-    padding: 2px 7px;
-  }
-  .branch :global(svg) {
-    flex: none;
-  }
-  .branch span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .card-error {
-    margin-top: 10px;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--ink);
-    background: var(--bg);
-    border: 1px solid var(--ink);
-    padding: 8px 10px;
-    max-height: 80px;
-    overflow: auto;
-  }
-  .actions {
-    margin-top: 16px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
   .btn {
     font-family: var(--font-mono);
     font-size: 12px;
@@ -630,23 +450,6 @@
   .btn:disabled:hover {
     background: var(--bg-card);
     color: var(--ink);
-  }
-  .btn.open {
-    background: var(--ink);
-    color: var(--bg);
-  }
-  .btn.open:hover {
-    background: var(--bg-card);
-    color: var(--ink);
-  }
-  .btn.ghost {
-    background: transparent;
-    border-style: dashed;
-  }
-  .btn.ghost:hover {
-    background: var(--ink);
-    color: var(--bg);
-    border-style: solid;
   }
   .btn.danger {
     color: var(--danger);
