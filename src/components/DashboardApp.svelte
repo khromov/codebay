@@ -2,7 +2,7 @@
   import { type Instance, type Preflight } from '../types.ts';
   import FolderBrowser from './FolderBrowser.svelte';
   import InstanceCard from './InstanceCard.svelte';
-  import { Package, Check, TriangleAlert, X, Plus, Settings } from '@lucide/svelte';
+  import { Package, Link, TriangleAlert, X, Plus, Settings } from '@lucide/svelte';
   import toast, { Toaster } from 'svelte-french-toast';
   import type { AuthProvider } from '../types.ts';
 
@@ -26,7 +26,7 @@
   const credState = $derived(
     authedCount === preflight.auth.length ? 'ok' : authedCount === 0 ? 'error' : 'warn',
   );
-  const credIcon = { ok: Check, warn: TriangleAlert, error: X } as const;
+  const credIcon = { ok: Link, warn: TriangleAlert, error: X } as const;
   const CredIcon = $derived(credIcon[credState]);
 
   function explainProvider(provider: AuthProvider) {
