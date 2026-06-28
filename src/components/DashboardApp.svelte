@@ -5,7 +5,8 @@
   import SettingsCog from './SettingsCog.svelte';
   import CredMenu from './CredMenu.svelte';
   import Button from './Button.svelte';
-  import { Package, Plus } from '@lucide/svelte';
+  import Brand from './Brand.svelte';
+  import { Plus } from '@lucide/svelte';
   import { Toaster } from 'svelte-french-toast';
 
   let { preflight }: { preflight: Preflight } = $props();
@@ -131,7 +132,7 @@
 </script>
 
 <header class="topbar">
-  <div class="brand"><span class="logo"><Package size={22} /></span><span>Devcontainers Manager</span></div>
+  <Brand />
   <div class="topbar-actions">
     <SettingsCog />
     <CredMenu auth={preflight.auth} />
@@ -208,20 +209,6 @@
     justify-content: space-between;
     padding: 18px 28px;
     border-bottom: 1px solid var(--rule);
-  }
-  .brand {
-    display: inline-flex;
-    align-items: center;
-    gap: 11px;
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 22px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .logo {
-    display: inline-flex;
-    align-items: center;
   }
   .stage {
     max-width: 1080px;
