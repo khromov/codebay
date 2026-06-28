@@ -6,12 +6,12 @@
 <main class="gallery">
   <header>
     <h1>Avatars</h1>
-    <p>{avatars.length} hand-crafted 16×16 sprites · dev preview</p>
+    <p>{avatars.length} hand-crafted 8×8 sprites · dev preview</p>
   </header>
   <ul>
     {#each avatars as art (art.name)}
       <li>
-        <Avatar {art} name={art.name} scale={4} />
+        <Avatar {art} name={art.name} scale={8} />
         <span class="label">{art.name}</span>
       </li>
     {/each}

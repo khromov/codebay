@@ -1,4 +1,4 @@
-// Registry of all hand-crafted 16×16 avatar sprites + the deterministic picker
+// Registry of all hand-crafted 8×8 avatar sprites + the deterministic picker
 // that maps a dev-container id to one of them.
 import type { AvatarArt } from './types.ts';
 
