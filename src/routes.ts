@@ -50,9 +50,27 @@ async function preflight() {
 }
 
 export const routes: Record<string, MochiRouteValue> = {
-  '/': Mochi.page('./src/pages/Dashboard.svelte', {
-    // Instance data comes from the SSE stream; only the static capability check is SSR'd.
-    serverProps: async () => ({ preflight: await preflight() }),
+  // Dashboard and the tabbed IDE share one persistent hydrated shell so that
+  // navigating between them is an in-place client transition (no full reload) and
+  // the code-server iframes stay mounted. `snapshot` seeds the live list so both
+  // the grid and the IDE iframe render without a loading flash.
+  '/': Mochi.page('./src/pages/App.svelte', {
+    serverProps: async () => ({
+      preflight: await preflight(),
+      initialPath: '/',
+      snapshot: await listInstances(),
+    }),
+  }),
+
+  '/ide/:id': Mochi.page('./src/pages/App.svelte', {
+    serverProps: async (_req, params) => {
+      if (!params.id || !getInstance(params.id)) error(404, 'Instance not found');
+      return {
+        preflight: await preflight(),
+        initialPath: `/ide/${params.id}`,
+        snapshot: await listInstances(),
+      };
+    },
   }),
 
   '/instances/:id': Mochi.page('./src/pages/Instance.svelte', {
@@ -63,17 +81,7 @@ export const routes: Record<string, MochiRouteValue> = {
     },
   }),
 
-  // Tabbed IDE shell: one iframe per running instance, kept mounted so editor
-  // state survives tab switches. `running` is a snapshot at page load.
   '/settings': Mochi.page('./src/pages/Settings.svelte'),
-
-  '/ide/:id': Mochi.page('./src/pages/IDE.svelte', {
-    serverProps: async (_req, params) => {
-      if (!params.id || !getInstance(params.id)) error(404, 'Instance not found');
-      const running = (await listInstances()).filter((i) => i.status === 'running');
-      return { activeId: params.id, running };
-    },
-  }),
 
   // Filesystem browser for picking a project folder.
   '/api/browse': Mochi.api(async ({ url }) => {

@@ -7,10 +7,14 @@
   import { Plus } from '@lucide/svelte';
   import { Toaster } from 'svelte-french-toast';
 
-  let { preflight }: { preflight: Preflight } = $props();
+  // Instances and their load state come from the persistent AppShell (single SSE
+  // subscription shared with the IDE view); this component is presentational.
+  let {
+    preflight,
+    instances,
+    loaded,
+  }: { preflight: Preflight; instances: Instance[]; loaded: boolean } = $props();
 
-  let instances = $state<Instance[]>([]);
-  let loaded = $state(false);
   let browserOpen = $state(false);
   let creating = $state(false);
   let actionError = $state<string | null>(null);
@@ -19,21 +23,6 @@
 
   // svelte-ignore state_referenced_locally
   const ready = preflight.docker && preflight.cli;
-
-  // Live instance list over SSE — the first message carries current state,
-  // and the server pushes again on every change (boot progress, start/stop/delete).
-  $effect(() => {
-    const source = new EventSource('/api/instances/stream');
-    source.onmessage = (event) => {
-      try {
-        instances = JSON.parse(event.data) as Instance[];
-        loaded = true;
-      } catch {
-        /* ignore malformed frame */
-      }
-    };
-    return () => source.close();
-  });
 
   async function createFrom(sourcePath: string) {
     browserOpen = false;
