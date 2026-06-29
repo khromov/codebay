@@ -1,5 +1,5 @@
 import { type InstanceRow } from './db.server.ts';
-import { isRunning } from './docker.server.ts';
+import { isRunning, publishedContainerPorts } from './docker.server.ts';
 import { broadcastHealth } from './instances.server.ts';
 import type { InstanceHealth } from '../types.ts';
 
@@ -72,19 +72,22 @@ async function check(row: InstanceRow): Promise<InstanceHealth> {
     codeServerAccessible: false,
     hooksPresent: false,
     credsPresent: false,
+    openPorts: [],
     checkedAt: Date.now(),
   };
   if (!row.container_id || !(await isRunning(row.container_id))) return down;
 
-  const [accessible, files] = await Promise.all([
+  const [accessible, files, openPorts] = await Promise.all([
     codeServerAccessible(row.host_port),
     claudeFilesPresent(row.container_id, row.remote_user, row.id),
+    publishedContainerPorts(row.container_id),
   ]);
   return {
     containerRunning: true,
     codeServerAccessible: accessible,
     hooksPresent: files.hooks,
     credsPresent: files.creds,
+    openPorts,
     checkedAt: Date.now(),
   };
 }

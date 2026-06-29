@@ -68,7 +68,7 @@
         <div class="label">
           <Power size={18} />
           <div class="text">
-            <div class="name">Delete database and shut down</div>
+            <div class="name">Delete database, containers, and shut down</div>
             <div class="desc">
               Stop and remove every instance and its container, delete all copied
               workspaces and the database, then shut down the server. This cannot be undone.
@@ -137,6 +137,11 @@
   .danger-card {
     margin-top: 16px;
     border-color: var(--danger);
+  }
+  /* Keep the action button on one line; in the flex row it would otherwise shrink and wrap. */
+  .danger-card :global(.btn) {
+    flex: none;
+    white-space: nowrap;
   }
   .shutting {
     flex: none;

@@ -56,7 +56,7 @@
   // Stamp a fetch time so the "updated Ns ago" readout ticks; "refresh" resets it.
   let healthFetchedAt = $state(Date.now());
   const demoHealth = $derived<InstanceHealth | null>(
-    healthLoading ? null : { ...healthChecks, checkedAt: healthFetchedAt },
+    healthLoading ? null : { ...healthChecks, openPorts: [], checkedAt: healthFetchedAt },
   );
 </script>
 

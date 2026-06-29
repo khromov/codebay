@@ -372,11 +372,21 @@ export async function listInstances(): Promise<Instance[]> {
   // Keep a background health monitor running for each live container (and retire
   // monitors for the rest) — reconcile is where we know the current running set.
   syncHealthMonitors(rows);
+  // Ports the live container actually publishes, polled by the health monitor — used
+  // to flag each configured forward as open vs not-yet-published (e.g. pending rebuild).
+  const openPorts = new Map<string, Set<number>>();
+  for (const { id, health } of currentHealthSnapshots()) {
+    openPorts.set(id, new Set(health.openPorts));
+  }
   // Group forwarded ports per instance in a single query (mirrors the branches map).
-  const forwards = new Map<string, { container_port: number; host_port: number }[]>();
+  const forwards = new Map<string, { container_port: number; host_port: number; open: boolean }[]>();
   for (const f of allForwards()) {
     const list = forwards.get(f.instance_id) ?? [];
-    list.push({ container_port: f.container_port, host_port: f.host_port });
+    list.push({
+      container_port: f.container_port,
+      host_port: f.host_port,
+      open: openPorts.get(f.instance_id)?.has(f.container_port) ?? false,
+    });
     forwards.set(f.instance_id, list);
   }
   // Strip bridge_token — it's a container-only secret and must not reach the client.

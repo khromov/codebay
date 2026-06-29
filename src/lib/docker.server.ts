@@ -26,6 +26,33 @@ export async function isRunning(containerId: string): Promise<boolean> {
   return res.ok && res.stdout === 'true';
 }
 
+/**
+ * Container ports currently published to the host, per `docker inspect` (the same
+ * mappings `docker ps` shows in its PORTS column). Reads the live binding table
+ * rather than execing inside the container, so it reflects what Docker actually
+ * exposes. Returns the deduped set of container port numbers that have a host
+ * binding; `[]` on any failure.
+ */
+export async function publishedContainerPorts(containerId: string): Promise<number[]> {
+  const res = await run([
+    'docker', 'inspect', '-f', '{{json .NetworkSettings.Ports}}', containerId,
+  ]);
+  if (!res.ok) return [];
+  let ports: Record<string, { HostPort?: string }[] | null>;
+  try {
+    ports = JSON.parse(res.stdout) as Record<string, { HostPort?: string }[] | null>;
+  } catch {
+    return [];
+  }
+  const open = new Set<number>();
+  for (const [key, bindings] of Object.entries(ports ?? {})) {
+    if (!bindings || bindings.length === 0) continue; // exposed but not published
+    const port = Number.parseInt(key, 10); // "3000/tcp" → 3000
+    if (Number.isInteger(port) && port > 0) open.add(port);
+  }
+  return [...open];
+}
+
 export async function startContainer(containerId: string): Promise<boolean> {
   return (await run(['docker', 'start', containerId])).ok;
 }

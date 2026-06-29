@@ -2,6 +2,8 @@
 export interface PortForward {
   container_port: number;
   host_port: number;
+  /** Live: the container actually publishes this port per Docker. Set only when serializing for the client. */
+  open?: boolean;
 }
 
 /** Client-safe shape of an instance, mirrors the server's InstanceRow. */
@@ -38,6 +40,8 @@ export interface InstanceHealth {
   hooksPresent: boolean;
   /** Claude credentials are present in the container's Claude config. */
   credsPresent: boolean;
+  /** Container ports currently published to the host per Docker (the `docker ps` view). */
+  openPorts: number[];
   /** Epoch ms when these checks last ran. */
   checkedAt: number;
 }
