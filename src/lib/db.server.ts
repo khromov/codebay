@@ -26,10 +26,8 @@ export interface InstanceRow {
   created_at: number;
   /** Per-instance secret the in-container Claude hook uses to authenticate to the bridge. */
   bridge_token: string;
-  /** Claude attention-hook injection outcome: 1 ok, 0 failed, null not attempted. */
-  hooks_injected: number | null;
-  /** Claude credential injection outcome: 1 ok, 0 failed, null skipped (no host creds). */
-  creds_injected: number | null;
+  /** Container user the workspace runs as; needed to exec health checks in its home dir. */
+  remote_user: string | null;
 }
 
 // Pin the connection to globalThis so dev-mode hot reload doesn't reopen it.
@@ -52,8 +50,7 @@ function open(): Database {
       error TEXT,
       created_at INTEGER NOT NULL,
       bridge_token TEXT NOT NULL DEFAULT '',
-      hooks_injected INTEGER,
-      creds_injected INTEGER
+      remote_user TEXT
     );
   `);
   database.run(`
@@ -72,12 +69,9 @@ function open(): Database {
   if (!cols.some((c) => c.name === 'bridge_token')) {
     database.run("ALTER TABLE instances ADD COLUMN bridge_token TEXT NOT NULL DEFAULT '';");
   }
-  // Migrate databases created before health flags were tracked.
-  if (!cols.some((c) => c.name === 'hooks_injected')) {
-    database.run('ALTER TABLE instances ADD COLUMN hooks_injected INTEGER;');
-  }
-  if (!cols.some((c) => c.name === 'creds_injected')) {
-    database.run('ALTER TABLE instances ADD COLUMN creds_injected INTEGER;');
+  // Migrate databases created before the container user was recorded.
+  if (!cols.some((c) => c.name === 'remote_user')) {
+    database.run('ALTER TABLE instances ADD COLUMN remote_user TEXT;');
   }
   return database;
 }
@@ -87,8 +81,8 @@ export const db: Database = (globalForDb.__dcmDb ??= open());
 export function insertInstance(row: InstanceRow): void {
   db.query(
     `INSERT INTO instances
-       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, hooks_injected, creds_injected)
-     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $hooks_injected, $creds_injected)`,
+       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user)
+     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user)`,
   ).run({
     $id: row.id,
     $name: row.name,
@@ -101,8 +95,7 @@ export function insertInstance(row: InstanceRow): void {
     $error: row.error,
     $created_at: row.created_at,
     $bridge_token: row.bridge_token,
-    $hooks_injected: row.hooks_injected,
-    $creds_injected: row.creds_injected,
+    $remote_user: row.remote_user,
   });
 }
 
@@ -129,8 +122,7 @@ export function updateInstance(
       | 'remote_workspace_folder'
       | 'status'
       | 'error'
-      | 'hooks_injected'
-      | 'creds_injected'
+      | 'remote_user'
     >
   >,
 ): void {
@@ -156,13 +148,9 @@ export function updateInstance(
     sets.push('error = $error');
     params.$error = patch.error ?? null;
   }
-  if ('hooks_injected' in patch) {
-    sets.push('hooks_injected = $hooks_injected');
-    params.$hooks_injected = patch.hooks_injected ?? null;
-  }
-  if ('creds_injected' in patch) {
-    sets.push('creds_injected = $creds_injected');
-    params.$creds_injected = patch.creds_injected ?? null;
+  if ('remote_user' in patch) {
+    sets.push('remote_user = $remote_user');
+    params.$remote_user = patch.remote_user ?? null;
   }
   if (sets.length === 0) return;
   db.query(`UPDATE instances SET ${sets.join(', ')} WHERE id = $id`).run(params);

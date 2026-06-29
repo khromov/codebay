@@ -1,8 +1,18 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 
-/** Root directory where all manager state lives, outside the project tree. */
-export const DATA_DIR = join(homedir(), '.devcontainers-manager');
+/**
+ * Root directory where all manager state (SQLite db + instance workspaces) lives.
+ * Defaults to `~/.devcontainers-manager`, outside the project tree. Override with
+ * the `DATA_DIR` env var; relative values are resolved against the current working
+ * directory (e.g. `DATA_DIR=./.devcontainers-manager` keeps everything project-local
+ * for development).
+ */
+export const DATA_DIR = process.env.DATA_DIR
+  ? isAbsolute(process.env.DATA_DIR)
+    ? process.env.DATA_DIR
+    : resolve(process.cwd(), process.env.DATA_DIR)
+  : join(homedir(), '.devcontainers-manager');
 
 /** Per-instance working copies live here: <INSTANCES_DIR>/<id>/workspace. */
 export const INSTANCES_DIR = join(DATA_DIR, 'instances');

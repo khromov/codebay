@@ -8,7 +8,6 @@ import {
   createInstance,
   deleteAllInstances,
   deleteInstance,
-  instanceHealth,
   listInstances,
   renameInstance,
   startInstance,
@@ -17,6 +16,7 @@ import {
   subscribeLogs,
 } from './lib/instances.server.ts';
 import { deleteFolderHistory, getInstance, listFolderHistory } from './lib/db.server.ts';
+import { getHealth } from './lib/health.server.ts';
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
 
@@ -170,12 +170,12 @@ export const routes: Record<string, MochiRouteValue> = {
     }
   }),
 
-  // Point-in-time health snapshot for one instance: live container/port probes
-  // plus the recorded hook/credential injection outcomes. Polled by the UI.
+  // Live health snapshot for one instance, kept fresh by a background monitor
+  // (see health.server.ts). The UI polls this; results are never persisted.
   '/api/instances/:id/health': Mochi.api(async ({ method, params }) => {
     if (method !== 'GET') return apiError(405, 'Method Not Allowed');
     try {
-      return json(await instanceHealth(params.id!));
+      return json(await getHealth(params.id!));
     } catch (err) {
       return apiError(404, (err as Error).message);
     }

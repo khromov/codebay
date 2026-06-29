@@ -2,3 +2,4 @@ node_modules
 .mochi
 *.tsbuildinfo
 vendor
+.devcontainers-manager

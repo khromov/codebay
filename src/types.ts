@@ -16,16 +16,22 @@ export interface Instance {
   attention: 'done' | 'waiting' | null;
 }
 
-/** Live + recorded health signals for one instance, surfaced on its status page. */
+/**
+ * Live health snapshot for one instance, produced by a background monitor that
+ * re-runs every check every few seconds while the container is alive. Never
+ * persisted — always reflects the most recent probe.
+ */
 export interface InstanceHealth {
-  /** Live: container is up per `docker inspect`. */
+  /** Container is up per `docker inspect`. */
   containerRunning: boolean;
-  /** Live: code-server answered an HTTP probe on its host port. */
+  /** code-server answered an HTTP probe on its host port. */
   codeServerAccessible: boolean;
-  /** Recorded at boot: Claude attention-hook injection outcome. */
-  hooksInjected: 'ok' | 'failed' | 'unknown';
-  /** Recorded at boot: Claude credential injection outcome ('skipped' = no host creds). */
-  credsInjected: 'ok' | 'failed' | 'skipped';
+  /** The attention-hook settings.json is present in the container's Claude config. */
+  hooksPresent: boolean;
+  /** Claude credentials are present in the container's Claude config. */
+  credsPresent: boolean;
+  /** Epoch ms when these checks last ran. */
+  checkedAt: number;
 }
 
 /** One authorization the manager can inject into instances (e.g. Claude Code). */

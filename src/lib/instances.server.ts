@@ -29,7 +29,8 @@ import {
 } from './bridge.server.ts';
 import { injectGhCredentials, readGhCredentials } from './gh.server.ts';
 import { readGitBranch } from './git.server.ts';
-import type { Instance, InstanceHealth } from '../types.ts';
+import { stopHealthMonitor, syncHealthMonitors } from './health.server.ts';
+import type { Instance } from '../types.ts';
 
 /** Live, in-memory boot state for an instance (logs + SSE subscribers). */
 interface LiveState {
@@ -157,6 +158,7 @@ async function boot(row: InstanceRow): Promise<void> {
     updateInstance(row.id, {
       container_id: result.containerId,
       remote_workspace_folder: result.remoteWorkspaceFolder ?? null,
+      remote_user: result.remoteUser ?? null,
       status: 'running',
       error: null,
     });
@@ -170,7 +172,6 @@ async function boot(row: InstanceRow): Promise<void> {
     if (creds) {
       appendLog(row.id, 'Injecting Claude Code credentials…\n');
       const injected = await injectClaudeCredentials(result.containerId, result.remoteUser, creds);
-      updateInstance(row.id, { creds_injected: injected.ok ? 1 : 0 });
       appendLog(
         row.id,
         injected.ok
@@ -204,7 +205,6 @@ async function boot(row: InstanceRow): Promise<void> {
       result.remoteUser,
       attentionHookSettings(row.id, row.bridge_token),
     );
-    updateInstance(row.id, { hooks_injected: hooks.ok ? 1 : 0 });
     appendLog(
       row.id,
       hooks.ok
@@ -251,8 +251,7 @@ export async function createInstance(sourcePath: string, name?: string): Promise
     error: null,
     created_at: Date.now(),
     bridge_token: crypto.randomUUID().replace(/-/g, ''),
-    hooks_injected: null,
-    creds_injected: null,
+    remote_user: null,
   };
   insertInstance(row);
   // Strip the de-dup `#2` suffix so the recent-folders list keeps the base name.
@@ -281,49 +280,15 @@ export async function listInstances(): Promise<Instance[]> {
       branches.set(row.id, await readGitBranch(row.workspace_path));
     }),
   );
+  // Keep a background health monitor running for each live container (and retire
+  // monitors for the rest) — reconcile is where we know the current running set.
+  syncHealthMonitors(rows);
   // Strip bridge_token — it's a container-only secret and must not reach the client.
   return rows.map(({ bridge_token: _token, ...row }) => ({
     ...row,
     git_branch: branches.get(row.id) ?? null,
     attention: getAttention(row.id),
   }));
-}
-
-/**
- * Probe whether code-server is actually answering on its published host port.
- * Mirrors how the proxy reaches the container (see proxy.server.ts). Any HTTP
- * response — 200, a redirect, even 401 — means the server is listening; only a
- * connection/timeout failure counts as inaccessible.
- */
-async function codeServerAccessible(port: number): Promise<boolean> {
-  try {
-    await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(2000) });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Aggregate live + recorded health signals for a single instance. */
-export async function instanceHealth(id: string): Promise<InstanceHealth> {
-  const row = getInstance(id);
-  if (!row) throw new Error('Instance not found');
-
-  const containerRunning = row.container_id ? await isRunning(row.container_id) : false;
-  // Only worth probing the port when the container is actually up.
-  const codeServerAccessibleResult = containerRunning
-    ? await codeServerAccessible(row.host_port)
-    : false;
-
-  const flag = <T extends string>(v: number | null, nullState: T) =>
-    v === 1 ? ('ok' as const) : v === 0 ? ('failed' as const) : nullState;
-
-  return {
-    containerRunning,
-    codeServerAccessible: codeServerAccessibleResult,
-    hooksInjected: flag(row.hooks_injected, 'unknown'),
-    credsInjected: flag(row.creds_injected, 'skipped'),
-  };
 }
 
 export function renameInstance(id: string, name: string): InstanceRow {
@@ -363,6 +328,7 @@ export async function deleteInstance(id: string): Promise<void> {
   await rm(join(INSTANCES_DIR, id), { recursive: true, force: true });
   deleteInstanceRow(id);
   registry.delete(id);
+  stopHealthMonitor(id);
   clearAttention(id);
   triggerReconcile();
 }

@@ -19,7 +19,7 @@
   // 2× displays). At 1× the cells are too small to spare any, so dots butt up.
   const gap = $derived(s >= 2 ? 0.5 : 0);
 
-  // 64 intensities (0 off / 1 dim / 2 on), row-major, for the chosen 8×8 art.
+  // 64 on/off cells (0 off / 1 on), row-major, for the chosen 8×8 art.
   const cells = $derived(decode(art ?? pickAvatar(id)));
   // Frame the art in a 10×10 panel: the outer ring is unlit LED cells (a bezel
   // of real dots, not blank padding), the inner 8×8 holds the art. Row-major.
@@ -41,7 +41,7 @@
   style="width:{10 * s}px;height:{10 * s}px;--gap:{gap}px"
 >
   {#each grid as cell, i (i)}
-    <span class="px" class:on={cell === 2} class:dim={cell === 1}></span>
+    <span class="px" class:on={cell === 1}></span>
   {/each}
 </span>
 
@@ -65,9 +65,6 @@
     padding: 0 var(--gap) var(--gap) 0;
     background-clip: content-box;
     background-color: var(--rule-soft); /* unlit LED — faint */
-  }
-  .px.dim {
-    background-color: var(--ink-soft);
   }
   .px.on {
     background-color: var(--ink);

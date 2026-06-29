@@ -2,7 +2,7 @@
   import { Plus } from '@lucide/svelte';
   import toast, { Toaster } from 'svelte-french-toast';
   import { avatars } from '../avatars/index.ts';
-  import type { AuthProvider, Preflight } from '../types.ts';
+  import type { AuthProvider, InstanceHealth, Preflight } from '../types.ts';
 
   let { preflight }: { preflight: Preflight } = $props();
   import Avatar from './Avatar.svelte';
@@ -12,6 +12,7 @@
   import SettingsCog from './SettingsCog.svelte';
   import TopBar from './TopBar.svelte';
   import IdeLoader from './IdeLoader.svelte';
+  import HealthBox from './HealthBox.svelte';
   import ComponentDemo from './ui-showcase/ComponentDemo.svelte';
 
   // --- Avatar controls ---
@@ -43,6 +44,20 @@
       p.available = state === 'ok' || (state === 'warn' && i === 0);
     });
   }
+
+  // --- HealthBox controls ---
+  let healthLoading = $state(false);
+  let healthChecks = $state({
+    containerRunning: true,
+    codeServerAccessible: true,
+    hooksPresent: true,
+    credsPresent: false,
+  });
+  // Stamp a fetch time so the "updated Ns ago" readout ticks; "refresh" resets it.
+  let healthFetchedAt = $state(Date.now());
+  const demoHealth = $derived<InstanceHealth | null>(
+    healthLoading ? null : { ...healthChecks, checkedAt: healthFetchedAt },
+  );
 </script>
 
 <Toaster />
@@ -162,6 +177,35 @@
         <label>
           <span>speed ({loaderSpeed.toFixed(2)}×)</span>
           <input type="range" min="0.25" max="3" step="0.25" bind:value={loaderSpeed} />
+        </label>
+      {/snippet}
+    </ComponentDemo>
+
+    <ComponentDemo title="HealthBox">
+      <HealthBox health={demoHealth} lastFetchedAt={healthLoading ? null : healthFetchedAt} />
+      {#snippet controls()}
+        <div class="presets">
+          <button type="button" onclick={() => (healthFetchedAt = Date.now())}>refresh now</button>
+        </div>
+        <label class="inline">
+          <input type="checkbox" bind:checked={healthLoading} />
+          <span>loading (skeleton)</span>
+        </label>
+        <label class="inline">
+          <input type="checkbox" bind:checked={healthChecks.containerRunning} />
+          <span>container running</span>
+        </label>
+        <label class="inline">
+          <input type="checkbox" bind:checked={healthChecks.codeServerAccessible} />
+          <span>code-server reachable</span>
+        </label>
+        <label class="inline">
+          <input type="checkbox" bind:checked={healthChecks.hooksPresent} />
+          <span>hooks present</span>
+        </label>
+        <label class="inline">
+          <input type="checkbox" bind:checked={healthChecks.credsPresent} />
+          <span>credentials present</span>
         </label>
       {/snippet}
     </ComponentDemo>

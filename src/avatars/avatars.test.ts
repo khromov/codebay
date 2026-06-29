@@ -6,12 +6,12 @@ describe('avatar catalog', () => {
     expect(avatars.length).toBeGreaterThanOrEqual(30);
   });
 
-  test('every sprite is exactly 8×8 with only legal chars', () => {
+  test('every sprite is exactly 8×8 with only on/off chars (no gray)', () => {
     for (const art of avatars) {
       expect(art.pixels.length).toBe(8);
       for (const row of art.pixels) {
         expect(row.length).toBe(8);
-        expect(row).toMatch(/^[#+. ]{8}$/);
+        expect(row).toMatch(/^[#. ]{8}$/);
       }
     }
   });
@@ -24,17 +24,17 @@ describe('avatar catalog', () => {
 });
 
 describe('decode', () => {
-  test('maps # → 2, + → 1, space/. → 0 and returns 64 cells', () => {
+  test('maps # → 1, space/. → 0 and returns 64 cells', () => {
     const cells = decode(avatars[0]!);
     expect(cells.length).toBe(64);
-    expect(cells.every((c) => c === 0 || c === 1 || c === 2)).toBe(true);
+    expect(cells.every((c) => c === 0 || c === 1)).toBe(true);
   });
 
   test('respects the legend on a known pattern', () => {
-    const art = { name: 't', pixels: Array(8).fill('#+.# +.#') };
+    const art = { name: 't', pixels: Array(8).fill('#..# .##') };
     const row = decode(art).slice(0, 8);
-    // '#+.# +.#'
-    expect(row).toEqual([2, 1, 0, 2, 0, 1, 0, 2]);
+    // '#..# .##'
+    expect(row).toEqual([1, 0, 0, 1, 0, 0, 1, 1]);
   });
 });
 
