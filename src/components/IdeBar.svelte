@@ -1,22 +1,18 @@
 <script lang="ts">
   import { type Instance } from '../types.ts';
-  import { House, X, Settings } from '@lucide/svelte';
+  import { House, Settings } from '@lucide/svelte';
   import Avatar from './Avatar.svelte';
 
   let {
     running,
     active,
     attention,
-    closing,
     onselect,
-    onstop,
   }: {
     running: Instance[];
     active: string;
     attention: Record<string, 'done' | 'waiting' | null>;
-    closing: string | null;
     onselect: (id: string) => void;
-    onstop: (id: string) => void;
   } = $props();
 </script>
 
@@ -34,16 +30,6 @@
           <button type="button" class="tab-label" onclick={() => onselect(inst.id)} title={inst.name}>
             <Avatar id={inst.id} name={inst.name} scale={4} />
             <span class="tab-name">{inst.name}</span>
-          </button>
-          <button
-            type="button"
-            class="tab-close"
-            onclick={() => onstop(inst.id)}
-            disabled={closing === inst.id}
-            title="Stop and close"
-            aria-label="Stop {inst.name}"
-          >
-            <X size={13} />
           </button>
         </div>
       {/each}
@@ -142,20 +128,17 @@
       background: rgba(245, 158, 11, 0.28);
     }
   }
-  .tab-label,
-  .tab-close {
+  .tab-label {
     appearance: none;
     background: transparent;
     border: 0;
     cursor: pointer;
     color: var(--ink-soft);
     font-family: var(--font-mono);
-  }
-  .tab-label {
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    padding: 0 10px 0 12px;
+    padding: 0 12px;
     max-width: 240px;
     font-size: 12px;
     text-transform: uppercase;
@@ -166,25 +149,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .tab-close {
-    display: inline-flex;
-    align-items: center;
-    padding: 0 10px 0 4px;
-    color: var(--ink-faint);
-  }
-  .tab-close:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-  .tab:not(.active) .tab-label:hover,
-  .tab:not(.active) .tab-close:not(:disabled):hover {
+  .tab:not(.active) .tab-label:hover {
     color: var(--ink);
   }
-  .tab.active .tab-label,
-  .tab.active .tab-close {
+  .tab.active .tab-label {
     color: var(--bg);
-  }
-  .tab.active .tab-close:not(:disabled):hover {
-    opacity: 0.65;
   }
 </style>

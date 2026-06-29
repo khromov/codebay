@@ -31,7 +31,6 @@
     // svelte-ignore state_referenced_locally
     Object.fromEntries(snapshot.map((i) => [i.id, i.attention])),
   );
-  let closing = $state<string | null>(null);
 
   // --- Client-side router (Dashboard ⇄ IDE only) --------------------------------
   // Mochi has no client router; we keep a reactive path and intercept the handful
@@ -149,25 +148,11 @@
       void fetch(`/api/instances/${active}/attention/clear`, { method: 'POST' });
     }
   });
-
-  // Stop the container, then return to the dashboard. Stays in-app via the router,
-  // so the other iframes survive.
-  async function stop(id: string) {
-    closing = id;
-    try {
-      await fetch(`/api/instances/${id}/stop`, { method: 'POST' });
-    } catch {
-      /* navigate anyway — the dashboard shows the real state */
-    } finally {
-      closing = null;
-    }
-    navigate('/');
-  }
 </script>
 
 <div class="app" class:ide={onIde}>
   {#if onIde}
-    <IdeBar {running} {active} {attention} {closing} onselect={(id) => navigate(`/ide/${id}`)} onstop={stop} />
+    <IdeBar {running} {active} {attention} onselect={(id) => navigate(`/ide/${id}`)} />
   {:else}
     <DashboardView {preflight} {instances} {loaded} />
   {/if}

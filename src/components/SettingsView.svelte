@@ -1,11 +1,14 @@
 <script lang="ts">
-  import { House, Volume2 } from '@lucide/svelte';
+  import { House, Power, Volume2 } from '@lucide/svelte';
   import { soundEnabled, setSoundEnabled } from '../settings.ts';
   import { playChime, unlockAudio } from '../sound.ts';
+  import Button from './Button.svelte';
 
   // Initialize from localStorage on the client; defaults to on during SSR.
   // svelte-ignore state_referenced_locally
   let sound = $state(soundEnabled());
+
+  let shuttingDown = $state(false);
 
   function toggleSound(on: boolean) {
     sound = on;
@@ -13,6 +16,21 @@
     // A toggle is a user gesture — unlock audio and preview when enabling.
     unlockAudio();
     if (on) playChime('done');
+  }
+
+  async function deleteAndShutdown() {
+    if (
+      !confirm(
+        'Delete the database, remove all instances and their containers, and shut down the server? This cannot be undone.',
+      )
+    )
+      return;
+    shuttingDown = true;
+    try {
+      await fetch('/api/shutdown', { method: 'POST' });
+    } catch {
+      // The server exits mid-response, so a network error here is expected.
+    }
   }
 </script>
 
@@ -42,6 +60,26 @@
           />
           <span class="track"><span class="thumb"></span></span>
         </label>
+      </div>
+    </section>
+
+    <section class="card danger-card">
+      <div class="row">
+        <div class="label">
+          <Power size={18} />
+          <div class="text">
+            <div class="name">Delete database and shut down</div>
+            <div class="desc">
+              Stop and remove every instance and its container, delete all copied
+              workspaces and the database, then shut down the server. This cannot be undone.
+            </div>
+          </div>
+        </div>
+        {#if shuttingDown}
+          <span class="shutting">Server is shutting down — you can close this tab.</span>
+        {:else}
+          <Button variant="danger" onclick={deleteAndShutdown}>Delete &amp; shut down</Button>
+        {/if}
       </div>
     </section>
   </main>
@@ -85,7 +123,8 @@
   .content {
     flex: 1;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
     padding: 32px 20px;
   }
   .card {
@@ -94,6 +133,19 @@
     background: var(--bg-card);
     border: 1px solid var(--rule);
     height: max-content;
+  }
+  .danger-card {
+    margin-top: 16px;
+    border-color: var(--danger);
+  }
+  .shutting {
+    flex: none;
+    max-width: 200px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--danger);
+    line-height: 1.4;
+    text-align: right;
   }
   .row {
     display: flex;

@@ -56,6 +56,12 @@ function open(): Database {
 
 export const db: Database = (globalForDb.__dcmDb ??= open());
 
+/** Close the pinned SQLite connection (flushing WAL) and drop the global handle. */
+export function closeDb(): void {
+  globalForDb.__dcmDb?.close();
+  globalForDb.__dcmDb = undefined;
+}
+
 export function insertInstance(row: InstanceRow): void {
   db.query(
     `INSERT INTO instances

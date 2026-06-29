@@ -1,9 +1,10 @@
 import { rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { CODE_SERVER_PORT, INSTANCES_DIR, PORT_BASE, PORT_MAX } from './config.server.ts';
+import { CODE_SERVER_PORT, DATA_DIR, INSTANCES_DIR, PORT_BASE, PORT_MAX } from './config.server.ts';
 import {
   allForwards,
   allInstances,
+  closeDb,
   deleteForward,
   deleteForwards,
   deleteInstanceRow,
@@ -482,4 +483,16 @@ export async function deleteAllInstances(): Promise<void> {
   for (const row of allInstances()) {
     await deleteInstance(row.id);
   }
+}
+
+/**
+ * Full reset: tear down every instance (containers + workspace copies + DB rows),
+ * close and delete the SQLite database, then exit the process. The process exit is
+ * deferred briefly so the HTTP response can flush before the server dies.
+ */
+export async function deleteDatabaseAndShutdown(): Promise<void> {
+  await deleteAllInstances();
+  closeDb();
+  await rm(DATA_DIR, { recursive: true, force: true });
+  setTimeout(() => process.exit(0), 150);
 }

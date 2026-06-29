@@ -8,6 +8,7 @@ import {
   addForwardedPort,
   createInstance,
   deleteAllInstances,
+  deleteDatabaseAndShutdown,
   deleteInstance,
   listInstances,
   rebuildInstance,
@@ -137,6 +138,14 @@ export const routes: Record<string, MochiRouteValue> = {
   '/api/instances/delete-all': Mochi.api(async ({ method }) => {
     if (method !== 'POST') return apiError(405, 'Method Not Allowed');
     await deleteAllInstances();
+    return json({ ok: true });
+  }),
+
+  // Full reset: tear down every instance, delete the database, then shut the server
+  // down. Behind Basic Auth like the rest of the UI/APIs.
+  '/api/shutdown': Mochi.api(async ({ method }) => {
+    if (method !== 'POST') return apiError(405, 'Method Not Allowed');
+    await deleteDatabaseAndShutdown();
     return json({ ok: true });
   }),
 
