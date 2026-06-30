@@ -1,0 +1,4 @@
+.devcontainers-manager
+.mochi
+scripts
+src/__fixtures__/*

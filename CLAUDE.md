@@ -19,7 +19,10 @@ bun test           # all tests
 bun test src/index.isolated.test.ts          # single file
 bun test -t "renders Hello world"            # single test by name
 bun run clean      # remove .mochi build output
+bun run gen:chimes # re-render attention chimes to public/sounds/ WAVs (after editing scripts/gen-chimes.ts)
 ```
+
+Tests are named `*.isolated.test.ts`. Note that `db.server.ts` pins its SQLite handle to `globalThis`, so all tests in a run share one DB connection — don't `rmSync(DATA_DIR)` in a test's `afterAll` or you'll yank state out from under other tests.
 
 Both `dev` and `start` execute `src/index.ts` with Bun (Mochi serves SSR pages on the fly); `build` is only needed for a precompiled production bundle. The `dev` script already sets `MODE=development`, `DISABLE_OPEN_BROWSER=1`, and `DATA_DIR=./.devcontainers-manager` (keeps state inside the repo while developing).
 
@@ -51,6 +54,8 @@ The hub, log registry, attention map, health monitors, and DB handle are all pin
 **Bridge / attention** (`src/lib/bridge.server.ts`): an in-memory, UI-only signal each container can raise — `done` (Claude finished) or `waiting` (Claude needs input) — to pulse its IDE tab. The injected Claude hooks `curl` `host.docker.internal:$PORT/api/bridge/attention` with the instance id, a per-instance `bridge_token`, and a state. The `/api/bridge/attention` route is **exempt from Basic Auth** and authenticates by token instead; `bridge_token` is a container-only secret and is stripped from instance rows before they reach the client.
 
 **Container injections** (`src/container-injections/`): each post-up thing the manager installs into a container is a self-contained `Injection` module (`claude-code-credentials.ts`, `github-credentials.ts`, `attention-hooks.ts`, `git-safe-directory.ts`) exporting `apply()` (install + log), an optional `auth.status()` (host-credential availability), and an optional `check()` (live presence probe). The `Injection` contract and the registry (`injections[]`) live in `src/lib/injections.server.ts` — the single source of truth: `instances.server.ts` runs every `apply()` at boot, `health.server.ts` runs every `check()`, and `routes.ts` builds the setup-UI auth chips from every `auth`. Add or remove an injection by adding its module to `src/container-injections/` (which holds only the injection modules + their test) and editing the registry list. All container `docker exec` goes through the shared `execInContainer` helper (`src/lib/exec.server.ts`), which pipes secrets over stdin (never argv).
+
+*To add one:* create `src/container-injections/<name>.ts` exporting an `Injection` (`id`, `label`, required `apply(target, log)`, optional `auth` for a host dependency, optional `check()` for the health list), then add it to the `injections[]` array in `src/lib/injections.server.ts`. Array order is apply order — keep `git-safe-directory` first since later git-touching steps depend on it. That single edit wires it into boot, health probing, and the setup-UI auth chips at once; no other file needs touching.
 
 **Health** (`src/lib/health.server.ts`): when reconcile sees a container running it starts a per-container monitor that re-probes every few seconds (is code-server answering on its host port, plus each injection's `check()`) and keeps the latest snapshot in memory; the snapshot rides the central stream. The per-injection presence rows are driven by the injection registry, so they track whatever injections exist. Live-only, never persisted; stops when the container is gone.
 

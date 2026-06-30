@@ -11,8 +11,11 @@ import {
 
 const CODE_SERVER_FEATURE = 'ghcr.io/coder/devcontainer-features/code-server:1';
 
-/** Installs the Claude Code CLI (and Node, which it pulls in) into the default image. */
+/** Installs the Claude Code CLI into the default image. Needs Node — supplied by NODE_FEATURE. */
 const CLAUDE_CODE_FEATURE = 'ghcr.io/anthropics/devcontainer-features/claude-code:1.0';
+
+/** Node.js — required by the Claude Code feature, which no longer bundles it. */
+const NODE_FEATURE = 'ghcr.io/devcontainers/features/node:1';
 
 /** Where the override config file is staged inside the copied workspace. */
 const CODE_SERVER_SETTINGS_FILE = 'code-server-settings.json';
@@ -233,13 +236,14 @@ export async function writeOverrideConfig(
   }
 
   // Install code-server. When we generated the default config (no project devcontainer.json),
-  // also install Claude Code — the base image doesn't ship it, and the credentials + attention
-  // hooks injected post-up need a `claude` binary to drive. Projects with their own config
-  // manage their own tooling, so it's only added for the default image.
+  // also install Node + Claude Code — the base image doesn't ship them, and the credentials +
+  // attention hooks injected post-up need a `claude` binary to drive (which in turn needs Node).
+  // Projects with their own config manage their own tooling, so these are only added for the
+  // default image. The devcontainer CLI resolves install order from feature metadata.
   config.features = {
     ...(config.features ?? {}),
     [CODE_SERVER_FEATURE]: { host: '0.0.0.0', port: CODE_SERVER_PORT, auth: 'none' },
-    ...(hadConfig ? {} : { [CLAUDE_CODE_FEATURE]: {} }),
+    ...(hadConfig ? {} : { [NODE_FEATURE]: {}, [CLAUDE_CODE_FEATURE]: {} }),
   };
 
   // Publish code-server plus each forwarded port on its unique host port, bound to

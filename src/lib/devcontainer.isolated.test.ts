@@ -124,10 +124,12 @@ describe('writeOverrideConfig terminal task + settings', () => {
     expect(readDevcontainer().image).toBe('ships/own:1');
   });
 
-  test('installs the Claude Code feature for the default config', async () => {
+  test('installs the Node + Claude Code features for the default config', async () => {
     await writeOverrideConfig(dir, 8001);
     const features = readDevcontainer().features;
     expect(features['ghcr.io/anthropics/devcontainer-features/claude-code:1.0']).toBeDefined();
+    // Claude Code needs Node, which the bare base image doesn't ship.
+    expect(features['ghcr.io/devcontainers/features/node:1']).toBeDefined();
   });
 
   test('does not add the Claude Code feature when the folder ships a config', async () => {
@@ -139,6 +141,8 @@ describe('writeOverrideConfig terminal task + settings', () => {
     await writeOverrideConfig(dir, 8001);
     const features = readDevcontainer().features;
     expect(features['ghcr.io/anthropics/devcontainer-features/claude-code:1.0']).toBeUndefined();
+    // Node rides the same default-only branch, so it isn't added either.
+    expect(features['ghcr.io/devcontainers/features/node:1']).toBeUndefined();
     // code-server is still injected for project-supplied configs.
     expect(features['ghcr.io/coder/devcontainer-features/code-server:1']).toBeDefined();
   });
