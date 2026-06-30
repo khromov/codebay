@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ideUrl, type Instance, type InstanceHealth } from '../types.ts';
-  import { ArrowLeft, ArrowUpRight } from '@lucide/svelte';
+  import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+  import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
   import HealthBox from './HealthBox.svelte';
   import StatusBadge from './StatusBadge.svelte';
   import { liveSocket } from '../live.ts';

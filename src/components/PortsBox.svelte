@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Cable } from '@lucide/svelte';
+  import Cable from '@lucide/svelte/icons/cable';
   import type { PortForward } from '../types.ts';
 
   // Compact badge: a Cable icon + a comma-separated list of forwarded ports. Each

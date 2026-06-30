@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Plus } from '@lucide/svelte';
+  import Plus from '@lucide/svelte/icons/plus';
   import toast, { Toaster } from 'svelte-french-toast';
   import { avatars } from '../avatars/index.ts';
   import type { AuthProvider, InstanceHealth, PortForward, Preflight } from '../types.ts';

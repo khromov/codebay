@@ -4,7 +4,7 @@
   import InstanceCard from './InstanceCard.svelte';
   import TopBar from './TopBar.svelte';
   import Button from './Button.svelte';
-  import { Plus } from '@lucide/svelte';
+  import Plus from '@lucide/svelte/icons/plus';
   import { Toaster } from 'svelte-french-toast';
 
   // Instances and their load state come from the persistent AppShell (single SSE

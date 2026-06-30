@@ -1,6 +1,7 @@
 <script lang="ts">
   import { type Instance } from '../types.ts';
-  import { House, Settings } from '@lucide/svelte';
+  import House from '@lucide/svelte/icons/house';
+  import Settings from '@lucide/svelte/icons/settings';
   import Avatar from './Avatar.svelte';
 
   let {

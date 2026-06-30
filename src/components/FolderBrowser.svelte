@@ -1,7 +1,11 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { BrowseResult, FolderHistoryEntry } from '../types.ts';
-  import { X, FolderClock, ArrowUp, Folder, TriangleAlert } from '@lucide/svelte';
+  import X from '@lucide/svelte/icons/x';
+  import FolderClock from '@lucide/svelte/icons/folder-clock';
+  import ArrowUp from '@lucide/svelte/icons/arrow-up';
+  import Folder from '@lucide/svelte/icons/folder';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
   let { onpick, onclose }: { onpick: (path: string) => void; onclose: () => void } = $props();
 

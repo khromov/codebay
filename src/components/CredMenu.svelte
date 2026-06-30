@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { Link, TriangleAlert, X } from '@lucide/svelte';
+  import Link from '@lucide/svelte/icons/link';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import X from '@lucide/svelte/icons/x';
   import toast from 'svelte-french-toast';
   import type { AuthProvider } from '../types.ts';
 

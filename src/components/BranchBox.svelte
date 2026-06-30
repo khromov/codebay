@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { GitBranch } from '@lucide/svelte';
+  import GitBranch from '@lucide/svelte/icons/git-branch';
 
   // Compact badge: a GitBranch icon + the branch currently checked out in the container.
   let { branch }: { branch: string } = $props();

@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { Container, House, Power, RotateCcw, Volume2 } from '@lucide/svelte';
+  import Container from '@lucide/svelte/icons/container';
+  import House from '@lucide/svelte/icons/house';
+  import Power from '@lucide/svelte/icons/power';
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+  import Volume2 from '@lucide/svelte/icons/volume-2';
   import { soundEnabled, setSoundEnabled } from '../settings.ts';
   import { playChime, unlockAudio } from '../sound.ts';
   import Button from './Button.svelte';

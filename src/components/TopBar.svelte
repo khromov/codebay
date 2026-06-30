@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Plus, Component } from '@lucide/svelte';
+  import Plus from '@lucide/svelte/icons/plus';
+  import Component from '@lucide/svelte/icons/component';
   import { isDev } from 'mochi-framework';
   import type { AuthProvider } from '../types.ts';
   import Brand from './Brand.svelte';

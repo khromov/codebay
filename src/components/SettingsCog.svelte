@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Settings } from '@lucide/svelte';
+  import Settings from '@lucide/svelte/icons/settings';
 </script>
 
 <a class="cog" href="/settings" aria-label="Settings" title="Settings"><Settings size={16} /></a>

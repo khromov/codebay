@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Package } from '@lucide/svelte';
+  import Package from '@lucide/svelte/icons/package';
 </script>
 
 <a class="brand" href="/"><span class="logo"><Package size={22} /></span><span>Devcontainers Manager</span></a>
