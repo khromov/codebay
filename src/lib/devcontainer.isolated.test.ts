@@ -123,4 +123,23 @@ describe('writeOverrideConfig terminal task + settings', () => {
     expect(imageSource).toBe('local');
     expect(readDevcontainer().image).toBe('ships/own:1');
   });
+
+  test('installs the Claude Code feature for the default config', async () => {
+    await writeOverrideConfig(dir, 8001);
+    const features = readDevcontainer().features;
+    expect(features['ghcr.io/anthropics/devcontainer-features/claude-code:1.0']).toBeDefined();
+  });
+
+  test('does not add the Claude Code feature when the folder ships a config', async () => {
+    mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+    writeFileSync(
+      join(dir, '.devcontainer', 'devcontainer.json'),
+      JSON.stringify({ image: 'ships/own:1' }),
+    );
+    await writeOverrideConfig(dir, 8001);
+    const features = readDevcontainer().features;
+    expect(features['ghcr.io/anthropics/devcontainer-features/claude-code:1.0']).toBeUndefined();
+    // code-server is still injected for project-supplied configs.
+    expect(features['ghcr.io/coder/devcontainer-features/code-server:1']).toBeDefined();
+  });
 });

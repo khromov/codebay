@@ -153,9 +153,12 @@
         <div class="muted err">{errorMsg}</div>
       {:else if result}
         {#if result.parent && !query}
-          <button class="row up" onclick={() => load(result?.parent ?? null)}>
-            <span class="icon"><ArrowUp size={16} /></span> ..
-          </button>
+          <div class="row">
+            <button class="nav" onclick={() => load(result?.parent ?? null)}>
+              <span class="icon"><ArrowUp size={16} /></span>
+              <span class="ename">..</span>
+            </button>
+          </div>
         {/if}
         {#if filtered.length === 0}
           <div class="muted">{query ? 'No folders match.' : 'No subfolders here.'}</div>
@@ -386,8 +389,7 @@
   .row.first-match {
     border-color: var(--rule-soft);
   }
-  .row .nav,
-  .row.up {
+  .row .nav {
     flex: 1;
     display: flex;
     align-items: center;
@@ -401,13 +403,11 @@
     border-radius: 8px;
     color: var(--ink);
   }
-  .row .nav:hover,
-  .row.up:hover {
+  .row .nav:hover {
     background: var(--ink);
     color: var(--bg);
   }
-  .row .nav:hover .icon,
-  .row.up:hover .icon {
+  .row .nav:hover .icon {
     color: var(--bg);
   }
   .ename {

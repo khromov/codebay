@@ -22,11 +22,6 @@
     oncommitrename: () => void;
     oncancelrename: () => void;
   } = $props();
-
-  // Debug: trace the live attention signal driving the card pulse.
-  $effect(() => {
-    console.log('[InstanceCard] attention', instance.name, instance.id, '=>', instance.attention);
-  });
 </script>
 
 <li class="card">
