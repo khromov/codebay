@@ -27,8 +27,12 @@ export const PORT_MAX = 8999;
 /** Port code-server listens on *inside* every container. */
 export const CODE_SERVER_PORT = 8080;
 
-/** Image used when a selected folder has no .devcontainer/devcontainer.json. */
-export const DEFAULT_IMAGE = 'mcr.microsoft.com/devcontainers/universal:2';
+/**
+ * Image used when a selected folder has no .devcontainer/devcontainer.json.
+ * `base:ubuntu` is multi-arch (amd64 + arm64), so it pulls on Apple Silicon too — unlike the
+ * `universal` images, which are amd64-only. Override per-install via the Settings tab.
+ */
+export const DEFAULT_IMAGE = 'mcr.microsoft.com/devcontainers/base:ubuntu';
 
 /**
  * HTTP Basic Auth gate for the whole app (UI, APIs, and the code-server proxy).

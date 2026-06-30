@@ -1,14 +1,66 @@
 <script lang="ts">
-  import { House, Power, Volume2 } from '@lucide/svelte';
+  import { Container, House, Power, RotateCcw, Volume2 } from '@lucide/svelte';
   import { soundEnabled, setSoundEnabled } from '../settings.ts';
   import { playChime, unlockAudio } from '../sound.ts';
   import Button from './Button.svelte';
+
+  let {
+    defaultImage,
+    builtinImage,
+    dockerArch,
+  }: { defaultImage: string; builtinImage: string; dockerArch: string | null } = $props();
 
   // Initialize from localStorage on the client; defaults to on during SSR.
   // svelte-ignore state_referenced_locally
   let sound = $state(soundEnabled());
 
   let shuttingDown = $state(false);
+
+  // svelte-ignore state_referenced_locally
+  let image = $state(defaultImage);
+  let savingImage = $state(false);
+  let imageError = $state<string | null>(null);
+  let imageSaved = $state(false);
+
+  async function persistImage(value: string) {
+    if (!value) {
+      imageError = 'Enter an image reference';
+      return;
+    }
+    imageError = null;
+    imageSaved = false;
+    savingImage = true;
+    try {
+      const res = await fetch('/api/settings/default-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: value }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as
+          | { error?: { message: string } }
+          | null;
+        throw new Error(data?.error?.message ?? 'Request failed');
+      }
+      image = value;
+      imageSaved = true;
+    } catch (err) {
+      imageError = (err as Error).message;
+    } finally {
+      savingImage = false;
+    }
+  }
+
+  function saveImage(e: Event) {
+    e.preventDefault();
+    void persistImage(image.trim());
+  }
+
+  // Restore the built-in default image and persist it.
+  function resetImage() {
+    image = builtinImage;
+    void persistImage(builtinImage);
+  }
 
   function toggleSound(on: boolean) {
     sound = on;
@@ -41,6 +93,60 @@
   </header>
 
   <main class="content">
+    <section class="card">
+      <form class="row image-row" onsubmit={saveImage}>
+        <div class="label">
+          <Container size={18} />
+          <div class="text">
+            <div class="name">
+              Default container image
+              {#if dockerArch}
+                <span class="arch" title="Docker daemon architecture">{dockerArch}</span>
+              {/if}
+            </div>
+            <div class="desc">
+              Used only when a project folder ships no devcontainer.json. Takes effect for
+              instances created from now on.
+            </div>
+          </div>
+        </div>
+        <div class="image-controls">
+          <input
+            type="text"
+            class="image-input"
+            bind:value={image}
+            spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
+            placeholder="mcr.microsoft.com/devcontainers/base:ubuntu"
+          />
+          <Button type="submit" disabled={savingImage}>Save</Button>
+          <Button
+            type="button"
+            icon={RotateCcw}
+            disabled={savingImage}
+            onclick={resetImage}
+            title="Reset to default ({builtinImage})"
+            aria-label="Reset to default image"
+          />
+        </div>
+        <div class="desc tip">
+          {#if dockerArch}
+            Your Docker daemon runs on <strong>{dockerArch}</strong> — pick an image that publishes
+            an <strong>{dockerArch}</strong> manifest, or the pull will fail.
+          {:else}
+            Pick an image whose manifest covers your Docker daemon's architecture, or the pull will
+            fail.
+          {/if}
+        </div>
+        {#if imageError}
+          <div class="msg error">{imageError}</div>
+        {:else if imageSaved}
+          <div class="msg ok">Saved.</div>
+        {/if}
+      </form>
+    </section>
+
     <section class="card">
       <div class="row">
         <div class="label">
@@ -125,6 +231,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    gap: 16px;
     padding: 32px 20px;
   }
   .card {
@@ -135,7 +242,6 @@
     height: max-content;
   }
   .danger-card {
-    margin-top: 16px;
     border-color: var(--danger);
   }
   /* Keep the action button on one line; in the flex row it would otherwise shrink and wrap. */
@@ -175,12 +281,73 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
   }
+  .arch {
+    margin-left: 8px;
+    padding: 2px 6px;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--ink-soft);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    vertical-align: middle;
+  }
+  .tip {
+    width: 100%;
+    margin-top: 4px;
+    padding: 8px 10px;
+    color: var(--ink-soft);
+    background: rgba(56, 139, 253, 0.1);
+    border: 1px solid rgba(56, 139, 253, 0.35);
+    border-radius: 4px;
+  }
   .desc {
     margin-top: 4px;
     font-family: var(--font-mono);
     font-size: 12px;
     color: var(--ink-faint);
     line-height: 1.4;
+  }
+  /* Default-image editor: input + Save, stacked under the label on narrow widths. */
+  .image-row {
+    flex-wrap: wrap;
+  }
+  .image-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 220px;
+    justify-content: flex-end;
+  }
+  .image-input {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 10px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--rule);
+  }
+  .image-input:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 1px;
+  }
+  .image-controls :global(.btn) {
+    flex: none;
+  }
+  .msg {
+    width: 100%;
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .msg.error {
+    color: var(--danger);
+  }
+  .msg.ok {
+    color: var(--ink-soft);
   }
   /* Switch */
   .switch {

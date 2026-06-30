@@ -108,13 +108,6 @@
       actionError = (err as Error).message;
     }
   }
-
-  const statusLabel: Record<Instance['status'], string> = {
-    creating: 'Booting…',
-    running: 'Running',
-    stopped: 'Stopped',
-    error: 'Error',
-  };
 </script>
 
 <TopBar
@@ -154,7 +147,6 @@
       {#each instances as instance (instance.id)}
         <InstanceCard
           {instance}
-          {statusLabel}
           editing={editingId === instance.id}
           bind:editingName
           onact={(action) => act(instance.id, action)}

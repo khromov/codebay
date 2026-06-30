@@ -98,7 +98,17 @@
     background: var(--bg);
     color: var(--ink);
   }
-  /* Auth states: ok = solid ink, warn = tasteful yellow, error = outline-only. */
+  /* Auth states: ok = muted green, warn = tasteful yellow, error = outline-only. */
+  .cred.ok {
+    background: var(--ok-bg);
+    border-color: var(--ok-line);
+    color: var(--ok-ink);
+  }
+  .cred.ok:hover {
+    background: var(--ok-ink);
+    border-color: var(--ok-ink);
+    color: var(--ok-bg);
+  }
   .cred.warn {
     background: var(--warn-bg);
     border-color: var(--warn-line);

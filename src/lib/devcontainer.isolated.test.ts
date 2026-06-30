@@ -98,4 +98,24 @@ describe('writeOverrideConfig terminal task + settings', () => {
     const labels = readTasks().tasks.map((t: { label: string }) => t.label);
     expect(labels).toEqual(['Terminal']);
   });
+
+  const readDevcontainer = () =>
+    JSON.parse(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8'));
+
+  test('injects the provided default image and reports it when the folder has no config', async () => {
+    const { imageSource } = await writeOverrideConfig(dir, 8001, [], 'my/custom:42');
+    expect(imageSource).toBe('my/custom:42');
+    expect(readDevcontainer().image).toBe('my/custom:42');
+  });
+
+  test('reports "local" and keeps the existing image when the folder ships a config', async () => {
+    mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+    writeFileSync(
+      join(dir, '.devcontainer', 'devcontainer.json'),
+      JSON.stringify({ image: 'ships/own:1' }),
+    );
+    const { imageSource } = await writeOverrideConfig(dir, 8001, [], 'my/custom:42');
+    expect(imageSource).toBe('local');
+    expect(readDevcontainer().image).toBe('ships/own:1');
+  });
 });

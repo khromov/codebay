@@ -15,7 +15,9 @@
   import HealthBox from './HealthBox.svelte';
   import BranchBox from './BranchBox.svelte';
   import PortsBox from './PortsBox.svelte';
+  import StatusBadge from './StatusBadge.svelte';
   import ComponentDemo from './ui-showcase/ComponentDemo.svelte';
+  import type { Instance } from '../types.ts';
 
   // --- Avatar controls ---
   let avatarScale = $state(8);
@@ -76,6 +78,10 @@
 
   // --- BranchBox controls ---
   let branchName = $state('main');
+
+  // --- StatusBadge controls ---
+  const statuses: Instance['status'][] = ['creating', 'running', 'stopped', 'error'];
+  let badgeStatus = $state<Instance['status']>('error');
 </script>
 
 <Toaster />
@@ -252,6 +258,27 @@
       {/snippet}
     </ComponentDemo>
 
+    <ComponentDemo title="StatusBadge" note="All four states, plus one picked below.">
+      <div class="badge-row">
+        {#each statuses as s (s)}
+          <StatusBadge status={s} />
+        {/each}
+      </div>
+      <div class="badge-row" style="margin-top: 14px;">
+        <StatusBadge status={badgeStatus} />
+      </div>
+      {#snippet controls()}
+        <label>
+          <span>status</span>
+          <select bind:value={badgeStatus}>
+            {#each statuses as s (s)}
+              <option value={s}>{s}</option>
+            {/each}
+          </select>
+        </label>
+      {/snippet}
+    </ComponentDemo>
+
     <ComponentDemo title="Brand" note="No props — static branding.">
       <Brand />
     </ComponentDemo>
@@ -342,6 +369,12 @@
     height: 180px;
     border: 1px solid var(--rule-soft);
     overflow: hidden;
+  }
+  .badge-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
   }
   .presets {
     display: flex;

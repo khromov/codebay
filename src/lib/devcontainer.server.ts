@@ -199,11 +199,16 @@ export async function writeOverrideConfig(
   workspaceDir: string,
   hostPort: number,
   forwards: PortForward[] = [],
-): Promise<void> {
+  defaultImage: string = DEFAULT_IMAGE,
+): Promise<{ imageSource: string }> {
   const target = configPath(workspaceDir);
   let config: DevcontainerConfig = {};
 
-  if (existsSync(target)) {
+  // 'local' when the folder shipped its own devcontainer.json; otherwise the image we inject.
+  const hadConfig = existsSync(target);
+  const imageSource = hadConfig ? 'local' : defaultImage;
+
+  if (hadConfig) {
     const raw = await readFile(target, 'utf8');
     try {
       config = JSON.parse(stripJsonc(raw)) as DevcontainerConfig;
@@ -213,7 +218,7 @@ export async function writeOverrideConfig(
       );
     }
   } else {
-    config.image = DEFAULT_IMAGE;
+    config.image = defaultImage;
   }
 
   // Install code-server.
@@ -255,6 +260,8 @@ export async function writeOverrideConfig(
   );
 
   await writeTerminalTask(workspaceDir);
+
+  return { imageSource };
 }
 
 /**

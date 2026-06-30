@@ -17,6 +17,17 @@ export async function dockerAvailable(): Promise<boolean> {
 }
 
 /**
+ * The Docker *daemon's* CPU architecture (e.g. `arm64`, `amd64`) — Go's `runtime.GOARCH`,
+ * which is what images are pulled for. This is the arch that matters when picking a base
+ * image, not the host CLI's, since the daemon may be a remote/VM context (Colima, etc.).
+ * Returns null when the daemon is unreachable.
+ */
+export async function dockerArch(): Promise<string | null> {
+  const res = await run(['docker', 'version', '--format', '{{.Server.Arch}}']);
+  return res.ok && res.stdout ? res.stdout : null;
+}
+
+/**
  * Whether a container exists and is currently running. Uses the Docker CLI so it
  * honors the user's active Docker context (Docker Desktop, Colima, OrbStack, remote)
  * instead of guessing a socket path.

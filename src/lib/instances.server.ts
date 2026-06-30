@@ -1,6 +1,13 @@
 import { rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { CODE_SERVER_PORT, DATA_DIR, INSTANCES_DIR, PORT_BASE, PORT_MAX } from './config.server.ts';
+import {
+  CODE_SERVER_PORT,
+  DATA_DIR,
+  DEFAULT_IMAGE,
+  INSTANCES_DIR,
+  PORT_BASE,
+  PORT_MAX,
+} from './config.server.ts';
 import {
   allForwards,
   allInstances,
@@ -9,6 +16,7 @@ import {
   deleteForwards,
   deleteInstanceRow,
   getInstance,
+  getOption,
   insertForward,
   insertInstance,
   listForwards,
@@ -262,7 +270,14 @@ async function provision(row: InstanceRow): Promise<void> {
       host_port: f.host_port,
     }));
     appendLog(row.id, `Injecting code-server (host port ${row.host_port})\n`);
-    await writeOverrideConfig(row.workspace_path, row.host_port, forwards);
+    const defaultImage = getOption('default_image') ?? DEFAULT_IMAGE;
+    const { imageSource } = await writeOverrideConfig(
+      row.workspace_path,
+      row.host_port,
+      forwards,
+      defaultImage,
+    );
+    updateInstance(row.id, { image_source: imageSource });
 
     appendLog(row.id, `Starting devcontainer…\n`);
     const result = await devcontainerUp(row.workspace_path, (chunk) => appendLog(row.id, chunk));
@@ -368,6 +383,7 @@ export async function createInstance(sourcePath: string, name?: string): Promise
     created_at: Date.now(),
     bridge_token: crypto.randomUUID().replace(/-/g, ''),
     remote_user: null,
+    image_source: null,
   };
   insertInstance(row);
   // Strip the de-dup `#2` suffix so the recent-folders list keeps the base name.

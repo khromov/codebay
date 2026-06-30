@@ -18,6 +18,11 @@ export interface Instance {
   status: 'creating' | 'running' | 'stopped' | 'error';
   error: string | null;
   created_at: number;
+  /**
+   * Image this instance was created with: `'local'` when the source folder shipped its own
+   * devcontainer.json, otherwise the default image reference that was injected. Null until provisioned.
+   */
+  image_source: string | null;
   /** Branch checked out in the container, polled per reconcile; null if unknown. */
   git_branch: string | null;
   /** Live signal raised by the in-container Claude hook: task done, waiting on input, or none. */

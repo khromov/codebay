@@ -1,5 +1,5 @@
 import { Mochi, apiError, error, json, type MochiRouteValue } from 'mochi-framework';
-import { dockerAvailable } from './lib/docker.server.ts';
+import { dockerArch, dockerAvailable } from './lib/docker.server.ts';
 import { devcontainerCliAvailable } from './lib/devcontainer.server.ts';
 import { claudeAuthStatus } from './lib/claude.server.ts';
 import { ghAuthStatus } from './lib/gh.server.ts';
@@ -20,7 +20,14 @@ import {
   streamOpen,
   subscribeLogs,
 } from './lib/instances.server.ts';
-import { deleteFolderHistory, getInstance, listFolderHistory } from './lib/db.server.ts';
+import {
+  deleteFolderHistory,
+  getInstance,
+  getOption,
+  listFolderHistory,
+  setOption,
+} from './lib/db.server.ts';
+import { DEFAULT_IMAGE } from './lib/config.server.ts';
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
 
@@ -86,7 +93,23 @@ export const routes: Record<string, MochiRouteValue> = {
     },
   }),
 
-  '/settings': Mochi.page('./src/pages/Settings.svelte'),
+  '/settings': Mochi.page('./src/pages/Settings.svelte', {
+    serverProps: async () => ({
+      defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
+      builtinImage: DEFAULT_IMAGE,
+      dockerArch: await dockerArch(),
+    }),
+  }),
+
+  // Persist the default container image used when a source folder ships no devcontainer.json.
+  '/api/settings/default-image': Mochi.api(async ({ method, request }) => {
+    if (method !== 'POST') return apiError(405, 'Method Not Allowed');
+    const body = (await request.json().catch(() => null)) as { image?: string } | null;
+    const image = body?.image?.trim();
+    if (!image) return apiError(400, 'image is required');
+    setOption('default_image', image);
+    return json({ ok: true });
+  }),
 
   // Filesystem browser for picking a project folder.
   '/api/browse': Mochi.api(async ({ url }) => {

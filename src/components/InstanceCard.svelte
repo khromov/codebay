@@ -3,12 +3,12 @@
   import Avatar from './Avatar.svelte';
   import BranchBox from './BranchBox.svelte';
   import PortsBox from './PortsBox.svelte';
+  import StatusBadge from './StatusBadge.svelte';
 
   let {
     instance,
     editing,
     editingName = $bindable(),
-    statusLabel,
     onact,
     onstartrename,
     oncommitrename,
@@ -17,7 +17,6 @@
     instance: Instance;
     editing: boolean;
     editingName: string;
-    statusLabel: Record<Instance['status'], string>;
     onact: (action: 'start' | 'stop' | 'delete') => void;
     onstartrename: () => void;
     oncommitrename: () => void;
@@ -47,7 +46,7 @@
         onclick={onstartrename}
       >{instance.name}</button>
     {/if}
-    <span class="status {instance.status}">{statusLabel[instance.status]}</span>
+    <StatusBadge status={instance.status} />
   </div>
   <div class="path" title={instance.source_path}>{instance.source_path}</div>
   {#if instance.status === 'running'}
@@ -123,47 +122,6 @@
     background: var(--bg);
     color: var(--ink);
     outline: none;
-  }
-  /* Monochrome theme: status reads via fill/pattern/animation, not hue. */
-  .status {
-    font-family: var(--font-mono);
-    font-weight: 600;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    padding: 3px 7px;
-    border: 1px solid var(--ink);
-    white-space: nowrap;
-  }
-  .status.running {
-    background: var(--ink);
-    color: var(--bg);
-  }
-  .status.stopped {
-    background: transparent;
-    color: var(--ink-soft);
-    border-color: var(--ink-faint);
-  }
-  .status.creating {
-    background: var(--ink);
-    color: var(--bg);
-    animation: lcd-blink 1.1s steps(1) infinite;
-  }
-  .status.error {
-    background: repeating-linear-gradient(
-      45deg,
-      var(--ink) 0 3px,
-      transparent 3px 6px
-    );
-    color: var(--ink);
-    border-width: 2px;
-    font-weight: 700;
-  }
-  @keyframes lcd-blink {
-    50% {
-      background: transparent;
-      color: var(--ink);
-    }
   }
   .path {
     margin-top: 10px;

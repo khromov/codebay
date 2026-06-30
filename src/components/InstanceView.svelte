@@ -2,6 +2,7 @@
   import { ideUrl, type Instance, type InstanceHealth } from '../types.ts';
   import { ArrowLeft, ArrowUpRight } from '@lucide/svelte';
   import HealthBox from './HealthBox.svelte';
+  import StatusBadge from './StatusBadge.svelte';
   import { liveSocket } from '../live.ts';
   import type { StreamEvent } from '../lib/instances.server.ts';
 
@@ -18,13 +19,6 @@
     logs; // re-run whenever new log output is appended
     node.scrollTop = node.scrollHeight;
   }
-
-  const statusLabel: Record<Instance['status'], string> = {
-    creating: 'Booting…',
-    running: 'Running',
-    stopped: 'Stopped',
-    error: 'Error',
-  };
 
   // Stream the boot/build log over its dedicated WebSocket. Reset on (re)connect
   // so the server's buffer replay doesn't duplicate output after a reconnect.
@@ -117,7 +111,7 @@
   <div class="title">
     <span class="name">{instance?.name ?? 'Instance'}</span>
     {#if instance}
-      <span class="status {instance.status}">{statusLabel[instance.status]}</span>
+      <StatusBadge status={instance.status} />
     {:else}
       <span class="skel skel-pill"></span>
     {/if}
@@ -131,6 +125,19 @@
   <div class="meta">
     <span class="k">Source</span>
     {#if instance}<code>{instance.source_path}</code>{:else}<span class="skel skel-wide"></span>{/if}
+
+    <span class="k">Image</span>
+    {#if instance}
+      {#if instance.image_source === 'local'}
+        <code>local (project devcontainer.json)</code>
+      {:else if instance.image_source}
+        <code>{instance.image_source}</code>
+      {:else}
+        <code class="muted">—</code>
+      {/if}
+    {:else}
+      <span class="skel skel-wide"></span>
+    {/if}
   </div>
 
   <div class="healthslot">
@@ -228,42 +235,6 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
-  /* Monochrome theme: status reads via fill/pattern/animation, not hue. */
-  .status {
-    font-family: var(--font-mono);
-    font-weight: 600;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    padding: 3px 7px;
-    border: 1px solid var(--ink);
-  }
-  .status.running {
-    background: var(--ink);
-    color: var(--bg);
-  }
-  .status.stopped {
-    background: transparent;
-    color: var(--ink-soft);
-    border-color: var(--ink-faint);
-  }
-  .status.creating {
-    background: var(--ink);
-    color: var(--bg);
-    animation: lcd-blink 1.1s steps(1) infinite;
-  }
-  .status.error {
-    background: repeating-linear-gradient(45deg, var(--ink) 0 3px, transparent 3px 6px);
-    color: var(--ink);
-    border-width: 2px;
-    font-weight: 700;
-  }
-  @keyframes lcd-blink {
-    50% {
-      background: transparent;
-      color: var(--ink);
-    }
-  }
   .open {
     display: inline-flex;
     align-items: center;
@@ -306,6 +277,9 @@
     font-family: var(--font-mono);
     font-size: 13px;
     color: var(--ink-soft);
+  }
+  .meta code.muted {
+    color: var(--ink-faint);
   }
   .skel {
     display: inline-block;

@@ -33,6 +33,12 @@ export interface InstanceRow {
   bridge_token: string;
   /** Container user the workspace runs as; needed to exec health checks in its home dir. */
   remote_user: string | null;
+  /**
+   * Which image this instance was created with: the literal `'local'` when the source
+   * folder shipped its own devcontainer.json, or the default image reference that was
+   * injected when it had none. Null on rows created before this was recorded.
+   */
+  image_source: string | null;
 }
 
 /** One published container→host port mapping for an instance (besides code-server). */
@@ -65,8 +71,8 @@ export function closeDb(): void {
 export function insertInstance(row: InstanceRow): void {
   db.query(
     `INSERT INTO instances
-       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user)
-     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user)`,
+       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source)
+     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source)`,
   ).run({
     $id: row.id,
     $name: row.name,
@@ -80,6 +86,7 @@ export function insertInstance(row: InstanceRow): void {
     $created_at: row.created_at,
     $bridge_token: row.bridge_token,
     $remote_user: row.remote_user,
+    $image_source: row.image_source,
   });
 }
 
@@ -143,6 +150,7 @@ export function updateInstance(
       | 'status'
       | 'error'
       | 'remote_user'
+      | 'image_source'
     >
   >,
 ): void {
@@ -171,6 +179,10 @@ export function updateInstance(
   if ('remote_user' in patch) {
     sets.push('remote_user = $remote_user');
     params.$remote_user = patch.remote_user ?? null;
+  }
+  if ('image_source' in patch) {
+    sets.push('image_source = $image_source');
+    params.$image_source = patch.image_source ?? null;
   }
   if (sets.length === 0) return;
   db.query(`UPDATE instances SET ${sets.join(', ')} WHERE id = $id`).run(params);
@@ -201,4 +213,21 @@ export function deleteFolderHistory(source_path: string): void {
   db.query('DELETE FROM folder_history WHERE source_path = $source_path').run({
     $source_path: source_path,
   });
+}
+
+/** Read a key/value app option, or null when unset. */
+export function getOption(key: string): string | null {
+  const row = db.query('SELECT value FROM options WHERE key = $key').get({ $key: key }) as
+    | { value: string }
+    | null;
+  return row?.value ?? null;
+}
+
+/** Set (or overwrite) a key/value app option. */
+export function setOption(key: string, value: string): void {
+  db.query(
+    `INSERT INTO options (key, value)
+     VALUES ($key, $value)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run({ $key: key, $value: value });
 }
