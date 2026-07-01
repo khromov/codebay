@@ -37,11 +37,17 @@ const CODE_SERVER_SETTINGS = {
   'security.workspace.trust.banner': 'never',
 };
 
-/** Auto-opens an interactive terminal when the workspace folder opens in code-server. */
+/**
+ * Auto-launches Claude Code when the workspace folder opens in code-server, then
+ * drops to an interactive login shell once Claude exits so the terminal stays usable.
+ * `--dangerously-skip-permissions` matches the in-container alias (instances are
+ * throwaway single-tenant sandboxes); invoked directly here since the alias only
+ * loads in interactive shells and this task's command runs non-interactively.
+ */
 const TERMINAL_TASK = {
   label: 'Terminal',
   type: 'shell',
-  command: 'exec ${env:SHELL} -l',
+  command: 'claude --dangerously-skip-permissions; exec ${env:SHELL} -l',
   presentation: { reveal: 'always', panel: 'shared', focus: true },
   runOptions: { runOn: 'folderOpen' },
   problemMatcher: [],

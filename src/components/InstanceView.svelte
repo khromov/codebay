@@ -135,7 +135,16 @@
   </div>
 
   <div class="healthslot">
-    <HealthBox {health} {lastFetchedAt} {injectionChecks} active={instance?.status === 'running'} />
+    <!-- Treat "instance not yet loaded from the stream" as active so the health
+         panel shows the full skeleton (all expected rows) while loading, rather
+         than the inactive 2-row fallback. Only a loaded, non-running instance is
+         genuinely inactive. -->
+    <HealthBox
+      {health}
+      {lastFetchedAt}
+      {injectionChecks}
+      active={!instance || instance.status === 'running'}
+    />
   </div>
 
   <section class="ports panel">
