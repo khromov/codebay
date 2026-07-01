@@ -3,22 +3,22 @@ import { getDocker } from './docker-client.server.ts';
 
 /** A running container to exec into, as its remote user (defaults to `root`). */
 export interface ExecTarget {
-  containerId: string;
-  remoteUser?: string | null;
+	containerId: string;
+	remoteUser?: string | null;
 }
 
 /** A node:stream sink that accumulates everything written into a string. */
 function collector(): { stream: Writable; text: () => string } {
-  const chunks: Buffer[] = [];
-  return {
-    stream: new Writable({
-      write(chunk, _enc, cb) {
-        chunks.push(Buffer.from(chunk));
-        cb();
-      },
-    }),
-    text: () => Buffer.concat(chunks).toString('utf8'),
-  };
+	const chunks: Buffer[] = [];
+	return {
+		stream: new Writable({
+			write(chunk, _enc, cb) {
+				chunks.push(Buffer.from(chunk));
+				cb();
+			}
+		}),
+		text: () => Buffer.concat(chunks).toString('utf8')
+	};
 }
 
 /** Env var the exec carries the stdin secret in (see `wrapWithStdin`). */
@@ -39,7 +39,7 @@ const STDIN_VAR = 'DCM_STDIN';
  * inherit the secret either. Scripts read `"$DCM_STDIN"` instead of stdin.
  */
 function wrapWithStdin(script: string): string {
-  return `${STDIN_VAR}="$${STDIN_ENV}"; unset ${STDIN_ENV}\n${script}`;
+	return `${STDIN_VAR}="$${STDIN_ENV}"; unset ${STDIN_ENV}\n${script}`;
 }
 
 /**
@@ -54,38 +54,43 @@ function wrapWithStdin(script: string): string {
  * stderr is always captured for error reporting.
  */
 export async function execInContainer(
-  target: ExecTarget,
-  opts: { script: string; stdin?: string; args?: string[]; capture?: boolean },
+	target: ExecTarget,
+	opts: { script: string; stdin?: string; args?: string[]; capture?: boolean }
 ): Promise<{ ok: boolean; stdout: string; error?: string }> {
-  const user = target.remoteUser?.trim() || 'root';
-  const hasStdin = opts.stdin !== undefined;
-  try {
-    const exec = await (await getDocker()).getContainer(target.containerId).exec({
-      Cmd: ['bash', '-lc', hasStdin ? wrapWithStdin(opts.script) : opts.script, ...(opts.args ?? [])],
-      User: user,
-      Env: hasStdin ? [`${STDIN_ENV}=${opts.stdin}`] : undefined,
-      AttachStdout: true,
-      AttachStderr: true,
-      Tty: false, // keep stdout/stderr separate (multiplexed) → demux below
-    });
-    const stream = await exec.start({});
+	const user = target.remoteUser?.trim() || 'root';
+	const hasStdin = opts.stdin !== undefined;
+	try {
+		const exec = await (await getDocker()).getContainer(target.containerId).exec({
+			Cmd: [
+				'bash',
+				'-lc',
+				hasStdin ? wrapWithStdin(opts.script) : opts.script,
+				...(opts.args ?? [])
+			],
+			User: user,
+			Env: hasStdin ? [`${STDIN_ENV}=${opts.stdin}`] : undefined,
+			AttachStdout: true,
+			AttachStderr: true,
+			Tty: false // keep stdout/stderr separate (multiplexed) → demux below
+		});
+		const stream = await exec.start({});
 
-    const out = collector();
-    const err = collector();
-    exec.modem.demuxStream(stream, out.stream, err.stream);
-    await new Promise<void>((resolve, reject) => {
-      stream.on('end', resolve);
-      stream.on('error', reject);
-    });
+		const out = collector();
+		const err = collector();
+		exec.modem.demuxStream(stream, out.stream, err.stream);
+		await new Promise<void>((resolve, reject) => {
+			stream.on('end', resolve);
+			stream.on('error', reject);
+		});
 
-    const code = (await exec.inspect()).ExitCode ?? 1;
-    const stdout = opts.capture ? out.text().trim() : '';
-    return code === 0
-      ? { ok: true, stdout }
-      : { ok: false, stdout, error: err.text().trim() || `exit ${code}` };
-  } catch (e) {
-    return { ok: false, stdout: '', error: (e as Error).message };
-  }
+		const code = (await exec.inspect()).ExitCode ?? 1;
+		const stdout = opts.capture ? out.text().trim() : '';
+		return code === 0
+			? { ok: true, stdout }
+			: { ok: false, stdout, error: err.text().trim() || `exit ${code}` };
+	} catch (e) {
+		return { ok: false, stdout: '', error: (e as Error).message };
+	}
 }
 
 /**
@@ -96,12 +101,12 @@ export async function execInContainer(
  * are forwarded the same way as `execInContainer` (available as `$0`, `$1`, …).
  */
 export async function checkPresence(
-  target: ExecTarget,
-  script: string,
-  args?: string[],
+	target: ExecTarget,
+	script: string,
+	args?: string[]
 ): Promise<boolean> {
-  const res = await execInContainer(target, { script, args, capture: true });
-  return res.ok && res.stdout === '1';
+	const res = await execInContainer(target, { script, args, capture: true });
+	return res.ok && res.stdout === '1';
 }
 
 /**
@@ -114,6 +119,6 @@ export async function checkPresence(
  * their own write line instead, since there's nothing generic left to share.
  */
 export function writeSecretFileScript(dirExpr: string, filename: string, mode = '600'): string {
-  const path = `${dirExpr}/${filename}`;
-  return `mkdir -p "${dirExpr}"; printf '%s' "$DCM_STDIN" > "${path}"; chmod ${mode} "${path}";`;
+	const path = `${dirExpr}/${filename}`;
+	return `mkdir -p "${dirExpr}"; printf '%s' "$DCM_STDIN" > "${path}"; chmod ${mode} "${path}";`;
 }

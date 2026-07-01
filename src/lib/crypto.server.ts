@@ -7,10 +7,10 @@
  * comparison time is independent of where — or whether — the inputs differ.
  */
 export function timingSafeEqualStr(a: string, b: string): boolean {
-  const ah = Bun.SHA256.hash(a, 'hex');
-  const bh = Bun.SHA256.hash(b, 'hex');
-  // Both digests are 64 hex chars; the loop runs the full length every time.
-  let diff = ah.length ^ bh.length;
-  for (let i = 0; i < ah.length; i++) diff |= ah.charCodeAt(i) ^ bh.charCodeAt(i);
-  return diff === 0;
+	const ah = Bun.SHA256.hash(a, 'hex');
+	const bh = Bun.SHA256.hash(b, 'hex');
+	// Both digests are 64 hex chars; the loop runs the full length every time.
+	let diff = ah.length ^ bh.length;
+	for (let i = 0; i < ah.length; i++) diff |= ah.charCodeAt(i) ^ bh.charCodeAt(i);
+	return diff === 0;
 }

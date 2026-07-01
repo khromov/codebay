@@ -38,28 +38,57 @@ import whale from './whale.ts';
 // Order is stable: a given id always resolves to the same index, so the artwork
 // for a container never changes between renders or restarts.
 export const avatars: AvatarArt[] = [
-  anchor, bear, bee, cat, cherry, crab, crown, diamond, dog, fish, flower, fox,
-  frog, ghost, heart, invader, key, lightning, mushroom, octopus, owl, penguin,
-  planet, rabbit, robot, rocket, skull, snail, star, target, tree, whale,
+	anchor,
+	bear,
+	bee,
+	cat,
+	cherry,
+	crab,
+	crown,
+	diamond,
+	dog,
+	fish,
+	flower,
+	fox,
+	frog,
+	ghost,
+	heart,
+	invader,
+	key,
+	lightning,
+	mushroom,
+	octopus,
+	owl,
+	penguin,
+	planet,
+	rabbit,
+	robot,
+	rocket,
+	skull,
+	snail,
+	star,
+	target,
+	tree,
+	whale
 ];
 
 // FNV-1a (32-bit) — a fast, well-distributed hash. Pure function of the input
 // string, so the mapping is identical on every invocation, in any process.
 function fnv1a(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
+	let h = 2166136261;
+	for (let i = 0; i < s.length; i++) {
+		h ^= s.charCodeAt(i);
+		h = Math.imul(h, 16777619);
+	}
+	return h >>> 0;
 }
 
 // Deterministically pick an artwork for a dev-container id. Duplicates across
 // many instances are possible but rare — the hash spreads ids evenly across the
 // whole catalog rather than clustering.
 export function pickAvatar(id: string): AvatarArt {
-  // `avatars` is non-empty and the modulo keeps the index in range.
-  return avatars[fnv1a(id) % avatars.length]!;
+	// `avatars` is non-empty and the modulo keeps the index in range.
+	return avatars[fnv1a(id) % avatars.length]!;
 }
 
 export { decode } from './types.ts';

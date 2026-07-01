@@ -13,28 +13,28 @@ const FULL = process.argv.includes('--full');
 
 /** Mask a secret to a short, paste-safe preview unless --full was passed. */
 function show(secret: string): string {
-  if (FULL) return secret;
-  if (secret.length <= 12) return '*'.repeat(secret.length);
-  return `${secret.slice(0, 6)}…${secret.slice(-4)} (${secret.length} chars)`;
+	if (FULL) return secret;
+	if (secret.length <= 12) return '*'.repeat(secret.length);
+	return `${secret.slice(0, 6)}…${secret.slice(-4)} (${secret.length} chars)`;
 }
 
 function report(label: string, token: string | null, source: string | null) {
-  console.log(`\n${label}`);
-  if (!token) {
-    console.log('  ✗ not found on host');
-    return;
-  }
-  console.log(`  ✓ source: ${source}`);
-  console.log(`  token:  ${show(token)}`);
+	console.log(`\n${label}`);
+	if (!token) {
+		console.log('  ✗ not found on host');
+		return;
+	}
+	console.log(`  ✓ source: ${source}`);
+	console.log(`  token:  ${show(token)}`);
 }
 
 const [claude, gh] = await Promise.all([locateClaudeCredentials(), readGhToken()]);
 
 // locateClaudeCredentials returns the full credentials JSON; pull out the OAuth token.
 const claudeToken = claude
-  ? ((JSON.parse(claude.creds) as { claudeAiOauth?: { accessToken?: string } }).claudeAiOauth
-      ?.accessToken ?? null)
-  : null;
+	? ((JSON.parse(claude.creds) as { claudeAiOauth?: { accessToken?: string } }).claudeAiOauth
+			?.accessToken ?? null)
+	: null;
 
 report('Claude Code', claudeToken, claude?.source ?? null);
 report('GitHub CLI', gh?.token ?? null, gh?.source ?? null);

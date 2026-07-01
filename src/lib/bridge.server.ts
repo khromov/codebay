@@ -9,20 +9,22 @@ import { triggerReconcile } from './instances.server.ts';
 export type AttentionState = 'done' | 'waiting';
 
 // Pin to globalThis so dev-mode hot reload doesn't drop pending signals.
-const globalForAttention = globalThis as unknown as { __dcmAttention?: Map<string, AttentionState> };
+const globalForAttention = globalThis as unknown as {
+	__dcmAttention?: Map<string, AttentionState>;
+};
 const attention: Map<string, AttentionState> = (globalForAttention.__dcmAttention ??= new Map());
 
 export function getAttention(id: string): AttentionState | null {
-  return attention.get(id) ?? null;
+	return attention.get(id) ?? null;
 }
 
 export function setAttention(id: string, state: AttentionState): void {
-  if (attention.get(id) === state) return;
-  attention.set(id, state);
-  triggerReconcile();
+	if (attention.get(id) === state) return;
+	attention.set(id, state);
+	triggerReconcile();
 }
 
 export function clearAttention(id: string): void {
-  if (!attention.delete(id)) return;
-  triggerReconcile();
+	if (!attention.delete(id)) return;
+	triggerReconcile();
 }

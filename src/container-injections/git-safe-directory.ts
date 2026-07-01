@@ -8,13 +8,13 @@ import type { Injection } from '../lib/injections.server.ts';
  * "dubious ownership". Uses `*` since instances are throwaway and single-tenant.
  */
 export const gitSafeDirectory: Injection = {
-  id: 'git-safe-directory',
-  label: 'git safe.directory',
+	id: 'git-safe-directory',
+	label: 'git safe.directory',
 
-  async apply(target, log) {
-    const res = await execInContainer(target, {
-      script: "git config --global --add safe.directory '*'",
-    });
-    if (!res.ok) log(`⚠ git safe.directory setup failed: ${res.error}\n`);
-  },
+	async apply(target, log) {
+		const res = await execInContainer(target, {
+			script: "git config --global --add safe.directory '*'"
+		});
+		if (!res.ok) log(`⚠ git safe.directory setup failed: ${res.error}\n`);
+	}
 };

@@ -9,10 +9,10 @@ import { isAbsolute, join, resolve } from 'node:path';
  * for development).
  */
 export const DATA_DIR = process.env.DATA_DIR
-  ? isAbsolute(process.env.DATA_DIR)
-    ? process.env.DATA_DIR
-    : resolve(process.cwd(), process.env.DATA_DIR)
-  : join(homedir(), '.devcontainers-manager');
+	? isAbsolute(process.env.DATA_DIR)
+		? process.env.DATA_DIR
+		: resolve(process.cwd(), process.env.DATA_DIR)
+	: join(homedir(), '.devcontainers-manager');
 
 /** Per-instance working copies live here: <INSTANCES_DIR>/<id>/workspace. */
 export const INSTANCES_DIR = join(DATA_DIR, 'instances');
@@ -70,10 +70,10 @@ export const DOCKER_HOST = process.env.DOCKER_HOST?.trim() || '';
  * `DOCKER_HOST` applied when configured, so every Docker operation targets the same daemon.
  */
 export function dockerEnv(): Record<string, string | undefined> {
-  return DOCKER_HOST ? { ...process.env, DOCKER_HOST } : process.env;
+	return DOCKER_HOST ? { ...process.env, DOCKER_HOST } : process.env;
 }
 
 /** Resolve the bundled @devcontainers/cli binary, preferring the local install. */
 export function devcontainerBin(): string {
-  return join(process.cwd(), 'node_modules', '.bin', 'devcontainer');
+	return join(process.cwd(), 'node_modules', '.bin', 'devcontainer');
 }

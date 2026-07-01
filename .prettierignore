@@ -1,0 +1,7 @@
+.mochi/
+.devcontainers-manager/
+vendor/
+node_modules/
+public/
+patches/
+bun.lock

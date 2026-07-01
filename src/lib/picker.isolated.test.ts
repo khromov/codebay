@@ -23,27 +23,27 @@ mkdirSync(sub, { recursive: true });
 // this dir; deleting it out from under the shared connection causes disk-I/O
 // errors in sibling tests. The OS reaps the tmp dir anyway.
 afterAll(() => {
-  rmSync(root, { recursive: true, force: true });
+	rmSync(root, { recursive: true, force: true });
 });
 
 describe('browse persists and recalls the last viewed folder', () => {
-  test('browsing a folder persists it under last_viewed_folder', async () => {
-    const result = await picker.browse(sub);
-    expect(result.path).toBe(sub);
-    expect(db.getOption('last_viewed_folder')).toBe(sub);
-  });
+	test('browsing a folder persists it under last_viewed_folder', async () => {
+		const result = await picker.browse(sub);
+		expect(result.path).toBe(sub);
+		expect(db.getOption('last_viewed_folder')).toBe(sub);
+	});
 
-  test('browse() with no path resumes at the last viewed folder', async () => {
-    await picker.browse(sub);
-    const result = await picker.browse();
-    expect(result.path).toBe(sub);
-  });
+	test('browse() with no path resumes at the last viewed folder', async () => {
+		await picker.browse(sub);
+		const result = await picker.browse();
+		expect(result.path).toBe(sub);
+	});
 
-  test('browse() falls back to home when the saved folder no longer exists', async () => {
-    db.setOption('last_viewed_folder', join(root, 'gone-missing'));
-    const result = await picker.browse();
-    expect(result.path).toBe(homedir());
-    // and the fallback target is now what gets persisted
-    expect(db.getOption('last_viewed_folder')).toBe(homedir());
-  });
+	test('browse() falls back to home when the saved folder no longer exists', async () => {
+		db.setOption('last_viewed_folder', join(root, 'gone-missing'));
+		const result = await picker.browse();
+		expect(result.path).toBe(homedir());
+		// and the fallback target is now what gets persisted
+		expect(db.getOption('last_viewed_folder')).toBe(homedir());
+	});
 });

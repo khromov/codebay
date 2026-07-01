@@ -9,31 +9,31 @@ import type { StreamEvent } from './lib/instances.server.ts';
  * current socket.
  */
 export function liveSocket(
-  path: string,
-  onMessage: (data: string) => void,
-  onOpen?: () => void,
+	path: string,
+	onMessage: (data: string) => void,
+	onOpen?: () => void
 ): () => void {
-  let ws: WebSocket | null = null;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let closed = false;
+	let ws: WebSocket | null = null;
+	let timer: ReturnType<typeof setTimeout> | null = null;
+	let closed = false;
 
-  const connect = () => {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${proto}//${location.host}${path}`);
-    ws.onopen = () => onOpen?.();
-    ws.onmessage = (e) => onMessage(e.data as string);
-    ws.onclose = () => {
-      if (!closed) timer = setTimeout(connect, 1000);
-    };
-    ws.onerror = () => ws?.close();
-  };
-  connect();
+	const connect = () => {
+		const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+		ws = new WebSocket(`${proto}//${location.host}${path}`);
+		ws.onopen = () => onOpen?.();
+		ws.onmessage = (e) => onMessage(e.data as string);
+		ws.onclose = () => {
+			if (!closed) timer = setTimeout(connect, 1000);
+		};
+		ws.onerror = () => ws?.close();
+	};
+	connect();
 
-  return () => {
-    closed = true;
-    if (timer) clearTimeout(timer);
-    ws?.close();
-  };
+	return () => {
+		closed = true;
+		if (timer) clearTimeout(timer);
+		ws?.close();
+	};
 }
 
 /**
@@ -42,13 +42,13 @@ export function liveSocket(
  * each caller no longer repeats the JSON.parse + try/catch + type guard.
  */
 export function liveStream(onEvent: (event: StreamEvent) => void): () => void {
-  return liveSocket('/api/stream', (raw) => {
-    let msg: StreamEvent;
-    try {
-      msg = JSON.parse(raw) as StreamEvent;
-    } catch {
-      return; // ignore malformed frame
-    }
-    onEvent(msg);
-  });
+	return liveSocket('/api/stream', (raw) => {
+		let msg: StreamEvent;
+		try {
+			msg = JSON.parse(raw) as StreamEvent;
+		} catch {
+			return; // ignore malformed frame
+		}
+		onEvent(msg);
+	});
 }

@@ -9,13 +9,13 @@ import { join } from 'node:path';
  * HEAD is detached, or null when there is no readable git repo.
  */
 export async function readGitBranch(workspacePath: string): Promise<string | null> {
-  try {
-    const head = (await readFile(join(workspacePath, '.git', 'HEAD'), 'utf8')).trim();
-    const ref = head.match(/^ref:\s*refs\/heads\/(.+)$/);
-    if (ref) return ref[1] ?? null;
-    // Detached HEAD: the file holds a raw commit SHA instead of a ref.
-    return head ? head.slice(0, 7) : null;
-  } catch {
-    return null;
-  }
+	try {
+		const head = (await readFile(join(workspacePath, '.git', 'HEAD'), 'utf8')).trim();
+		const ref = head.match(/^ref:\s*refs\/heads\/(.+)$/);
+		if (ref) return ref[1] ?? null;
+		// Detached HEAD: the file holds a raw commit SHA instead of a ref.
+		return head ? head.slice(0, 7) : null;
+	} catch {
+		return null;
+	}
 }

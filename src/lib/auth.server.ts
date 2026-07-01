@@ -22,34 +22,34 @@ const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const CSRF_HEADER = 'x-dcm-request';
 
 function challenge(): Response {
-  return new Response('Authentication required', {
-    status: 401,
-    headers: { 'WWW-Authenticate': `Basic realm="${REALM}", charset="UTF-8"` },
-  });
+	return new Response('Authentication required', {
+		status: 401,
+		headers: { 'WWW-Authenticate': `Basic realm="${REALM}", charset="UTF-8"` }
+	});
 }
 
 function csrfRejected(): Response {
-  return new Response('Forbidden', { status: 403 });
+	return new Response('Forbidden', { status: 403 });
 }
 
 /** Validate an `Authorization: Basic <base64>` header against the configured creds. */
 function credentialsOk(header: string | null): boolean {
-  if (!header?.startsWith('Basic ')) return false;
-  let decoded: string;
-  try {
-    decoded = atob(header.slice(6).trim());
-  } catch {
-    return false;
-  }
-  const sep = decoded.indexOf(':');
-  if (sep === -1) return false;
-  const user = decoded.slice(0, sep);
-  const pass = decoded.slice(sep + 1);
-  // Constant-time compares so a wrong username/password can't be distinguished by
-  // response timing. Both halves always run — no `&&` short-circuit on the first.
-  const userOk = timingSafeEqualStr(user, BASIC_AUTH_USERNAME);
-  const passOk = timingSafeEqualStr(pass, BASIC_AUTH_PASSWORD);
-  return userOk && passOk;
+	if (!header?.startsWith('Basic ')) return false;
+	let decoded: string;
+	try {
+		decoded = atob(header.slice(6).trim());
+	} catch {
+		return false;
+	}
+	const sep = decoded.indexOf(':');
+	if (sep === -1) return false;
+	const user = decoded.slice(0, sep);
+	const pass = decoded.slice(sep + 1);
+	// Constant-time compares so a wrong username/password can't be distinguished by
+	// response timing. Both halves always run — no `&&` short-circuit on the first.
+	const userOk = timingSafeEqualStr(user, BASIC_AUTH_USERNAME);
+	const passOk = timingSafeEqualStr(pass, BASIC_AUTH_PASSWORD);
+	return userOk && passOk;
 }
 
 /**
@@ -66,24 +66,24 @@ function credentialsOk(header: string | null): boolean {
  * running on localhost — so it stays on regardless of the auth/password state.
  */
 export const basicAuth: Handle = async ({ event, resolve }) => {
-  const path = new URL(event.request.url).pathname;
+	const path = new URL(event.request.url).pathname;
 
-  // The container→manager bridge can't carry the app password or our custom
-  // CSRF header; it authenticates with a per-instance token validated by the
-  // route itself, so it's exempt from both checks here.
-  if (path.startsWith('/api/bridge/')) return resolve(event);
+	// The container→manager bridge can't carry the app password or our custom
+	// CSRF header; it authenticates with a per-instance token validated by the
+	// route itself, so it's exempt from both checks here.
+	if (path.startsWith('/api/bridge/')) return resolve(event);
 
-  // CSRF guard — scoped to /api/ so it never touches the code-server proxy
-  // (/p/:id/*), which has its own request shapes the editor itself generates.
-  if (
-    path.startsWith('/api/') &&
-    MUTATING_METHODS.has(event.request.method) &&
-    event.request.headers.get(CSRF_HEADER) == null
-  ) {
-    return csrfRejected();
-  }
+	// CSRF guard — scoped to /api/ so it never touches the code-server proxy
+	// (/p/:id/*), which has its own request shapes the editor itself generates.
+	if (
+		path.startsWith('/api/') &&
+		MUTATING_METHODS.has(event.request.method) &&
+		event.request.headers.get(CSRF_HEADER) == null
+	) {
+		return csrfRejected();
+	}
 
-  if (!BASIC_AUTH_PASSWORD) return resolve(event);
-  if (credentialsOk(event.request.headers.get('Authorization'))) return resolve(event);
-  return challenge();
+	if (!BASIC_AUTH_PASSWORD) return resolve(event);
+	if (credentialsOk(event.request.headers.get('Authorization'))) return resolve(event);
+	return challenge();
 };

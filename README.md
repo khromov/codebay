@@ -14,9 +14,9 @@ The app copies your Claude Code credentials and installs the attention hooks int
   \`\`\`jsonc
   // .devcontainer/devcontainer.json
   {
-    "features": {
-      "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
-    }
+  "features": {
+  "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+  }
   }
   \`\`\`
 
@@ -47,11 +47,11 @@ bun install
 ## Commands
 
 \`\`\`sh
-bun run dev        # dev server (local DATA_DIR, no browser launch)
-bun run start      # run the app
-bun run build      # production build → .mochi/
-bun run typecheck  # svelte-check + tsc --noEmit
-bun test           # run tests
+bun run dev # dev server (local DATA_DIR, no browser launch)
+bun run start # run the app
+bun run build # production build → .mochi/
+bun run typecheck # svelte-check + tsc --noEmit
+bun test # run tests
 \`\`\`
 
 ## Configuration

@@ -1,44 +1,53 @@
 {
-  "name": "devcontainers-manager",
-  "private": true,
-  "type": "module",
-  "engines": {
-    "bun": ">=1.3.13"
-  },
-  "scripts": {
-    "build": "mochi-framework build",
-    "start": "bun src/index.ts",
-    "dev": "MODE=development DISABLE_OPEN_BROWSER=1 DATA_DIR=./.devcontainers-manager bun src/index.ts",
-    "typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
-    "test": "bun test",
-    "clean": "rimraf .mochi",
-    "gen:chimes": "bun scripts/gen-chimes.ts",
-    "debug:tokens": "bun scripts/debug-tokens.ts",
-    "update:mochi": "bash scripts/update-mochi.sh"
-  },
-  "dependencies": {
-    "@devcontainers/cli": "^0.87.0",
-    "@fontsource-variable/doto": "^5.2.10",
-    "@fontsource-variable/jetbrains-mono": "^5.2.8",
-    "@lucide/svelte": "^1.21.0",
-    "@zihaolam/bun-sqlite-migrations": "^1.0.3",
-    "dockerode": "^5.0.1",
-    "mochi-framework": "file:./vendor/mochi-framework",
-    "svelte": "^5.56.4",
-    "svelte-french-toast": "^1.2.0"
-  },
-  "devDependencies": {
-    "@types/bun": "1.3.14",
-    "@types/dockerode": "^4.0.1",
-    "svelte-check": "4.6.0",
-    "typescript": "^6.0.3"
-  },
-  "overrides": {
-    "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*",
-    "svelte": "5.56.4"
-  },
-  "patchedDependencies": {
-    "svelte-check@4.4.7": "patches/svelte-check@4.4.7.patch",
-    "svelte-check@4.6.0": "patches/svelte-check@4.6.0.patch"
-  }
+	"name": "devcontainers-manager",
+	"private": true,
+	"type": "module",
+	"engines": {
+		"bun": ">=1.3.13"
+	},
+	"scripts": {
+		"build": "mochi-framework build",
+		"start": "bun src/index.ts",
+		"dev": "MODE=development DISABLE_OPEN_BROWSER=1 DATA_DIR=./.devcontainers-manager bun src/index.ts",
+		"typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
+		"test": "bun test",
+		"lint": "prettier --check . && eslint .",
+		"format": "prettier --write .",
+		"clean": "rimraf .mochi",
+		"gen:chimes": "bun scripts/gen-chimes.ts",
+		"debug:tokens": "bun scripts/debug-tokens.ts",
+		"update:mochi": "bash scripts/update-mochi.sh"
+	},
+	"dependencies": {
+		"@devcontainers/cli": "^0.87.0",
+		"@fontsource-variable/doto": "^5.2.10",
+		"@fontsource-variable/jetbrains-mono": "^5.2.8",
+		"@lucide/svelte": "^1.21.0",
+		"@zihaolam/bun-sqlite-migrations": "^1.0.3",
+		"dockerode": "^5.0.1",
+		"mochi-framework": "file:./vendor/mochi-framework",
+		"svelte": "^5.56.4",
+		"svelte-french-toast": "^1.2.0"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.1",
+		"@types/bun": "1.3.14",
+		"@types/dockerode": "^4.0.1",
+		"eslint": "^10.6.0",
+		"eslint-plugin-svelte": "^3.20.0",
+		"globals": "^17.7.0",
+		"prettier": "^3.9.4",
+		"prettier-plugin-svelte": "^4.1.1",
+		"svelte-check": "4.6.0",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.62.1"
+	},
+	"overrides": {
+		"msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*",
+		"svelte": "5.56.4"
+	},
+	"patchedDependencies": {
+		"svelte-check@4.4.7": "patches/svelte-check@4.4.7.patch",
+		"svelte-check@4.6.0": "patches/svelte-check@4.6.0.patch"
+	}
 }

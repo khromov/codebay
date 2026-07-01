@@ -3,8 +3,8 @@ import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 /** Bridge URL a container reaches the manager on (Colima/Docker host-gateway). */
 function bridgeUrl(): string {
-  const port = Number(process.env.PORT) || 3333;
-  return `http://host.docker.internal:${port}/api/bridge/attention`;
+	const port = Number(process.env.PORT) || 3333;
+	return `http://host.docker.internal:${port}/api/bridge/attention`;
 }
 
 /**
@@ -14,17 +14,17 @@ function bridgeUrl(): string {
  * `state` aren't secret, so they stay in the query string.
  */
 function hookFor(id: string, token: string, state: 'done' | 'waiting' | 'busy') {
-  const url = `${bridgeUrl()}?id=${encodeURIComponent(id)}&state=${state}`;
-  return [
-    {
-      hooks: [
-        {
-          type: 'command',
-          command: `curl -fsS -m 5 -X POST -H "X-Bridge-Token: ${token}" '${url}' >/dev/null 2>&1 || true`,
-        },
-      ],
-    },
-  ];
+	const url = `${bridgeUrl()}?id=${encodeURIComponent(id)}&state=${state}`;
+	return [
+		{
+			hooks: [
+				{
+					type: 'command',
+					command: `curl -fsS -m 5 -X POST -H "X-Bridge-Token: ${token}" '${url}' >/dev/null 2>&1 || true`
+				}
+			]
+		}
+	];
 }
 
 /**
@@ -33,14 +33,14 @@ function hookFor(id: string, token: string, state: 'done' | 'waiting' | 'busy') 
  * `Notification` (needs input/permission) → amber, `UserPromptSubmit` (resumed) → clear.
  */
 export function attentionHookSettings(id: string, token: string): string {
-  const settings = {
-    hooks: {
-      Stop: hookFor(id, token, 'done'),
-      Notification: hookFor(id, token, 'waiting'),
-      UserPromptSubmit: hookFor(id, token, 'busy'),
-    },
-  };
-  return JSON.stringify(settings, null, 2);
+	const settings = {
+		hooks: {
+			Stop: hookFor(id, token, 'done'),
+			Notification: hookFor(id, token, 'waiting'),
+			UserPromptSubmit: hookFor(id, token, 'busy')
+		}
+	};
+	return JSON.stringify(settings, null, 2);
 }
 
 /**
@@ -52,18 +52,18 @@ export function attentionHookSettings(id: string, token: string): string {
  * existing file, no `jq`, or the existing file isn't valid JSON.
  */
 async function injectClaudeHooks(
-  target: ContainerTarget,
-  settingsJson: string,
+	target: ContainerTarget,
+	settingsJson: string
 ): Promise<{ ok: boolean; error?: string }> {
-  const script =
-    'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; mkdir -p "$d"; ' +
-    'f="$d/settings.json"; new="$DCM_STDIN"; ' +
-    'if command -v jq >/dev/null 2>&1 && [ -s "$f" ] && ' +
-    'merged=$(printf \'%s\' "$new" | jq -s \'.[0] * .[1]\' "$f" - 2>/dev/null); then ' +
-    'printf \'%s\' "$merged" > "$f"; else printf \'%s\' "$new" > "$f"; fi; ' +
-    'chmod 644 "$f"';
-  const res = await execInContainer(target, { script, stdin: settingsJson });
-  return res.ok ? { ok: true } : { ok: false, error: res.error };
+	const script =
+		'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; mkdir -p "$d"; ' +
+		'f="$d/settings.json"; new="$DCM_STDIN"; ' +
+		'if command -v jq >/dev/null 2>&1 && [ -s "$f" ] && ' +
+		'merged=$(printf \'%s\' "$new" | jq -s \'.[0] * .[1]\' "$f" - 2>/dev/null); then ' +
+		'printf \'%s\' "$merged" > "$f"; else printf \'%s\' "$new" > "$f"; fi; ' +
+		'chmod 644 "$f"';
+	const res = await execInContainer(target, { script, stdin: settingsJson });
+	return res.ok ? { ok: true } : { ok: false, error: res.error };
 }
 
 /**
@@ -72,27 +72,27 @@ async function injectClaudeHooks(
  * applied — it has no host dependency, only the instance id + bridge token.
  */
 export const attentionHooks: Injection = {
-  id: 'attention-hooks',
-  label: 'Claude hooks',
+	id: 'attention-hooks',
+	label: 'Claude hooks',
 
-  async apply(target, log) {
-    log('Injecting Claude attention hooks…\n');
-    const settings = attentionHookSettings(target.instance.id, target.instance.bridge_token);
-    const hooks = await injectClaudeHooks(target, settings);
-    log(
-      hooks.ok
-        ? '✓ Claude attention hooks installed\n'
-        : `⚠ Claude hook injection failed: ${hooks.error}\n`,
-    );
-  },
+	async apply(target, log) {
+		log('Injecting Claude attention hooks…\n');
+		const settings = attentionHookSettings(target.instance.id, target.instance.bridge_token);
+		const hooks = await injectClaudeHooks(target, settings);
+		log(
+			hooks.ok
+				? '✓ Claude attention hooks installed\n'
+				: `⚠ Claude hook injection failed: ${hooks.error}\n`
+		);
+	},
 
-  async check(target) {
-    // Hooks are present when settings.json exists and mentions this instance id.
-    return checkPresence(
-      target,
-      'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
-        '[ -s "$d/settings.json" ] && grep -q "$1" "$d/settings.json" && echo 1 || echo 0',
-      ['attention-check', target.instance.id],
-    );
-  },
+	async check(target) {
+		// Hooks are present when settings.json exists and mentions this instance id.
+		return checkPresence(
+			target,
+			'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
+				'[ -s "$d/settings.json" ] && grep -q "$1" "$d/settings.json" && echo 1 || echo 0',
+			['attention-check', target.instance.id]
+		);
+	}
 };

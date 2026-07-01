@@ -1,86 +1,87 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Devcontainers Manager</title>
-    <style>
-      :root {
-        --bg: #d7d8d2;
-        --bg-card: #e7e8e2;
-        --ink: #14150f;
-        --ink-soft: #45463e;
-        --ink-faint: #7d7e74;
-        --rule: #20211a;
-        --rule-soft: #b9bab2;
-        --warn-bg: #e4d98f;
-        --warn-line: #9c8729;
-        --warn-ink: #463b08;
-        --ok-bg: #8fbf6e;
-        --ok-line: #4c7a2e;
-        --ok-ink: #1c3110;
-        --danger: #b23a2e;
-        --danger-soft: #e3c6c1;
-        --screen-bg: #0d0e0a;
-        --screen-ink: #d8d9cf;
-        --screen-line: rgba(255, 255, 255, 0.04);
-        --attn-done: #22c55e;
-        --attn-waiting: #f59e0b;
-        --info: #388bfd;
-        --font-display: 'Doto Variable', 'JetBrains Mono Variable', monospace;
-        --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        --font-serif: var(--font-display);
-        --font-sans: var(--font-mono);
-      }
-      * {
-        box-sizing: border-box;
-      }
-      /* The whole theme is square — enforce it globally (covers third-party
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Devcontainers Manager</title>
+		<style>
+			:root {
+				--bg: #d7d8d2;
+				--bg-card: #e7e8e2;
+				--ink: #14150f;
+				--ink-soft: #45463e;
+				--ink-faint: #7d7e74;
+				--rule: #20211a;
+				--rule-soft: #b9bab2;
+				--warn-bg: #e4d98f;
+				--warn-line: #9c8729;
+				--warn-ink: #463b08;
+				--ok-bg: #8fbf6e;
+				--ok-line: #4c7a2e;
+				--ok-ink: #1c3110;
+				--danger: #b23a2e;
+				--danger-soft: #e3c6c1;
+				--screen-bg: #0d0e0a;
+				--screen-ink: #d8d9cf;
+				--screen-line: rgba(255, 255, 255, 0.04);
+				--attn-done: #22c55e;
+				--attn-waiting: #f59e0b;
+				--info: #388bfd;
+				--font-display: 'Doto Variable', 'JetBrains Mono Variable', monospace;
+				--font-mono:
+					'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+				--font-serif: var(--font-display);
+				--font-sans: var(--font-mono);
+			}
+			* {
+				box-sizing: border-box;
+			}
+			/* The whole theme is square — enforce it globally (covers third-party
          widgets like the toaster too). Intentional, not a workaround.
          Exclude Mochi's dev-only debug bar so it keeps its own styling. */
-      *:not(#mochi-dev-toolbar):not(#mochi-dev-toolbar *) {
-        border-radius: 0 !important;
-      }
-      /* Shared "panel" chrome — the bordered, drop-shadowed card look used
+			*:not(#mochi-dev-toolbar):not(#mochi-dev-toolbar *) {
+				border-radius: 0 !important;
+			}
+			/* Shared "panel" chrome — the bordered, drop-shadowed card look used
          throughout the app (health box, ports/log boxes, instance cards,
          dropdowns, modals, the UI showcase). A component can still override
          `box-shadow`/`border` locally (e.g. the folder-picker modal's bigger
          8px shadow) — Svelte's auto-scoping class gives any same-component
          rule higher specificity than this global one, so local overrides
          always win regardless of source order. */
-      .panel {
-        border: 1px solid var(--ink);
-        box-shadow: 4px 4px 0 var(--ink);
-      }
-      /* Shared dark header bar — the inverted label strip at the top of a panel. */
-      .panel-bar {
-        padding: 9px 14px;
-        background: var(--ink);
-        color: var(--bg);
-        font-family: var(--font-display);
-        font-weight: 700;
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
-      }
-      body {
-        margin: 0;
-        font-family: var(--font-sans);
-        /* Pale LCD panel with a faint pixel-grid matrix overlay. */
-        background:
-          repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.035) 0 1px, transparent 1px 3px),
-          repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.035) 0 1px, transparent 1px 3px),
-          var(--bg);
-        color: var(--ink);
-        font-size: 14px;
-        line-height: 1.55;
-        min-height: 100vh;
-        -webkit-font-smoothing: antialiased;
-      }
-    </style>
-    {{mochi.head}} {{mochi.css}}
-  </head>
-  <body>
-    {{mochi.body}} {{mochi.script}}
-  </body>
+			.panel {
+				border: 1px solid var(--ink);
+				box-shadow: 4px 4px 0 var(--ink);
+			}
+			/* Shared dark header bar — the inverted label strip at the top of a panel. */
+			.panel-bar {
+				padding: 9px 14px;
+				background: var(--ink);
+				color: var(--bg);
+				font-family: var(--font-display);
+				font-weight: 700;
+				font-size: 12px;
+				text-transform: uppercase;
+				letter-spacing: 0.12em;
+			}
+			body {
+				margin: 0;
+				font-family: var(--font-sans);
+				/* Pale LCD panel with a faint pixel-grid matrix overlay. */
+				background:
+					repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.035) 0 1px, transparent 1px 3px),
+					repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.035) 0 1px, transparent 1px 3px),
+					var(--bg);
+				color: var(--ink);
+				font-size: 14px;
+				line-height: 1.55;
+				min-height: 100vh;
+				-webkit-font-smoothing: antialiased;
+			}
+		</style>
+		{{mochi.head}} {{mochi.css}}
+	</head>
+	<body>
+		{{mochi.body}} {{mochi.script}}
+	</body>
 </html>

@@ -7,8 +7,8 @@
 //   '#'        → on  (lit pixel, --ink)
 //   ' ' or '.' → off (unlit pixel, faint tint)
 export type AvatarArt = {
-  name: string; // human label; also used for uniqueness + accessibility
-  pixels: string[];
+	name: string; // human label; also used for uniqueness + accessibility
+	pixels: string[];
 };
 
 export const OFF = 0;
@@ -19,11 +19,11 @@ export const COLS = 8;
 
 // Decode an artwork into a flat, row-major array of 64 on/off cells (0 or 1).
 export function decode(art: AvatarArt): number[] {
-  const cells: number[] = [];
-  for (const row of art.pixels) {
-    for (const ch of row) {
-      cells.push(ch === '#' ? ON : OFF);
-    }
-  }
-  return cells;
+	const cells: number[] = [];
+	for (const row of art.pixels) {
+		for (const ch of row) {
+			cells.push(ch === '#' ? ON : OFF);
+		}
+	}
+	return cells;
 }

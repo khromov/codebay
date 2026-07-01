@@ -1,6 +1,6 @@
 /** Shape every API route uses for its error responses (`apiError` in routes.ts). */
 interface ApiErrorBody {
-  error?: { message: string };
+	error?: { message: string };
 }
 
 /**
@@ -20,39 +20,39 @@ const APP_REQUEST_HEADER = 'X-Dcm-Request';
  * guard expects — so every caller gets that for free too.
  */
 export async function apiFetch<T = unknown>(
-  url: string,
-  init?: RequestInit,
-  fallbackMessage = 'Request failed',
+	url: string,
+	init?: RequestInit,
+	fallbackMessage = 'Request failed'
 ): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      ...(init?.headers as Record<string, string> | undefined),
-      [APP_REQUEST_HEADER]: '1',
-    },
-  });
-  if (!res.ok) {
-    const data = (await res.json().catch(() => null)) as ApiErrorBody | null;
-    throw new Error(data?.error?.message ?? fallbackMessage);
-  }
-  return (await res.json().catch(() => ({}))) as T;
+	const res = await fetch(url, {
+		...init,
+		headers: {
+			...(init?.headers as Record<string, string> | undefined),
+			[APP_REQUEST_HEADER]: '1'
+		}
+	});
+	if (!res.ok) {
+		const data = (await res.json().catch(() => null)) as ApiErrorBody | null;
+		throw new Error(data?.error?.message ?? fallbackMessage);
+	}
+	return (await res.json().catch(() => ({}))) as T;
 }
 
 /** Convenience for a JSON POST: sets the header and serializes `body` when given. */
 export function apiPost<T = unknown>(
-  url: string,
-  body?: unknown,
-  fallbackMessage?: string,
+	url: string,
+	body?: unknown,
+	fallbackMessage?: string
 ): Promise<T> {
-  return apiFetch<T>(
-    url,
-    body === undefined
-      ? { method: 'POST' }
-      : {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        },
-    fallbackMessage,
-  );
+	return apiFetch<T>(
+		url,
+		body === undefined
+			? { method: 'POST' }
+			: {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(body)
+				},
+		fallbackMessage
+	);
 }
