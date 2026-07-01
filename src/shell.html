@@ -27,14 +27,6 @@
         --attn-done: #22c55e;
         --attn-waiting: #f59e0b;
         --info: #388bfd;
-        --green-700: #14150f;
-        --green-600: #14150f;
-        --green-200: #9a9b91;
-        --green-100: #c6c7bc;
-        --red-600: #14150f;
-        --red-100: #c6c7bc;
-        --amber-600: #14150f;
-        --amber-100: #c6c7bc;
         --font-display: 'Doto Variable', 'JetBrains Mono Variable', monospace;
         --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         --font-serif: var(--font-display);
@@ -48,6 +40,28 @@
          Exclude Mochi's dev-only debug bar so it keeps its own styling. */
       *:not(#mochi-dev-toolbar):not(#mochi-dev-toolbar *) {
         border-radius: 0 !important;
+      }
+      /* Shared "panel" chrome — the bordered, drop-shadowed card look used
+         throughout the app (health box, ports/log boxes, instance cards,
+         dropdowns, modals, the UI showcase). A component can still override
+         `box-shadow`/`border` locally (e.g. the folder-picker modal's bigger
+         8px shadow) — Svelte's auto-scoping class gives any same-component
+         rule higher specificity than this global one, so local overrides
+         always win regardless of source order. */
+      .panel {
+        border: 1px solid var(--ink);
+        box-shadow: 4px 4px 0 var(--ink);
+      }
+      /* Shared dark header bar — the inverted label strip at the top of a panel. */
+      .panel-bar {
+        padding: 9px 14px;
+        background: var(--ink);
+        color: var(--bg);
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
       }
       body {
         margin: 0;

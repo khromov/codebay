@@ -11,14 +11,14 @@ The app copies your Claude Code credentials and installs the attention hooks int
 - **Folders without a `devcontainer.json`** — the app generates a default config and automatically adds the [official Claude Code feature](https://github.com/anthropics/devcontainer-features), so `claude` is ready to use.
 - **Folders that ship their own `.devcontainer/devcontainer.json`** — you are responsible for making sure `claude` is available in the image. The manager respects your config and won't modify your tooling. The simplest way is to add the feature:
 
-  ```jsonc
+  \`\`\`jsonc
   // .devcontainer/devcontainer.json
   {
     "features": {
       "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
     }
   }
-  ```
+  \`\`\`
 
   (The feature installs Node.js if it isn't already present.) Alternatively, install it yourself in your Dockerfile, e.g. `npm install -g @anthropic-ai/claude-code`.
 
@@ -27,9 +27,11 @@ The app copies your Claude Code credentials and installs the attention hooks int
 After `devcontainer up`, the app installs a few things into each container. Each is a self-contained module under `src/container-injections/` (add or remove one by editing that directory's registry):
 
 - **git safe.directory** — marks the copied workspace as a safe git directory for the container user, so git doesn't reject the host-owned `.git` as "dubious ownership".
+- **git identity** — copies your host's global `git config user.name`/`user.email` so commits made inside the container are attributed to you, instead of failing or landing as `root@<container>`.
 - **Claude Code** — copies your host's Claude Code OAuth credentials so the in-container `claude` is signed in without a fresh login.
 - **GitHub CLI** — copies your host's GitHub token so `gh` and git-over-HTTPS push/pull are authenticated.
 - **Claude attention hooks** — installs Claude hooks that ping the manager when Claude finishes a task or needs input, pulsing the instance's IDE tab.
+- **claude alias** — aliases the in-container `claude` to `claude --dangerously-skip-permissions`, since every instance is a throwaway, single-tenant sandbox where the permission prompts add friction without adding real protection.
 
 ## Requirements
 
@@ -38,19 +40,19 @@ After `devcontainer up`, the app installs a few things into each container. Each
 
 ## Setup
 
-```sh
+\`\`\`sh
 bun install
-```
+\`\`\`
 
 ## Commands
 
-```sh
+\`\`\`sh
 bun run dev        # dev server (local DATA_DIR, no browser launch)
 bun run start      # run the app
 bun run build      # production build → .mochi/
 bun run typecheck  # svelte-check + tsc --noEmit
 bun test           # run tests
-```
+\`\`\`
 
 ## Configuration
 

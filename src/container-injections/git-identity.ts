@@ -1,4 +1,5 @@
-import { execInContainer } from '../lib/exec.server.ts';
+import { checkPresence, execInContainer } from '../lib/exec.server.ts';
+import { spawnCapture } from '../lib/spawn.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
 
 /** The host user's global git identity, ready to apply inside a container. */
@@ -8,19 +9,8 @@ interface GitIdentity {
 }
 
 /** Read one `git config --global --get <key>` value from the host, or null. */
-async function readGitConfig(key: string): Promise<string | null> {
-  try {
-    const proc = Bun.spawn(['git', 'config', '--global', '--get', key], {
-      stdout: 'pipe',
-      stderr: 'ignore',
-    });
-    const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-    const value = out.trim();
-    return code === 0 && value ? value : null;
-  } catch {
-    // git not installed on host.
-    return null;
-  }
+function readGitConfig(key: string): Promise<string | null> {
+  return spawnCapture(['git', 'config', '--global', '--get', key]);
 }
 
 /**
@@ -79,11 +69,9 @@ export const gitIdentity: Injection = {
   },
 
   async check(target) {
-    const res = await execInContainer(target, {
-      capture: true,
-      script:
-        '[ -n "$(git config --global user.name)" ] && [ -n "$(git config --global user.email)" ] && echo 1 || echo 0',
-    });
-    return res.ok && res.stdout === '1';
+    return checkPresence(
+      target,
+      '[ -n "$(git config --global user.name)" ] && [ -n "$(git config --global user.email)" ] && echo 1 || echo 0',
+    );
   },
 };

@@ -1,4 +1,4 @@
-import { execInContainer } from '../lib/exec.server.ts';
+import { checkPresence, execInContainer } from '../lib/exec.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 /** Bridge URL a container reaches the manager on (Colima/Docker host-gateway). */
@@ -7,17 +7,20 @@ function bridgeUrl(): string {
   return `http://host.docker.internal:${port}/api/bridge/attention`;
 }
 
-/** One `type: command` hook firing curl at the bridge with the given state. */
+/**
+ * One `type: command` hook firing curl at the bridge with the given state. The
+ * token rides in a header (`X-Bridge-Token`), not the query string, so it
+ * doesn't end up in server request logs the way a query param would — `id`/
+ * `state` aren't secret, so they stay in the query string.
+ */
 function hookFor(id: string, token: string, state: 'done' | 'waiting' | 'busy') {
-  const url =
-    `${bridgeUrl()}?id=${encodeURIComponent(id)}` +
-    `&token=${encodeURIComponent(token)}&state=${state}`;
+  const url = `${bridgeUrl()}?id=${encodeURIComponent(id)}&state=${state}`;
   return [
     {
       hooks: [
         {
           type: 'command',
-          command: `curl -fsS -m 5 -X POST '${url}' >/dev/null 2>&1 || true`,
+          command: `curl -fsS -m 5 -X POST -H "X-Bridge-Token: ${token}" '${url}' >/dev/null 2>&1 || true`,
         },
       ],
     },
@@ -85,13 +88,11 @@ export const attentionHooks: Injection = {
 
   async check(target) {
     // Hooks are present when settings.json exists and mentions this instance id.
-    const res = await execInContainer(target, {
-      capture: true,
-      args: ['attention-check', target.instance.id],
-      script:
-        'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
+    return checkPresence(
+      target,
+      'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
         '[ -s "$d/settings.json" ] && grep -q "$1" "$d/settings.json" && echo 1 || echo 0',
-    });
-    return res.ok && res.stdout === '1';
+      ['attention-check', target.instance.id],
+    );
   },
 };

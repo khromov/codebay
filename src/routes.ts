@@ -1,4 +1,4 @@
-import { Mochi, apiError, error, json, type MochiRouteValue } from 'mochi-framework';
+import { Mochi, apiError, error, json, type MochiApiEvent, type MochiRouteValue } from 'mochi-framework';
 import { dockerArch, dockerAvailable } from './lib/docker.server.ts';
 import { devcontainerCliAvailable } from './lib/devcontainer.server.ts';
 import { injections } from './lib/injections.server.ts';
@@ -13,6 +13,7 @@ import {
   rebuildInstance,
   removeForwardedPort,
   renameInstance,
+  sanitizeInstance,
   startInstance,
   stopInstance,
   streamClose,
@@ -28,6 +29,7 @@ import {
 } from './lib/db.server.ts';
 import { DEFAULT_IMAGE } from './lib/config.server.ts';
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
+import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
 
 async function preflight() {
@@ -52,6 +54,37 @@ async function preflight() {
     ),
   ]);
   return { docker, cli, auth };
+}
+
+/**
+ * Run `fn`, JSON-serializing its result, or turning a thrown Error into a 400
+ * apiError. Lets a mutating route handler just `throw new Error(...)` for both
+ * input validation and business-logic failures, instead of branching between an
+ * early `apiError(400, ...)` return and a wrapping try/catch.
+ */
+async function mutate(fn: () => Promise<unknown> | unknown): Promise<Response> {
+  try {
+    return json(await fn());
+  } catch (err) {
+    return apiError(400, (err as Error).message);
+  }
+}
+
+/**
+ * Wrap a single-HTTP-method mutation route: reject any other method with 405,
+ * then run `handler` through `mutate`. Replaces the `if (method !== X) return
+ * apiError(405, ...); try {...} catch {...}` shape every mutating route in this
+ * file was repeating. The one route that needs a non-200 success status
+ * (instance creation, which returns 201) is written out by hand below instead.
+ */
+function mutationRoute(
+  method: 'POST' | 'DELETE',
+  handler: (event: MochiApiEvent) => Promise<unknown> | unknown,
+) {
+  return Mochi.api((event) => {
+    if (event.method !== method) return apiError(405, 'Method Not Allowed');
+    return mutate(() => handler(event));
+  });
 }
 
 export const routes: Record<string, MochiRouteValue> = {
@@ -82,7 +115,9 @@ export const routes: Record<string, MochiRouteValue> = {
     serverProps: (_req, params) => {
       // Validate the instance exists, but the view hydrates its data from the stream.
       if (!params.id || !getInstance(params.id)) error(404, 'Instance not found');
-      return { id: params.id };
+      // Registry-derived count of injection-backed health checks, so the health
+      // panel's skeleton renders one row per real check before the first snapshot.
+      return { id: params.id, injectionChecks: injections.filter((i) => i.check).length };
     },
   }),
 
@@ -95,13 +130,12 @@ export const routes: Record<string, MochiRouteValue> = {
   }),
 
   // Persist the default container image used when a source folder ships no devcontainer.json.
-  '/api/settings/default-image': Mochi.api(async ({ method, request }) => {
-    if (method !== 'POST') return apiError(405, 'Method Not Allowed');
+  '/api/settings/default-image': mutationRoute('POST', async ({ request }) => {
     const body = (await request.json().catch(() => null)) as { image?: string } | null;
     const image = body?.image?.trim();
-    if (!image) return apiError(400, 'image is required');
+    if (!image) throw new Error('image is required');
     setOption('default_image', image);
-    return json({ ok: true });
+    return { ok: true };
   }),
 
   // Filesystem browser for picking a project folder.
@@ -131,7 +165,7 @@ export const routes: Record<string, MochiRouteValue> = {
       if (!body?.sourcePath) return apiError(400, 'sourcePath is required');
       try {
         const instance = await createInstance(body.sourcePath, body.name);
-        return json({ instance }, { status: 201 });
+        return json({ instance: sanitizeInstance(instance) }, { status: 201 });
       } catch (err) {
         return apiError(400, (err as Error).message);
       }
@@ -143,115 +177,90 @@ export const routes: Record<string, MochiRouteValue> = {
   '/api/history': Mochi.api(async ({ method, request }) => {
     if (method === 'GET') return json({ history: listFolderHistory() });
     if (method === 'DELETE') {
-      const body = (await request.json().catch(() => null)) as { sourcePath?: string } | null;
-      if (!body?.sourcePath) return apiError(400, 'sourcePath is required');
-      deleteFolderHistory(body.sourcePath);
-      return json({ ok: true });
+      return mutate(async () => {
+        const body = (await request.json().catch(() => null)) as { sourcePath?: string } | null;
+        if (!body?.sourcePath) throw new Error('sourcePath is required');
+        deleteFolderHistory(body.sourcePath);
+        return { ok: true };
+      });
     }
     return apiError(405, 'Method Not Allowed');
   }),
 
-  '/api/instances/delete-all': Mochi.api(async ({ method }) => {
-    if (method !== 'POST') return apiError(405, 'Method Not Allowed');
+  '/api/instances/delete-all': mutationRoute('POST', async () => {
     await deleteAllInstances();
-    return json({ ok: true });
+    return { ok: true };
   }),
 
   // Full reset: tear down every instance, delete the database, then shut the server
-  // down. Behind Basic Auth like the rest of the UI/APIs.
-  '/api/shutdown': Mochi.api(async ({ method }) => {
-    if (method !== 'POST') return apiError(405, 'Method Not Allowed');
+  // down. Behind Basic Auth (when configured) and the CSRF guard like the rest of
+  // the UI/APIs — see auth.server.ts.
+  '/api/shutdown': mutationRoute('POST', async () => {
     await deleteDatabaseAndShutdown();
-    return json({ ok: true });
+    return { ok: true };
   }),
 
-  '/api/instances/:id/rename': Mochi.api(async ({ method, params, request }) => {
-    if (method !== 'POST') return apiError(405, 'Method Not Allowed');
+  '/api/instances/:id/rename': mutationRoute('POST', async ({ params, request }) => {
     const body = (await request.json().catch(() => null)) as { name?: string } | null;
-    if (!body?.name) return apiError(400, 'name is required');
-    try {
-      return json({ instance: renameInstance(params.id!, body.name) });
-    } catch (err) {
-      return apiError(400, (err as Error).message);
-    }
+    if (!body?.name) throw new Error('name is required');
+    return { instance: sanitizeInstance(renameInstance(params.id!, body.name)) };
   }),
 
   // Forwarded ports: add (POST {port}) / remove (DELETE) a container port mapping.
   // Both only mutate the persisted set — call /rebuild to recreate the container with it.
-  '/api/instances/:id/ports': Mochi.api(async ({ method, params, request }) => {
-    if (method !== 'POST') return apiError(405, 'Method Not Allowed');
+  '/api/instances/:id/ports': mutationRoute('POST', async ({ params, request }) => {
     const body = (await request.json().catch(() => null)) as { port?: number } | null;
-    if (typeof body?.port !== 'number') return apiError(400, 'port (number) is required');
-    try {
-      return json({ instance: addForwardedPort(params.id!, body.port) });
-    } catch (err) {
-      return apiError(400, (err as Error).message);
-    }
+    if (typeof body?.port !== 'number') throw new Error('port (number) is required');
+    return { instance: sanitizeInstance(addForwardedPort(params.id!, body.port)) };
   }),
 
-  '/api/instances/:id/ports/:port': Mochi.api(async ({ method, params }) => {
-    if (method !== 'DELETE') return apiError(405, 'Method Not Allowed');
+  '/api/instances/:id/ports/:port': mutationRoute('DELETE', ({ params }) => {
     const port = Number.parseInt(params.port!, 10);
-    if (!Number.isInteger(port)) return apiError(400, 'Invalid port');
-    try {
-      return json({ instance: removeForwardedPort(params.id!, port) });
-    } catch (err) {
-      return apiError(400, (err as Error).message);
-    }
+    if (!Number.isInteger(port)) throw new Error('Invalid port');
+    return { instance: sanitizeInstance(removeForwardedPort(params.id!, port)) };
   }),
 
   // Re-run `devcontainer up` to apply the current forwarded-port set (recreates the container).
-  '/api/instances/:id/rebuild': Mochi.api(async ({ method, params }) => {
-    if (method !== 'POST') return apiError(405, 'Method Not Allowed');
-    try {
-      return json({ instance: rebuildInstance(params.id!) });
-    } catch (err) {
-      return apiError(400, (err as Error).message);
-    }
-  }),
+  '/api/instances/:id/rebuild': mutationRoute('POST', ({ params }) => ({
+    instance: sanitizeInstance(rebuildInstance(params.id!)),
+  })),
 
-  '/api/instances/:id/start': Mochi.api(async ({ method, params }) => {
-    if (method !== 'POST') return apiError(405, 'Method Not Allowed');
-    try {
-      return json({ instance: await startInstance(params.id!) });
-    } catch (err) {
-      return apiError(400, (err as Error).message);
-    }
-  }),
+  '/api/instances/:id/start': mutationRoute('POST', async ({ params }) => ({
+    instance: sanitizeInstance(await startInstance(params.id!)),
+  })),
 
-  '/api/instances/:id/stop': Mochi.api(async ({ method, params }) => {
-    if (method !== 'POST') return apiError(405, 'Method Not Allowed');
-    try {
-      return json({ instance: await stopInstance(params.id!) });
-    } catch (err) {
-      return apiError(400, (err as Error).message);
-    }
-  }),
+  '/api/instances/:id/stop': mutationRoute('POST', async ({ params }) => ({
+    instance: sanitizeInstance(await stopInstance(params.id!)),
+  })),
 
-  '/api/instances/:id/delete': Mochi.api(async ({ method, params }) => {
-    if (method !== 'POST') return apiError(405, 'Method Not Allowed');
+  '/api/instances/:id/delete': mutationRoute('POST', async ({ params }) => {
     await deleteInstance(params.id!);
-    return json({ ok: true });
+    return { ok: true };
   }),
 
   // Dismiss an instance's attention pulse (called by the UI when its tab is focused).
-  '/api/instances/:id/attention/clear': Mochi.api(async ({ method, params }) => {
-    if (method !== 'POST') return apiError(405, 'Method Not Allowed');
+  '/api/instances/:id/attention/clear': mutationRoute('POST', ({ params }) => {
     clearAttention(params.id!);
-    return json({ ok: true });
+    return { ok: true };
   }),
 
-  // Bridge: containers call back here (token-authed, exempt from Basic Auth — see
-  // auth.server.ts) to raise/lower their attention pulse. id+token+state in the query.
-  '/api/bridge/attention': Mochi.api(async ({ method, url }) => {
-    if (method !== 'POST' && method !== 'GET') return apiError(405, 'Method Not Allowed');
+  // Bridge: containers call back here (token-authed, exempt from Basic Auth and the
+  // CSRF guard — see auth.server.ts) to raise/lower their attention pulse. id/state
+  // ride in the query string (not secret); the token rides in a header instead, so
+  // it doesn't end up in request logs the way a query param would.
+  '/api/bridge/attention': Mochi.api(async ({ method, url, request }) => {
+    if (method !== 'POST') return apiError(405, 'Method Not Allowed');
     const id = url.searchParams.get('id');
-    const token = url.searchParams.get('token');
+    const token = request.headers.get('X-Bridge-Token');
     const state = url.searchParams.get('state');
     if (!id || !token) return apiError(400, 'id and token are required');
     const row = getInstance(id);
-    if (!row) return apiError(404, 'Instance not found');
-    if (!row.bridge_token || token !== row.bridge_token) return apiError(403, 'Invalid token');
+    // Return a uniform 403 whether the instance is missing or the token is wrong,
+    // and use a constant-time compare — so an attacker can't enumerate which
+    // instance ids exist, nor probe the token byte-by-byte via response timing.
+    if (!row || !row.bridge_token || !timingSafeEqualStr(token, row.bridge_token)) {
+      return apiError(403, 'Forbidden');
+    }
     if (state === 'done') setAttention(id, 'done');
     else if (state === 'waiting') setAttention(id, 'waiting');
     else clearAttention(id); // 'busy' / anything else → Claude resumed, dismiss the pulse

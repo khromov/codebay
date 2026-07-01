@@ -6,6 +6,7 @@
   import Volume2 from '@lucide/svelte/icons/volume-2';
   import { soundEnabled, setSoundEnabled } from '../settings.ts';
   import { playChime, unlockAudio } from '../sound.ts';
+  import { apiPost } from '../api.ts';
   import Button from './Button.svelte';
 
   let {
@@ -35,17 +36,7 @@
     imageSaved = false;
     savingImage = true;
     try {
-      const res = await fetch('/api/settings/default-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: value }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as
-          | { error?: { message: string } }
-          | null;
-        throw new Error(data?.error?.message ?? 'Request failed');
-      }
+      await apiPost('/api/settings/default-image', { image: value });
       image = value;
       imageSaved = true;
     } catch (err) {
@@ -83,7 +74,7 @@
       return;
     shuttingDown = true;
     try {
-      await fetch('/api/shutdown', { method: 'POST' });
+      await apiPost('/api/shutdown');
     } catch {
       // The server exits mid-response, so a network error here is expected.
     }

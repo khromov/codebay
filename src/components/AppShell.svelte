@@ -5,8 +5,8 @@
   import IdeBar from './IdeBar.svelte';
   import IdeLoader from './IdeLoader.svelte';
   import { playChime, unlockAudio } from '../sound.ts';
-  import { liveSocket } from '../live.ts';
-  import type { StreamEvent } from '../lib/instances.server.ts';
+  import { liveStream } from '../live.ts';
+  import { apiPost } from '../api.ts';
 
   // `initialPath` is the URL the document was served for; `snapshot` is the
   // reconciled instance list at render time, used to seed the live state so both
@@ -122,30 +122,25 @@
   // events matter here; `health` events are for the instance detail view.
   $effect(() => {
     let primed = false; // skip the first frame so a reconnect doesn't replay sounds
-    return liveSocket('/api/stream', (raw) => {
-      try {
-        const msg = JSON.parse(raw) as StreamEvent;
-        if (msg.type === 'preflight') {
-          livePreflight = { ...livePreflight, docker: msg.data.docker, cli: msg.data.cli };
-          return;
-        }
-        if (msg.type !== 'instances') return;
-        const next = msg.data;
-        const nextAttention: Record<string, 'done' | 'waiting' | null> = {};
-        for (const inst of next) nextAttention[inst.id] = inst.attention;
-        if (primed) {
-          for (const id in nextAttention) {
-            const state = nextAttention[id];
-            if (state && state !== attention[id] && id !== active) playChime(state);
-          }
-        }
-        primed = true;
-        instances = next;
-        attention = nextAttention;
-        loaded = true;
-      } catch {
-        /* ignore malformed frame */
+    return liveStream((msg) => {
+      if (msg.type === 'preflight') {
+        livePreflight = { ...livePreflight, docker: msg.data.docker, cli: msg.data.cli };
+        return;
       }
+      if (msg.type !== 'instances') return;
+      const next = msg.data;
+      const nextAttention: Record<string, 'done' | 'waiting' | null> = {};
+      for (const inst of next) nextAttention[inst.id] = inst.attention;
+      if (primed) {
+        for (const id in nextAttention) {
+          const state = nextAttention[id];
+          if (state && state !== attention[id] && id !== active) playChime(state);
+        }
+      }
+      primed = true;
+      instances = next;
+      attention = nextAttention;
+      loaded = true;
     });
   });
 
@@ -157,7 +152,9 @@
     if (!active || !attention[active]) return;
     const dismiss = () => {
       if (document.visibilityState === 'visible') {
-        void fetch(`/api/instances/${active}/attention/clear`, { method: 'POST' });
+        void apiPost(`/api/instances/${active}/attention/clear`).catch(() => {
+          /* best-effort — the next visibility change retries */
+        });
       }
     };
     dismiss();

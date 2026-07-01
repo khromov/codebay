@@ -51,6 +51,19 @@ import {
 import type { ServerWebSocket } from 'bun';
 import type { Instance, InstanceHealth } from '../types.ts';
 
+/**
+ * Client-safe instance shape: every field except `bridge_token`, a
+ * container-only secret (it authenticates the no-Basic-Auth `/api/bridge/`
+ * endpoint) that must never reach the browser. Every server function that
+ * hands an instance row back to a route must pass it through this first —
+ * `listInstances()` below does, and `routes.ts` does the same for every
+ * mutator (rename, start/stop, ports, rebuild, create) that returns a row.
+ */
+export function sanitizeInstance(row: InstanceRow): Omit<InstanceRow, 'bridge_token'> {
+  const { bridge_token: _token, ...rest } = row;
+  return rest;
+}
+
 /** Live, in-memory boot state for an instance (logs + SSE subscribers). */
 interface LiveState {
   logs: string[];
@@ -150,27 +163,49 @@ export function broadcastHealth(id: string, health: InstanceHealth): void {
   broadcast({ type: 'health', data: { id, health } });
 }
 
-async function reconcileAndBroadcast(force = false): Promise<void> {
+/** Refresh the instance list and, if it changed (or `force`), broadcast it. */
+async function reconcileInstances(force = false): Promise<void> {
   const list = await listInstances();
   const listJson = JSON.stringify(list);
   if (force || listJson !== hub.lastListJson) {
     hub.lastListJson = listJson;
     broadcast({ type: 'instances', data: list });
   }
-  // Live preflight: re-probe docker + CLI so the "Setup needed" banner reflects
-  // current state without a reload. Diffed independently so a preflight flip
-  // still pushes when the instance list is unchanged. Auth stays SSR-only.
+}
+
+/**
+ * Refresh docker/CLI preflight and, if it changed, broadcast it. Spawns a
+ * process (`devcontainer --version`, see `devcontainerCliAvailable`), so this
+ * is only ever called from the periodic tick below — never from
+ * `triggerReconcile`, which fires on every attention-bridge ping.
+ */
+async function reconcilePreflight(): Promise<void> {
   const pf = await backgroundPreflight();
   const pfJson = JSON.stringify(pf);
-  if (force || pfJson !== hub.lastPreflightJson) {
+  if (pfJson !== hub.lastPreflightJson) {
     hub.lastPreflightJson = pfJson;
     broadcast({ type: 'preflight', data: pf });
   }
 }
 
-/** Notify all clients that the instance list changed (immediate push). */
+/** Periodic tick (every 5s, see `streamOpen`): refresh both the instance list and preflight. */
+async function reconcileAndBroadcast(): Promise<void> {
+  await reconcileInstances();
+  await reconcilePreflight();
+}
+
+/**
+ * Notify all clients that the instance list changed (immediate push). Refreshes
+ * only the instance list, not the docker/CLI preflight: `triggerReconcile` is
+ * called from high-frequency paths too — every mutation, but also every
+ * attention-bridge ping, i.e. every Claude `Stop`/`Notification`/
+ * `UserPromptSubmit` hook event across every running instance. Re-probing the
+ * CLI on each of those would mean spawning a `devcontainer --version` process
+ * on essentially every Claude tool-call boundary; the periodic tick above
+ * keeps preflight fresh (every 5s) without that cost.
+ */
 export function triggerReconcile(): void {
-  void reconcileAndBroadcast(true);
+  void reconcileInstances(true);
 }
 
 /** A new `/api/stream` socket connected: register it, seed it, and ensure the tick runs. */
@@ -194,10 +229,41 @@ export function streamClose(ws: ServerWebSocket<unknown>): void {
   }
 }
 
+// --- Host-port allocation --------------------------------------------------
+// `usedPorts()` reads the DB, but a port isn't in the DB until its row/forward is
+// inserted — and inserts can lag the allocation (e.g. the seed loop computes a
+// port, then inserts; `createInstance` allocates host_port well before its row is
+// written). Two concurrent allocations could therefore both pick the same "free"
+// port. We additionally hold a short-lived in-memory reservation set, pinned to
+// globalThis (survives dev hot-reload), and union it with the DB ports so each
+// allocation sees the ones still in flight. Reservations that have since landed
+// in the DB are pruned on every call, so the set never grows unbounded.
+//
+// Each reservation also carries the time it was made. A reservation only needs to
+// bridge the gap until its row/forward is inserted (milliseconds, and always the
+// very next statement in every caller); if that insert never happens — e.g. boot
+// fails before persisting a seeded forward — the reservation would otherwise stay
+// forever and permanently shrink the range. So we also drop any reservation older
+// than the TTL: far longer than any real allocate→insert gap, but a hard backstop
+// against leaking the range on a failed insert.
+const RESERVATION_TTL_MS = 60_000;
+const globalForPorts = globalThis as unknown as { __dcmReservedPorts?: Map<number, number> };
+const reservedPorts: Map<number, number> = (globalForPorts.__dcmReservedPorts ??= new Map());
+
 function allocatePort(): number {
-  const taken = new Set(usedPorts());
+  const dbPorts = new Set(usedPorts());
+  const now = Date.now();
+  // Drop reservations that have already been persisted (now covered by the DB set)
+  // or that have aged past the TTL (their insert never landed) — either way keeping
+  // them reserved would only leak the range.
+  for (const [port, reservedAt] of reservedPorts) {
+    if (dbPorts.has(port) || now - reservedAt > RESERVATION_TTL_MS) reservedPorts.delete(port);
+  }
   for (let port = PORT_BASE; port <= PORT_MAX; port++) {
-    if (!taken.has(port)) return port;
+    if (!dbPorts.has(port) && !reservedPorts.has(port)) {
+      reservedPorts.set(port, now);
+      return port;
+    }
   }
   throw new Error('No free host ports available.');
 }
@@ -393,8 +459,8 @@ export async function listInstances(): Promise<Instance[]> {
     forwards.set(f.instance_id, list);
   }
   // Strip bridge_token — it's a container-only secret and must not reach the client.
-  return rows.map(({ bridge_token: _token, ...row }) => ({
-    ...row,
+  return rows.map((row) => ({
+    ...sanitizeInstance(row),
     git_branch: branches.get(row.id) ?? null,
     attention: getAttention(row.id),
     forwarded_ports: forwards.get(row.id) ?? [],

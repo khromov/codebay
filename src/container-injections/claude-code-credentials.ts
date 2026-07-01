@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CLAUDE_CODE_TOKEN } from '../lib/config.server.ts';
-import { execInContainer } from '../lib/exec.server.ts';
+import { checkPresence, execInContainer, writeSecretFileScript } from '../lib/exec.server.ts';
+import { spawnCapture } from '../lib/spawn.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 const KEYCHAIN_SERVICE = 'Claude Code-credentials';
@@ -30,18 +31,15 @@ export async function locateClaudeCredentials(): Promise<{ creds: string; source
   }
 
   if (process.platform === 'darwin') {
-    try {
-      const proc = Bun.spawn(
-        ['security', 'find-generic-password', '-s', KEYCHAIN_SERVICE, '-w'],
-        { stdout: 'pipe', stderr: 'ignore' },
-      );
-      const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-      const trimmed = out.trim();
-      if (code === 0 && trimmed && isValid(trimmed)) {
-        return { creds: trimmed, source: `macOS Keychain — "${KEYCHAIN_SERVICE}"` };
-      }
-    } catch {
-      /* fall through to the file check */
+    const out = await spawnCapture([
+      'security',
+      'find-generic-password',
+      '-s',
+      KEYCHAIN_SERVICE,
+      '-w',
+    ]);
+    if (out && isValid(out)) {
+      return { creds: out, source: `macOS Keychain — "${KEYCHAIN_SERVICE}"` };
     }
   }
 
@@ -67,9 +65,9 @@ async function injectClaudeCredentials(
   creds: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const script =
-    'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; mkdir -p "$d"; ' +
-    'printf %s "$DCM_STDIN" > "$d/.credentials.json"; chmod 600 "$d/.credentials.json"; ' +
-    'cfg="${CLAUDE_CONFIG_DIR:+$CLAUDE_CONFIG_DIR/.claude.json}"; cfg="${cfg:-$h/.claude.json}"; ' +
+    'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
+    writeSecretFileScript('$d', '.credentials.json', '600') +
+    ' cfg="${CLAUDE_CONFIG_DIR:+$CLAUDE_CONFIG_DIR/.claude.json}"; cfg="${cfg:-$h/.claude.json}"; ' +
     'printf \'%s\' \'{"hasCompletedOnboarding":true}\' > "$cfg"; chmod 644 "$cfg"';
   const res = await execInContainer(target, { script, stdin: creds });
   return res.ok ? { ok: true } : { ok: false, error: res.error };
@@ -108,12 +106,10 @@ export const claudeCodeCredentials: Injection = {
   },
 
   async check(target) {
-    const res = await execInContainer(target, {
-      capture: true,
-      script:
-        'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
+    return checkPresence(
+      target,
+      'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
         '[ -s "$d/.credentials.json" ] && echo 1 || echo 0',
-    });
-    return res.ok && res.stdout === '1';
+    );
   },
 };

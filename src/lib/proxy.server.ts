@@ -65,6 +65,14 @@ async function proxyHttp(event: MochiApiEvent, port: number, rest: string): Prom
   const headers = new Headers(event.request.headers);
   headers.set('host', `127.0.0.1:${port}`);
   headers.delete('accept-encoding'); // ask for an unencoded body so we can stream it verbatim
+  // Defense-in-depth: don't forward the manager's own Basic Auth credentials to
+  // the upstream code-server. It runs with `--auth none`, so the header is
+  // meaningless to it and would only risk leaking the app password into editor
+  // land. We deliberately do NOT strip `cookie`: the manager sets no cookies of
+  // its own (it authenticates via the Authorization header), so every cookie on
+  // a same-origin `/p/:id/*` request is code-server's own — dropping it would
+  // break any editor feature that round-trips a cookie.
+  headers.delete('authorization');
   const hasBody = event.method !== 'GET' && event.method !== 'HEAD';
   const upstream = await fetch(`http://127.0.0.1:${port}${rest}${event.url.search}`, {
     method: event.method,
@@ -165,7 +173,9 @@ export const proxyRoutes: Record<string, MochiRouteValue> = {
       else state.pending.push(message);
     },
     close(ws: ServerWebSocket<MochiWsData<RelayState>>) {
-      safeClose(ws.data.user.client ?? { close: () => {} }, 1000, '');
+      // `client` is always set in open() before any close is relayed.
+      const client = ws.data.user.client;
+      if (client) safeClose(client, 1000, '');
     },
   }),
 };

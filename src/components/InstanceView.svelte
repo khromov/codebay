@@ -4,10 +4,11 @@
   import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
   import HealthBox from './HealthBox.svelte';
   import StatusBadge from './StatusBadge.svelte';
-  import { liveSocket } from '../live.ts';
-  import type { StreamEvent } from '../lib/instances.server.ts';
+  import Skeleton from './Skeleton.svelte';
+  import { liveSocket, liveStream } from '../live.ts';
+  import { apiFetch } from '../api.ts';
 
-  let { id }: { id: string } = $props();
+  let { id, injectionChecks = 0 }: { id: string; injectionChecks?: number } = $props();
 
   let instance = $state<Instance | null>(null);
   let health = $state<InstanceHealth | null>(null);
@@ -33,18 +34,13 @@
 
   // Track this instance's status and health from the central live stream.
   $effect(() =>
-    liveSocket('/api/stream', (raw) => {
-      try {
-        const msg = JSON.parse(raw) as StreamEvent;
-        if (msg.type === 'instances') {
-          const found = msg.data.find((i) => i.id === id);
-          if (found) instance = found;
-        } else if (msg.type === 'health' && msg.data.id === id) {
-          health = msg.data.health;
-          lastFetchedAt = Date.now();
-        }
-      } catch {
-        /* ignore malformed frame */
+    liveStream((msg) => {
+      if (msg.type === 'instances') {
+        const found = msg.data.find((i) => i.id === id);
+        if (found) instance = found;
+      } else if (msg.type === 'health' && msg.data.id === id) {
+        health = msg.data.health;
+        lastFetchedAt = Date.now();
       }
     }),
   );
@@ -59,14 +55,10 @@
   const forwards = $derived(instance?.forwarded_ports ?? []);
   const building = $derived(instance?.status === 'creating');
 
-  async function portAction(run: () => Promise<Response>): Promise<boolean> {
+  async function portAction(run: () => Promise<unknown>): Promise<boolean> {
     portError = null;
     try {
-      const res = await run();
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as { error?: { message: string } } | null;
-        throw new Error(data?.error?.message ?? 'Request failed');
-      }
+      await run();
       return true;
     } catch (err) {
       portError = (err as Error).message;
@@ -77,12 +69,13 @@
   async function addPort(e: Event) {
     e.preventDefault();
     const port = Number.parseInt(newPort, 10);
-    if (!Number.isInteger(port)) {
-      portError = 'Enter a port number';
+    // Mirror the server's range check so an obviously-bad port is rejected without a round-trip.
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      portError = 'Enter a port number between 1 and 65535';
       return;
     }
     const ok = await portAction(() =>
-      fetch(`/api/instances/${id}/ports`, {
+      apiFetch(`/api/instances/${id}/ports`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ port }),
@@ -96,13 +89,13 @@
 
   async function removePort(port: number) {
     const ok = await portAction(() =>
-      fetch(`/api/instances/${id}/ports/${port}`, { method: 'DELETE' }),
+      apiFetch(`/api/instances/${id}/ports/${port}`, { method: 'DELETE' }),
     );
     if (ok) pendingRebuild = true;
   }
 
   async function restart() {
-    const ok = await portAction(() => fetch(`/api/instances/${id}/rebuild`, { method: 'POST' }));
+    const ok = await portAction(() => apiFetch(`/api/instances/${id}/rebuild`, { method: 'POST' }));
     if (ok) pendingRebuild = false;
   }
 </script>
@@ -114,7 +107,7 @@
     {#if instance}
       <StatusBadge status={instance.status} />
     {:else}
-      <span class="skel skel-pill"></span>
+      <Skeleton variant="pill" />
     {/if}
   </div>
   {#if instance?.status === 'running'}
@@ -125,7 +118,7 @@
 <main class="stage">
   <div class="meta">
     <span class="k">Source</span>
-    {#if instance}<code>{instance.source_path}</code>{:else}<span class="skel skel-wide"></span>{/if}
+    {#if instance}<code>{instance.source_path}</code>{:else}<Skeleton variant="wide" />{/if}
 
     <span class="k">Image</span>
     {#if instance}
@@ -137,16 +130,25 @@
         <code class="muted">—</code>
       {/if}
     {:else}
-      <span class="skel skel-wide"></span>
+      <Skeleton variant="wide" />
     {/if}
   </div>
 
   <div class="healthslot">
-    <HealthBox {health} {lastFetchedAt} />
+    <!-- Treat "instance not yet loaded from the stream" as active so the health
+         panel shows the full skeleton (all expected rows) while loading, rather
+         than the inactive 2-row fallback. Only a loaded, non-running instance is
+         genuinely inactive. -->
+    <HealthBox
+      {health}
+      {lastFetchedAt}
+      {injectionChecks}
+      active={!instance || instance.status === 'running'}
+    />
   </div>
 
-  <section class="ports">
-    <div class="ports-bar">
+  <section class="ports panel">
+    <div class="ports-bar panel-bar">
       <span>Forwarded ports</span>
       {#if pendingRebuild}
         <button class="rebuild" onclick={restart} disabled={building}>
@@ -192,8 +194,8 @@
     </div>
   </section>
 
-  <div class="logwrap">
-    <div class="logbar">Boot log</div>
+  <div class="logwrap panel">
+    <div class="panel-bar">Boot log</div>
     <div class="logs" {@attach autoscroll}><pre>{logs || 'Waiting for output…'}<span class="caret"></span></pre></div>
     {#if instance?.status === 'error' && instance.error}
       <div class="err">{instance.error}</div>
@@ -282,50 +284,16 @@
   .meta code.muted {
     color: var(--ink-faint);
   }
-  .skel {
-    display: inline-block;
-    height: 0.95em;
-    background: linear-gradient(90deg, var(--rule-soft) 25%, var(--bg-card) 50%, var(--rule-soft) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.4s linear infinite;
-    vertical-align: middle;
-  }
-  .skel-wide {
-    width: min(420px, 60vw);
-  }
-  .skel-pill {
-    width: 64px;
-    height: 18px;
-    border-radius: 999px;
-  }
-  @keyframes shimmer {
-    0% {
-      background-position: 200% 0;
-    }
-    100% {
-      background-position: -200% 0;
-    }
-  }
   .healthslot {
     margin-bottom: 18px;
   }
   .ports {
-    border: 1px solid var(--ink);
-    box-shadow: 4px 4px 0 var(--ink);
     margin-bottom: 18px;
   }
   .ports-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 9px 14px;
-    background: var(--ink);
-    color: var(--bg);
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
   }
   .rebuild {
     font-family: var(--font-mono);
@@ -455,19 +423,7 @@
     color: var(--ink);
   }
   .logwrap {
-    border: 1px solid var(--ink);
-    box-shadow: 4px 4px 0 var(--ink);
     overflow: hidden;
-  }
-  .logbar {
-    padding: 9px 14px;
-    background: var(--ink);
-    color: var(--bg);
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
   }
   /* The one "screen": a black LCD panel with faint scanlines. */
   .logs {
@@ -489,7 +445,16 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
-  /* Blinking block cursor — the live-terminal tell. */
+  /* Blinking block cursor — the live-terminal tell. Defined locally rather than
+     relying on StatusBadge's same-named keyframes: Svelte scopes `@keyframes`
+     per component (renaming both the block and any same-file `animation`
+     reference), so a keyframe defined in another component never actually
+     resolves here. */
+  @keyframes lcd-blink {
+    50% {
+      background: transparent;
+    }
+  }
   .caret {
     display: inline-block;
     width: 0.6em;

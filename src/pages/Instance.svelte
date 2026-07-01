@@ -3,7 +3,7 @@
   import '@fontsource-variable/jetbrains-mono';
   import InstanceView from '../components/InstanceView.svelte';
 
-  let { id }: { id: string } = $props();
+  let { id, injectionChecks }: { id: string; injectionChecks: number } = $props();
 </script>
 
-<InstanceView {id} mochi:hydrate />
+<InstanceView {id} {injectionChecks} mochi:hydrate />

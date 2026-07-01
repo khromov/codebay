@@ -6,6 +6,7 @@
   import ArrowUp from '@lucide/svelte/icons/arrow-up';
   import Folder from '@lucide/svelte/icons/folder';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import { apiFetch } from '../api.ts';
 
   let { onpick, onclose }: { onpick: (path: string) => void; onclose: () => void } = $props();
 
@@ -27,8 +28,7 @@
 
   async function loadHistory() {
     try {
-      const res = await fetch('/api/history');
-      const data = (await res.json()) as { history?: FolderHistoryEntry[] };
+      const data = await apiFetch<{ history?: FolderHistoryEntry[] }>('/api/history');
       history = data.history ?? [];
     } catch {
       /* history is a convenience; ignore failures */
@@ -39,13 +39,13 @@
     const prev = history;
     history = history.filter((h) => h.source_path !== path);
     try {
-      await fetch('/api/history', {
+      await apiFetch('/api/history', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sourcePath: path }),
       });
     } catch {
-      history = prev; // restore on failure
+      history = prev; // restore on failure (network error, or a non-2xx response)
     }
   }
 
@@ -55,10 +55,7 @@
     query = '';
     try {
       const url = path ? `/api/browse?path=${encodeURIComponent(path)}` : '/api/browse';
-      const res = await fetch(url);
-      const data = (await res.json()) as BrowseResult & { error?: { message: string } };
-      if (!res.ok) throw new Error(data.error?.message ?? 'Could not list folder');
-      result = data;
+      result = await apiFetch<BrowseResult>(url, undefined, 'Could not list folder');
     } catch (err) {
       errorMsg = (err as Error).message;
     } finally {
@@ -82,7 +79,7 @@
   onkeydown={(e) => e.key === 'Escape' && onclose()}
 >
   <div
-    class="modal"
+    class="modal panel"
     role="dialog"
     aria-modal="true"
     aria-label="Pick a project folder"
@@ -215,7 +212,6 @@
     display: flex;
     flex-direction: column;
     background: var(--bg-card);
-    border: 1px solid var(--ink);
     overflow: hidden;
     box-shadow: 8px 8px 0 var(--ink);
   }

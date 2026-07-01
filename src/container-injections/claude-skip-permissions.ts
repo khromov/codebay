@@ -1,4 +1,4 @@
-import { execInContainer } from '../lib/exec.server.ts';
+import { checkPresence, execInContainer } from '../lib/exec.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
 
 /** The alias line appended to the container user's shell rc files. */
@@ -44,7 +44,6 @@ export const claudeSkipPermissions: Injection = {
   },
 
   async check(target) {
-    const res = await execInContainer(target, { capture: true, script: CHECK_SCRIPT });
-    return res.ok && res.stdout === '1';
+    return checkPresence(target, CHECK_SCRIPT);
   },
 };

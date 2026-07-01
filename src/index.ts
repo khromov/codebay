@@ -28,6 +28,13 @@ await Mochi.serve({
       if (ctx.source.name === 'ws:message' && ctx.path.startsWith(PROXY_PREFIX + '/')) {
         return null;
       }
+      // The bridge fires on every Claude hook event (Stop/Notification/
+      // UserPromptSubmit) — far more often than any human action — and these
+      // requests carry the per-instance bridge token. Keep them out of the log
+      // entirely rather than relying on remembering not to log secrets elsewhere.
+      if (ctx.path.startsWith('/api/bridge/')) {
+        return null;
+      }
       return kept;
     },
     // Belt-and-suspenders: trailingSlash is off above, so this never fires

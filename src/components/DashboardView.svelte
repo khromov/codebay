@@ -6,6 +6,7 @@
   import Button from './Button.svelte';
   import Plus from '@lucide/svelte/icons/plus';
   import { Toaster } from 'svelte-french-toast';
+  import { apiPost } from '../api.ts';
 
   // Instances and their load state come from the persistent AppShell (single SSE
   // subscription shared with the IDE view); this component is presentational.
@@ -28,13 +29,7 @@
     creating = true;
     actionError = null;
     try {
-      const res = await fetch('/api/instances', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourcePath }),
-      });
-      const data = (await res.json()) as { instance?: Instance; error?: { message: string } };
-      if (!res.ok || !data.instance) throw new Error(data.error?.message ?? 'Failed to create instance');
+      await apiPost('/api/instances', { sourcePath }, 'Failed to create instance');
       // The SSE stream delivers the new instance; no manual insert needed.
     } catch (err) {
       actionError = (err as Error).message;
@@ -47,11 +42,7 @@
     actionError = null;
     if (action === 'delete' && !confirm('Delete this instance and its copied files?')) return;
     try {
-      const res = await fetch(`/api/instances/${id}/${action}`, { method: 'POST' });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as { error?: { message: string } } | null;
-        throw new Error(data?.error?.message ?? `Failed to ${action}`);
-      }
+      await apiPost(`/api/instances/${id}/${action}`, undefined, `Failed to ${action}`);
       // The SSE stream reflects the resulting state.
     } catch (err) {
       actionError = (err as Error).message;
@@ -79,15 +70,7 @@
     cancelRename();
     actionError = null;
     try {
-      const res = await fetch(`/api/instances/${id}/rename`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as { error?: { message: string } } | null;
-        throw new Error(data?.error?.message ?? 'Failed to rename');
-      }
+      await apiPost(`/api/instances/${id}/rename`, { name }, 'Failed to rename');
       // The SSE stream reflects the new name.
     } catch (err) {
       actionError = (err as Error).message;
@@ -98,11 +81,7 @@
     actionError = null;
     if (!confirm(`Delete all ${instances.length} instances and their copied files?`)) return;
     try {
-      const res = await fetch('/api/instances/delete-all', { method: 'POST' });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as { error?: { message: string } } | null;
-        throw new Error(data?.error?.message ?? 'Failed to delete all');
-      }
+      await apiPost('/api/instances/delete-all', undefined, 'Failed to delete all');
       // The SSE stream reflects the resulting empty state.
     } catch (err) {
       actionError = (err as Error).message;

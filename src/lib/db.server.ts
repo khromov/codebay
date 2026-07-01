@@ -139,50 +139,30 @@ export function deleteForwards(instanceId: string): void {
   db.query('DELETE FROM port_forwards WHERE instance_id = $id').run({ $id: instanceId });
 }
 
+/** Columns `updateInstance` may patch, paired with their bind-parameter names. */
+const UPDATABLE_COLUMNS = [
+  'name',
+  'container_id',
+  'remote_workspace_folder',
+  'status',
+  'error',
+  'remote_user',
+  'image_source',
+] as const;
+
+type UpdatableColumn = (typeof UPDATABLE_COLUMNS)[number];
+
 export function updateInstance(
   id: string,
-  patch: Partial<
-    Pick<
-      InstanceRow,
-      | 'name'
-      | 'container_id'
-      | 'remote_workspace_folder'
-      | 'status'
-      | 'error'
-      | 'remote_user'
-      | 'image_source'
-    >
-  >,
+  patch: Partial<Pick<InstanceRow, UpdatableColumn>>,
 ): void {
   const sets: string[] = [];
   const params: Record<string, string | number | null> = { $id: id };
-  if ('name' in patch) {
-    sets.push('name = $name');
-    params.$name = patch.name ?? null;
-  }
-  if ('container_id' in patch) {
-    sets.push('container_id = $container_id');
-    params.$container_id = patch.container_id ?? null;
-  }
-  if ('remote_workspace_folder' in patch) {
-    sets.push('remote_workspace_folder = $remote_workspace_folder');
-    params.$remote_workspace_folder = patch.remote_workspace_folder ?? null;
-  }
-  if ('status' in patch) {
-    sets.push('status = $status');
-    params.$status = patch.status ?? null;
-  }
-  if ('error' in patch) {
-    sets.push('error = $error');
-    params.$error = patch.error ?? null;
-  }
-  if ('remote_user' in patch) {
-    sets.push('remote_user = $remote_user');
-    params.$remote_user = patch.remote_user ?? null;
-  }
-  if ('image_source' in patch) {
-    sets.push('image_source = $image_source');
-    params.$image_source = patch.image_source ?? null;
+  for (const col of UPDATABLE_COLUMNS) {
+    if (col in patch) {
+      sets.push(`${col} = $${col}`);
+      params[`$${col}`] = patch[col] ?? null;
+    }
   }
   if (sets.length === 0) return;
   db.query(`UPDATE instances SET ${sets.join(', ')} WHERE id = $id`).run(params);

@@ -1,3 +1,5 @@
+import type { StreamEvent } from './lib/instances.server.ts';
+
 /**
  * Reconnecting WebSocket helper for the live streams. WebSockets (unlike
  * EventSource) don't auto-reconnect, so we reopen with a short backoff whenever
@@ -32,4 +34,21 @@ export function liveSocket(
     if (timer) clearTimeout(timer);
     ws?.close();
   };
+}
+
+/**
+ * Subscribe to the central `/api/stream` socket and receive parsed, typed
+ * `StreamEvent`s — malformed frames are silently dropped. Wraps `liveSocket` so
+ * each caller no longer repeats the JSON.parse + try/catch + type guard.
+ */
+export function liveStream(onEvent: (event: StreamEvent) => void): () => void {
+  return liveSocket('/api/stream', (raw) => {
+    let msg: StreamEvent;
+    try {
+      msg = JSON.parse(raw) as StreamEvent;
+    } catch {
+      return; // ignore malformed frame
+    }
+    onEvent(msg);
+  });
 }

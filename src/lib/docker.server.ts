@@ -1,4 +1,4 @@
-import { getDocker } from './docker-client.server.ts';
+import { getDocker, resetDocker } from './docker-client.server.ts';
 
 /** The HTTP status code dockerode attaches to a rejected request, if any. */
 function statusOf(err: unknown): number | undefined {
@@ -11,6 +11,11 @@ export async function dockerAvailable(): Promise<boolean> {
     await (await getDocker()).ping();
     return true;
   } catch {
+    // The daemon may have started/stopped/switched context since we resolved the
+    // client. Drop the cached client so the next probe re-resolves the live socket
+    // and can recover without a server restart. This runs every few seconds via the
+    // background preflight tick, so recovery is automatic.
+    resetDocker();
     return false;
   }
 }

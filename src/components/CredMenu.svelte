@@ -10,7 +10,8 @@
   let credOpen = $state(false);
 
   // Aggregate auth status: green when every provider is authorized, red when none
-  // are, amber only in the mixed state (impossible until a second provider exists).
+  // are, amber when some (but not all) are — e.g. Claude Code is signed in but no
+  // GitHub token was found, or git identity isn't configured yet.
   const authedCount = $derived(auth.filter((a) => a.available).length);
   const credState = $derived(
     authedCount === auth.length ? 'ok' : authedCount === 0 ? 'error' : 'warn',
@@ -58,7 +59,7 @@
     <CredIcon size={16} />
   </button>
   {#if credOpen}
-    <div class="cred-dropdown" role="menu">
+    <div class="cred-dropdown panel" role="menu">
       {#each auth as provider (provider.id)}
         <button
           type="button"
@@ -133,8 +134,6 @@
     min-width: 220px;
     padding: 6px;
     background: var(--bg-card);
-    border: 1px solid var(--ink);
-    box-shadow: 4px 4px 0 var(--ink);
   }
   .cred-row {
     display: flex;

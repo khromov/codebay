@@ -167,7 +167,7 @@
   </header>
 
   <div class="grid">
-    <details class="palette-card" open>
+    <details class="palette-card panel" open>
       <summary>
         <span class="palette-title">Color palette</span>
         <span class="palette-hint">Design tokens — tap to expand</span>
@@ -295,7 +295,11 @@
     </ComponentDemo>
 
     <ComponentDemo title="HealthBox">
-      <HealthBox health={demoHealth} lastFetchedAt={healthLoading ? null : healthFetchedAt} />
+      <HealthBox
+        health={demoHealth}
+        lastFetchedAt={healthLoading ? null : healthFetchedAt}
+        injectionChecks={3}
+      />
       {#snippet controls()}
         <div class="presets">
           <button type="button" onclick={() => (healthFetchedAt = Date.now())}>refresh now</button>
@@ -493,8 +497,6 @@
   /* Color palette — collapsible card, matches the demo card chrome. */
   .palette-card {
     background: var(--bg-card);
-    border: 1px solid var(--ink);
-    box-shadow: 4px 4px 0 var(--ink);
   }
   .palette-card > summary {
     display: flex;

@@ -87,3 +87,33 @@ export async function execInContainer(
     return { ok: false, stdout: '', error: (e as Error).message };
   }
 }
+
+/**
+ * Run a presence-check script and resolve to whether it printed exactly `1`.
+ * Every injection's `check()` follows the same shape — a script that echoes `1`
+ * or `0` (e.g. via `[ -s "$f" ] && echo 1 || echo 0`), then
+ * `res.ok && res.stdout === '1'` — so this collapses both into one call. `args`
+ * are forwarded the same way as `execInContainer` (available as `$0`, `$1`, …).
+ */
+export async function checkPresence(
+  target: ExecTarget,
+  script: string,
+  args?: string[],
+): Promise<boolean> {
+  const res = await execInContainer(target, { script, args, capture: true });
+  return res.ok && res.stdout === '1';
+}
+
+/**
+ * Shell snippet that ensures `dirExpr` exists and writes the scrubbed
+ * `$DCM_STDIN` secret to `dirExpr/filename`, then chmods it. Shared by
+ * injections that stage a single secret-only file (e.g. Claude Code's
+ * `.credentials.json`) — must be run via `execInContainer` with `stdin` set.
+ * Injections that combine the secret with non-secret content in one file
+ * (e.g. GitHub CLI's `hosts.yml`, which is a header plus the token) build
+ * their own write line instead, since there's nothing generic left to share.
+ */
+export function writeSecretFileScript(dirExpr: string, filename: string, mode = '600'): string {
+  const path = `${dirExpr}/${filename}`;
+  return `mkdir -p "${dirExpr}"; printf '%s' "$DCM_STDIN" > "${path}"; chmod ${mode} "${path}";`;
+}

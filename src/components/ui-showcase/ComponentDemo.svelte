@@ -17,7 +17,7 @@
   } = $props();
 </script>
 
-<section class="demo">
+<section class="demo panel">
   <h2>{title}</h2>
   <div class="preview">
     {@render children()}
@@ -37,8 +37,6 @@
 <style>
   .demo {
     background: var(--bg-card);
-    border: 1px solid var(--ink);
-    box-shadow: 4px 4px 0 var(--ink);
   }
   h2 {
     margin: 0;
