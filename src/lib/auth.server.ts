@@ -112,7 +112,10 @@ export const basicAuth: Handle = async ({ event, resolve }) => {
 	// api route). The `Mochi.ws` routes (/api/stream, /api/instances/:id/logs)
 	// bypass this handle entirely and enforce `wsUpgradeAllowed` in their own
 	// `upgrade` callbacks instead.
-	if (event.request.headers.get('upgrade')?.toLowerCase() === 'websocket' && !wsOriginOk(event.request)) {
+	if (
+		event.request.headers.get('upgrade')?.toLowerCase() === 'websocket' &&
+		!wsOriginOk(event.request)
+	) {
 		return csrfRejected();
 	}
 

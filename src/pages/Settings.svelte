@@ -6,8 +6,14 @@
 	let {
 		defaultImage,
 		builtinImage,
+		disableBuildCache,
 		dockerArch
-	}: { defaultImage: string; builtinImage: string; dockerArch: string | null } = $props();
+	}: {
+		defaultImage: string;
+		builtinImage: string;
+		disableBuildCache: boolean;
+		dockerArch: string | null;
+	} = $props();
 </script>
 
-<SettingsView {defaultImage} {builtinImage} {dockerArch} mochi:hydrate />
+<SettingsView {defaultImage} {builtinImage} {disableBuildCache} {dockerArch} mochi:hydrate />

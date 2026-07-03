@@ -10,6 +10,14 @@ function bridgeUrl(): string {
 /** Where each container keeps its bridge-auth header, resolved at hook runtime. */
 const HEADER_FILE = '${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.bridge-header';
 
+/** Debug log every hook appends its outcome to, inside the container's Claude
+ * config dir. Tail it from a terminal in the container to see whether each
+ * notification actually left and how the bridge answered:
+ *   tail -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.bridge-hook.log"
+ * Slowly-growing (one line per Stop/Notification/UserPromptSubmit); the hook
+ * trims it back to the last 500 lines on each write. */
+const HOOK_LOG = '${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.bridge-hook.log';
+
 /**
  * One `type: command` hook firing curl at the bridge with the given state. The
  * token rides in a header (`X-Bridge-Token`), not the query string, so it doesn't
@@ -17,15 +25,31 @@ const HEADER_FILE = '${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.bridge-header';
  * (`curl -H @<file>`) rather than interpolated onto curl's argv, so it isn't
  * visible via `ps` inside the container. `id`/`state` aren't secret, so they stay
  * in the query string.
+ *
+ * The curl outcome is recorded to `HOOK_LOG` for debugging: the hook's own
+ * stdout/stderr is otherwise discarded by Claude, so a silently-failing
+ * notification (DNS, timeout, wrong port, rejected token) leaves no other trace.
+ * `-f` is dropped versus a bare fire-and-forget so we still capture the HTTP
+ * status on a 4xx (e.g. a 403 token mismatch) rather than curl bailing early;
+ * `curl_exit` distinguishes "couldn't reach the server" (non-zero) from "reached
+ * it, got an HTTP status" (zero, read `http`).
  */
 function hookFor(id: string, state: 'done' | 'waiting' | 'busy') {
 	const url = `${bridgeUrl()}?id=${encodeURIComponent(id)}&state=${state}`;
+	const command =
+		`log="${HOOK_LOG}"; ` +
+		`http=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' -X POST -H @"${HEADER_FILE}" '${url}' 2>>"$log"); ` +
+		`rc=$?; ` +
+		`printf '[%s] state=${state} http=%s curl_exit=%s\\n' "$(date -Is 2>/dev/null || date)" "$http" "$rc" >> "$log" 2>/dev/null; ` +
+		// Keep the log bounded without a race window that could lose the file.
+		`t=$(tail -n 500 "$log" 2>/dev/null) && printf '%s\\n' "$t" > "$log" 2>/dev/null; ` +
+		`true`;
 	return [
 		{
 			hooks: [
 				{
 					type: 'command',
-					command: `curl -fsS -m 5 -X POST -H @"${HEADER_FILE}" '${url}' >/dev/null 2>&1 || true`
+					command
 				}
 			]
 		}

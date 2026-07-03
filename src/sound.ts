@@ -50,10 +50,26 @@ export function unlockAudio(): void {
 
 /** Play a short attention chime, unless the user has muted sound. */
 export function playChime(state: Chime): void {
-	if (!soundEnabled()) return;
+	if (!soundEnabled()) {
+		console.log(`[chime] playChime(${state}) — skipped (sound disabled in settings)`);
+		return;
+	}
 	const el = element(state);
-	if (!el) return;
+	if (!el) {
+		console.log(`[chime] playChime(${state}) — no audio element (SSR/no window?)`);
+		return;
+	}
+	if (!unlocked) {
+		console.warn(
+			`[chime] playChime(${state}) — audio not yet unlocked; browser may block until the page is interacted with`
+		);
+	}
 	el.currentTime = 0;
 	// Rejects if the page hasn't been interacted with yet; nothing to do but ignore.
-	void el.play().catch(() => {});
+	void el
+		.play()
+		.then(() => console.log(`[chime] playChime(${state}) — playing`))
+		.catch((err) =>
+			console.warn(`[chime] playChime(${state}) — play rejected:`, err?.message ?? err)
+		);
 }

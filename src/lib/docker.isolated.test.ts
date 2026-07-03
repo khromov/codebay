@@ -22,7 +22,8 @@ function fakeDocker(opts: {
 		removeOpts: undefined as unknown,
 		volumesRemoved: [] as string[]
 	};
-	const err = (status: number) => Object.assign(new Error(`http ${status}`), { statusCode: status });
+	const err = (status: number) =>
+		Object.assign(new Error(`http ${status}`), { statusCode: status });
 
 	const container = {
 		inspect: async () => {
@@ -38,7 +39,7 @@ function fakeDocker(opts: {
 	const docker = {
 		getContainer: (_id: string) => container,
 		getVolume: (name: string): VolumeStub => ({
-			remove: async (o?: unknown) => {
+			remove: async () => {
 				calls.volumesRemoved.push(name);
 				if (opts.volumeRemove) return opts.volumeRemove(name);
 				return undefined;

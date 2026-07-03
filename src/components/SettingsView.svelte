@@ -4,6 +4,9 @@
 	import Power from '@lucide/svelte/icons/power';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import Volume2 from '@lucide/svelte/icons/volume-2';
+	import Layers from '@lucide/svelte/icons/layers';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Hammer from '@lucide/svelte/icons/hammer';
 	import { soundEnabled, setSoundEnabled } from '../settings.ts';
 	import { playChime, unlockAudio } from '../sound.ts';
 	import { apiPost } from '../api.ts';
@@ -12,8 +15,14 @@
 	let {
 		defaultImage,
 		builtinImage,
+		disableBuildCache,
 		dockerArch
-	}: { defaultImage: string; builtinImage: string; dockerArch: string | null } = $props();
+	}: {
+		defaultImage: string;
+		builtinImage: string;
+		disableBuildCache: boolean;
+		dockerArch: string | null;
+	} = $props();
 
 	// Initialize from localStorage on the client; defaults to on during SSR.
 	let sound = $state(soundEnabled());
@@ -54,6 +63,77 @@
 	function resetImage() {
 		image = builtinImage;
 		void persistImage(builtinImage);
+	}
+
+	// Build cache — the DB-backed "disable cache" flag is the source of truth (unlike
+	// the localStorage sound toggle), so initialize from the prop and persist on change.
+	// svelte-ignore state_referenced_locally
+	let noCache = $state(disableBuildCache);
+	let savingCache = $state(false);
+	let cacheError = $state<string | null>(null);
+
+	let clearing = $state(false);
+	let clearMsg = $state<string | null>(null);
+	let clearError = $state<string | null>(null);
+
+	let rebuilding = $state(false);
+	let rebuildMsg = $state<string | null>(null);
+	let rebuildError = $state<string | null>(null);
+
+	function formatBytes(n: number): string {
+		if (n <= 0) return '0 B';
+		const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+		const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), units.length - 1);
+		return `${(n / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+	}
+
+	async function toggleBuildCache(on: boolean) {
+		noCache = on;
+		cacheError = null;
+		savingCache = true;
+		try {
+			await apiPost('/api/settings/disable-build-cache', { enabled: on });
+		} catch (err) {
+			noCache = !on; // revert the optimistic flip on failure
+			cacheError = (err as Error).message;
+		} finally {
+			savingCache = false;
+		}
+	}
+
+	async function clearBuildCache() {
+		clearError = null;
+		clearMsg = null;
+		clearing = true;
+		try {
+			const res = (await apiPost('/api/settings/clear-build-cache')) as { spaceReclaimed?: number };
+			clearMsg = `Cleared — freed ${formatBytes(res?.spaceReclaimed ?? 0)}.`;
+		} catch (err) {
+			clearError = (err as Error).message;
+		} finally {
+			clearing = false;
+		}
+	}
+
+	async function rebuildAllNoCache() {
+		if (
+			!confirm(
+				'Rebuild every running container from scratch (no build cache)? Each will restart and may take a while.'
+			)
+		)
+			return;
+		rebuildError = null;
+		rebuildMsg = null;
+		rebuilding = true;
+		try {
+			const res = (await apiPost('/api/instances/rebuild-all-no-cache')) as { count?: number };
+			const n = res?.count ?? 0;
+			rebuildMsg = n === 0 ? 'No running containers to rebuild.' : `Rebuilding ${n} container(s)…`;
+		} catch (err) {
+			rebuildError = (err as Error).message;
+		} finally {
+			rebuilding = false;
+		}
 	}
 
 	function toggleSound(on: boolean) {
@@ -138,6 +218,75 @@
 					<div class="msg ok">Saved.</div>
 				{/if}
 			</form>
+		</section>
+
+		<section class="card">
+			<div class="row">
+				<div class="label">
+					<Layers size={18} />
+					<div class="text">
+						<div class="name">Disable build cache</div>
+						<div class="desc">
+							Build every new container with <code>--build-no-cache</code>. Applies to first boot
+							and rebuilds — slower, but always picks up upstream image/layer changes.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						checked={noCache}
+						disabled={savingCache}
+						onchange={(e) => toggleBuildCache(e.currentTarget.checked)}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</div>
+			{#if cacheError}
+				<div class="sub"><div class="msg error">{cacheError}</div></div>
+			{/if}
+
+			<div class="row divided">
+				<div class="label">
+					<Trash2 size={18} />
+					<div class="text">
+						<div class="name">Clear build cache</div>
+						<div class="desc">
+							Purge Docker's BuildKit layer cache now, so the next build runs uncached. Doesn't
+							remove pulled images.
+						</div>
+						{#if clearError}
+							<div class="msg error">{clearError}</div>
+						{:else if clearMsg}
+							<div class="msg ok">{clearMsg}</div>
+						{/if}
+					</div>
+				</div>
+				<Button icon={Trash2} disabled={clearing} onclick={clearBuildCache}>
+					{clearing ? 'Clearing…' : 'Clear cache'}
+				</Button>
+			</div>
+
+			<div class="row divided">
+				<div class="label">
+					<Hammer size={18} />
+					<div class="text">
+						<div class="name">Rebuild running containers (no cache)</div>
+						<div class="desc">
+							Re-run <code>devcontainer up --build-no-cache</code> for every currently-running instance.
+							In-container edits are kept; stopped instances are left alone.
+						</div>
+						{#if rebuildError}
+							<div class="msg error">{rebuildError}</div>
+						{:else if rebuildMsg}
+							<div class="msg ok">{rebuildMsg}</div>
+						{/if}
+					</div>
+				</div>
+				<Button icon={Hammer} disabled={rebuilding} onclick={rebuildAllNoCache}>
+					{rebuilding ? 'Starting…' : 'Rebuild all'}
+				</Button>
+			</div>
 		</section>
 
 		<section class="card">
@@ -238,6 +387,27 @@
 		justify-content: space-between;
 		gap: 16px;
 		padding: 18px 18px;
+	}
+	/* Secondary rows stacked inside one card, separated by a hairline rule. */
+	.row.divided {
+		border-top: 1px solid var(--rule);
+		align-items: flex-start;
+	}
+	.row.divided :global(.btn) {
+		flex: none;
+		white-space: nowrap;
+	}
+	/* Inline message tucked under a row (e.g. a toggle's error), matching row padding. */
+	.sub {
+		padding: 0 18px 14px;
+	}
+	code {
+		font-family: var(--font-mono);
+		font-size: 0.92em;
+		padding: 1px 4px;
+		background: var(--bg);
+		border: 1px solid var(--rule);
+		border-radius: 3px;
 	}
 	.label {
 		display: flex;

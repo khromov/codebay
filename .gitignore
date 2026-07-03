@@ -3,3 +3,4 @@ node_modules
 *.tsbuildinfo
 vendor
 .devcontainers-manager
+.test-data

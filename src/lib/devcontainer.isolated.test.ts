@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readDeclaredContainerPorts, writeOverrideConfig } from './devcontainer.server.ts';
@@ -65,6 +65,14 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		const terminal = tasks.tasks.find((t: { label: string }) => t.label === 'Terminal');
 		expect(terminal).toBeDefined();
 		expect(terminal.runOptions.runOn).toBe('folderOpen');
+	});
+
+	test('gates the Terminal task to the first open via a marker file', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		// folderOpen re-fires on every load; the command no-ops after the first open.
+		expect(terminal.command).toContain('.dcm-terminal-launched');
+		expect(terminal.command).toContain('exit 0');
 	});
 
 	test('stages task.allowAutomaticTasks in code-server settings', async () => {
@@ -161,5 +169,49 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		expect(features['ghcr.io/devcontainers/features/node:1']).toBeUndefined();
 		// code-server is still injected for project-supplied configs.
 		expect(features['ghcr.io/coder/devcontainer-features/code-server:1']).toBeDefined();
+	});
+});
+
+describe('writeOverrideConfig local git excludes', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'dcm-excl-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	const excludePath = () => join(dir, '.git', 'info', 'exclude');
+	const readExclude = () => readFileSync(excludePath(), 'utf8');
+
+	test('seeds .git/info/exclude with the manager artifacts when the copy is a git repo', async () => {
+		mkdirSync(join(dir, '.git'), { recursive: true });
+		await writeOverrideConfig(dir, 8001);
+		const text = readExclude();
+		expect(text).toContain('# >>> devcontainers-manager (auto-generated) >>>');
+		expect(text).toContain('/.devcontainer/code-server-settings.json');
+		expect(text).toContain('/.devcontainer/devcontainer-lock.json');
+		expect(text).toContain('/.vscode/tasks.json');
+	});
+
+	test('is idempotent — the manager block appears once across reruns', async () => {
+		mkdirSync(join(dir, '.git'), { recursive: true });
+		await writeOverrideConfig(dir, 8001);
+		await writeOverrideConfig(dir, 8001);
+		const markers = readExclude().match(/devcontainers-manager \(auto-generated\)/g) ?? [];
+		expect(markers).toHaveLength(1);
+	});
+
+	test('preserves pre-existing exclude entries', async () => {
+		mkdirSync(join(dir, '.git', 'info'), { recursive: true });
+		writeFileSync(excludePath(), 'my-secret.txt\n');
+		await writeOverrideConfig(dir, 8001);
+		const text = readExclude();
+		expect(text).toContain('my-secret.txt');
+		expect(text).toContain('/.devcontainer/code-server-settings.json');
+	});
+
+	test('is a no-op when the copy is not a git repo', async () => {
+		await writeOverrideConfig(dir, 8001);
+		expect(existsSync(join(dir, '.git'))).toBe(false);
 	});
 });

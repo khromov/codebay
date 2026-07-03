@@ -327,7 +327,7 @@ async function seedDeclaredPorts(row: InstanceRow): Promise<void> {
  * boot and by `rebuildInstance` — it never re-copies the workspace, so in-container edits survive
  * a rebuild. `--remove-existing-container` recreates the container with the current published ports.
  */
-async function provision(row: InstanceRow): Promise<void> {
+async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Promise<void> {
 	try {
 		const forwards = listForwards(row.id).map((f) => ({
 			container_port: f.container_port,
@@ -343,8 +343,15 @@ async function provision(row: InstanceRow): Promise<void> {
 		);
 		updateInstance(row.id, { image_source: imageSource });
 
+		// Build without cache when explicitly requested (e.g. "rebuild all without cache")
+		// or when the global "disable build cache" setting is on — so it covers first boot too.
+		const noCache = opts.noCache || getOption('disable_build_cache') === '1';
+		if (noCache) appendLog(row.id, `Building without cache (--build-no-cache)\n`);
+
 		appendLog(row.id, `Starting devcontainer…\n`);
-		const result = await devcontainerUp(row.workspace_path, (chunk) => appendLog(row.id, chunk));
+		const result = await devcontainerUp(row.workspace_path, (chunk) => appendLog(row.id, chunk), {
+			noCache
+		});
 
 		if (result.outcome !== 'success' || !result.containerId) {
 			throw new Error(
@@ -526,16 +533,30 @@ export function removeForwardedPort(id: string, containerPort: number): Instance
  * Re-run `devcontainer up` to apply the current forwarded-port set, recreating the container
  * (in-container edits survive — the workspace isn't re-copied). No-op if already (re)building.
  */
-export function rebuildInstance(id: string): InstanceRow {
+export function rebuildInstance(id: string, opts: { noCache?: boolean } = {}): InstanceRow {
 	const row = getInstance(id);
 	if (!row) throw new Error('Instance not found');
 	if (row.status === 'creating') return row; // a build is already in flight
 	updateInstance(id, { status: 'creating', error: null });
 	triggerReconcile();
 	const fresh = getInstance(id)!;
-	appendLog(id, `\n— Rebuilding to apply port changes —\n`);
-	void provision(fresh);
+	appendLog(
+		id,
+		opts.noCache ? `\n— Rebuilding without cache —\n` : `\n— Rebuilding to apply port changes —\n`
+	);
+	void provision(fresh, opts);
 	return fresh;
+}
+
+/**
+ * Rebuild every currently-running instance from scratch (no build cache). Stopped,
+ * errored, and still-creating instances are left untouched. Each rebuild runs in the
+ * background via `rebuildInstance`; returns how many were kicked off.
+ */
+export function rebuildRunningInstancesNoCache(): number {
+	const running = allInstances().filter((r) => r.status === 'running' && r.container_id);
+	for (const row of running) rebuildInstance(row.id, { noCache: true });
+	return running.length;
 }
 
 export async function startInstance(id: string): Promise<InstanceRow> {

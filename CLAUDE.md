@@ -18,9 +18,12 @@ bun run typecheck  # svelte-check (with a custom warning-ignore flag) + tsc --no
 bun test           # all tests
 bun test src/index.isolated.test.ts          # single file
 bun test -t "renders Hello world"            # single test by name
+bun run checks     # format + typecheck + tests — run this after every change (see below)
 bun run clean      # remove .mochi build output
 bun run gen:chimes # re-render attention chimes to public/sounds/ WAVs (after editing scripts/gen-chimes.ts)
 ```
+
+**Always run `bun run checks` after implementing a change** (it runs `format`, then `typecheck`, then `test`) and fix anything it surfaces before considering the work done.
 
 Tests are named `*.isolated.test.ts`. Note that `db.server.ts` pins its SQLite handle to `globalThis`, so all tests in a run share one DB connection — don't `rmSync(DATA_DIR)` in a test's `afterAll` or you'll yank state out from under other tests.
 

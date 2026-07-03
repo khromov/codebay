@@ -42,6 +42,12 @@ EOF
 
 echo "Installing dependencies..."
 cd "$ROOT"
+# Bun records a file: dep's transitive dependencies in bun.lock at install time
+# and won't re-read the vendored package.json on a plain `bun install` (even with
+# --force). If this mochi update changed mochi's own deps, the lockfile is stale
+# and those new packages never get installed. Drop the lockfile so Bun fully
+# re-resolves against the freshly vendored vendor/mochi-framework/package.json.
+rm -f bun.lock
 bun install
 
 echo "Done. mochi-framework now pinned to $REF @ ${COMMIT:0:12}"
