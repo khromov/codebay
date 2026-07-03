@@ -178,7 +178,9 @@ export function findDevcontainerConfig(dir: string): string | null {
 /** Find the devcontainer.json the CLI would use for a workspace folder. */
 function configPath(workspaceDir: string): string {
 	// Default to the nested path when the folder has none — that's where we create it.
-	return findDevcontainerConfig(workspaceDir) ?? join(workspaceDir, '.devcontainer', 'devcontainer.json');
+	return (
+		findDevcontainerConfig(workspaceDir) ?? join(workspaceDir, '.devcontainer', 'devcontainer.json')
+	);
 }
 
 type DevcontainerConfig = {

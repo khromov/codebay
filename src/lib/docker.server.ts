@@ -104,7 +104,7 @@ export async function removeContainer(containerId: string): Promise<boolean> {
 	const docker = await getDocker();
 	const container = docker.getContainer(containerId);
 
-	let volumeNames: string[] = [];
+	let volumeNames: string[];
 	try {
 		const info = await container.inspect();
 		volumeNames = (info.Mounts ?? [])

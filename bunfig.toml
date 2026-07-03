@@ -2,3 +2,6 @@
 # Only run our own tests under src/, not the vendored Mochi framework's
 # test suite (vendor/ is gitignored but still on disk).
 root = "src"
+# Point DATA_DIR at a project-local dir before any test module loads, so a bare
+# `bun test` can't open (and pollute) the real ~/.devcontainers-manager DB.
+preload = "./test-setup.ts"
