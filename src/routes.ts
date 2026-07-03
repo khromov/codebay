@@ -285,17 +285,29 @@ export const routes: Record<string, MochiRouteValue> = {
 		const id = url.searchParams.get('id');
 		const token = request.headers.get('X-Bridge-Token');
 		const state = url.searchParams.get('state');
-		if (!id || !token) return apiError(400, 'id and token are required');
+		console.log(
+			`[bridge] attention POST id=${id ?? '(none)'} state=${state ?? '(none)'} hasToken=${!!token}`
+		);
+		if (!id || !token) {
+			console.warn('[bridge] rejected: missing id or token');
+			return apiError(400, 'id and token are required');
+		}
 		const row = getInstance(id);
 		// Return a uniform 403 whether the instance is missing or the token is wrong,
 		// and use a constant-time compare — so an attacker can't enumerate which
 		// instance ids exist, nor probe the token byte-by-byte via response timing.
 		if (!row || !row.bridge_token || !timingSafeEqualStr(token, row.bridge_token)) {
+			console.warn(
+				`[bridge] rejected id=${id}: ${!row ? 'no such instance' : !row.bridge_token ? 'instance has no bridge_token' : 'token mismatch'}`
+			);
 			return apiError(403, 'Forbidden');
 		}
 		if (state === 'done') setAttention(id, 'done');
 		else if (state === 'waiting') setAttention(id, 'waiting');
 		else clearAttention(id); // 'busy' / anything else → Claude resumed, dismiss the pulse
+		console.log(
+			`[bridge] accepted id=${id} → attention=${state === 'done' || state === 'waiting' ? state : 'cleared'}`
+		);
 		return json({ ok: true });
 	}),
 

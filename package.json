@@ -8,6 +8,7 @@
 	"scripts": {
 		"build": "mochi-framework build",
 		"start": "bun src/index.ts",
+		"prod": "bun run build && PORT=6969 bun run start",
 		"dev": "MODE=development DISABLE_OPEN_BROWSER=1 DATA_DIR=./.devcontainers-manager bun src/index.ts",
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
 		"test": "bun test",

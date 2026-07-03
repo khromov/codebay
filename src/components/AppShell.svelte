@@ -139,8 +139,19 @@
 				if (primed) {
 					for (const id in nextAttention) {
 						const state = nextAttention[id];
-						if (state && state !== attention[id] && id !== active) playChime(state);
+						if (state && state !== attention[id]) {
+							if (id === active) {
+								console.log(
+									`[chime] attention id=${id} state=${state} — skipped (tab is active/focused)`
+								);
+							} else {
+								console.log(`[chime] attention id=${id} state=${state} → playChime`);
+								playChime(state);
+							}
+						}
 					}
+				} else {
+					console.log('[chime] first frame after (re)connect — baselining, no chimes');
 				}
 				primed = true;
 				instances = next;

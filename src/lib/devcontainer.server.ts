@@ -1,6 +1,7 @@
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { homedir } from 'node:os';
 import {
 	CODE_SERVER_PORT,
 	COPY_IGNORE,
@@ -25,6 +26,22 @@ const GITHUB_CLI_FEATURE = 'ghcr.io/devcontainers/features/github-cli:1';
 /** Where the override config file is staged inside the copied workspace. */
 const CODE_SERVER_SETTINGS_FILE = 'code-server-settings.json';
 
+/**
+ * Repo-root-anchored paths for files the manager (or the devcontainer CLI) drops into the copied
+ * workspace but that the project's own .gitignore doesn't cover. Seeded into the copy's
+ * .git/info/exclude so they don't surface as stray changes in the container's git status.
+ * Excludes only affect untracked files, so listing an already-tracked path is a harmless no-op.
+ */
+const MANAGER_GIT_EXCLUDES = [
+	'/.devcontainer/code-server-settings.json',
+	'/.devcontainer/devcontainer-lock.json',
+	'/.vscode/tasks.json'
+];
+
+/** Markers bounding the manager-owned block in .git/info/exclude, so it's replaceable across rebuilds. */
+const EXCLUDE_MARKER_START = '# >>> devcontainers-manager (auto-generated) >>>';
+const EXCLUDE_MARKER_END = '# <<< devcontainers-manager <<<';
+
 /** Default code-server (VS Code) user settings: dark theme, no agent chat panel. */
 const CODE_SERVER_SETTINGS = {
 	'workbench.colorTheme': 'Default Dark Modern',
@@ -45,11 +62,19 @@ const CODE_SERVER_SETTINGS = {
  * `--dangerously-skip-permissions` matches the in-container alias (instances are
  * throwaway single-tenant sandboxes); invoked directly here since the alias only
  * loads in interactive shells and this task's command runs non-interactively.
+ *
+ * Gated to the *first* open: VS Code re-runs a `folderOpen` task on every workspace
+ * load (each reload/revisit), and there's no built-in run-once option, so the command
+ * itself checks/creates a marker file and `exit 0`s on subsequent opens (no relaunch).
+ * The marker lives in the container home dir, so it survives code-server reloads but
+ * resets on a rebuild (fresh container) — the terminal then auto-launches once more.
  */
 const TERMINAL_TASK = {
 	label: 'Terminal',
 	type: 'shell',
-	command: 'claude --dangerously-skip-permissions; exec ${env:SHELL} -l',
+	command:
+		'MARK="$HOME/.dcm-terminal-launched"; [ -e "$MARK" ] && exit 0; touch "$MARK"; ' +
+		'claude --dangerously-skip-permissions; exec ${env:SHELL} -l',
 	presentation: { reveal: 'always', panel: 'shared', focus: true },
 	runOptions: { runOn: 'folderOpen' },
 	problemMatcher: []
@@ -318,7 +343,91 @@ export async function writeOverrideConfig(
 
 	await writeTerminalTask(workspaceDir);
 
+	// Keep the container's `git status` clean: hide the files we just injected plus anything the
+	// host only ignores via its global excludes (the container has no global gitignore).
+	await writeLocalGitExclude(workspaceDir);
+
 	return { imageSource };
+}
+
+/**
+ * The host's global git excludes (`core.excludesFile`) contents, so we can replicate them into the
+ * copied workspace. The container has no global gitignore, so files the host hides globally (e.g. a
+ * nested `.claude/settings.local.json`) would otherwise surface in the container's git status.
+ * Mirrors git's own resolution: an explicit `core.excludesFile`, else `$XDG_CONFIG_HOME/git/ignore`
+ * (or `~/.config/git/ignore`). Best-effort — returns '' when unset, missing, or unreadable.
+ */
+async function readHostGlobalExcludes(): Promise<string> {
+	const expand = (p: string) => (p.startsWith('~/') ? join(homedir(), p.slice(2)) : p);
+	const configured = await spawnCapture([
+		'git',
+		'config',
+		'--global',
+		'--get',
+		'core.excludesFile'
+	]);
+	const path = configured
+		? expand(configured)
+		: process.env.XDG_CONFIG_HOME
+			? join(process.env.XDG_CONFIG_HOME, 'git', 'ignore')
+			: join(homedir(), '.config', 'git', 'ignore');
+	if (!existsSync(path)) return '';
+	try {
+		return await readFile(path, 'utf8');
+	} catch {
+		return '';
+	}
+}
+
+/** Remove a previously-written manager block (inclusive of its markers) from an exclude file's text. */
+function stripManagedBlock(text: string): string {
+	const start = text.indexOf(EXCLUDE_MARKER_START);
+	if (start === -1) return text;
+	const endMarker = text.indexOf(EXCLUDE_MARKER_END, start);
+	// A truncated block (no closing marker) is dropped from the opening marker onward.
+	if (endMarker === -1) return text.slice(0, start);
+	return text.slice(0, start) + text.slice(endMarker + EXCLUDE_MARKER_END.length);
+}
+
+/**
+ * Seed the copied workspace's `.git/info/exclude` with the manager's own artifacts plus a replica of
+ * the host's global git excludes, so the container's `git status` isn't polluted by files the manager
+ * injects or by files the host only hides via its global gitignore. Repo-local and never committed, so
+ * the project's own `.gitignore` is left untouched. No-op when the copy isn't a real git repo.
+ * Idempotent: a prior manager block (between markers) is replaced rather than stacked across rebuilds.
+ */
+async function writeLocalGitExclude(workspaceDir: string): Promise<void> {
+	const gitDir = join(workspaceDir, '.git');
+	// Only a real .git directory has info/exclude; a submodule/worktree .git file doesn't.
+	if (!existsSync(gitDir) || !statSync(gitDir).isDirectory()) return;
+
+	const infoDir = join(gitDir, 'info');
+	const excludePath = join(infoDir, 'exclude');
+
+	let existing = '';
+	if (existsSync(excludePath)) {
+		try {
+			existing = await readFile(excludePath, 'utf8');
+		} catch {
+			existing = '';
+		}
+	}
+	existing = stripManagedBlock(existing).trim();
+
+	const globalExcludes = (await readHostGlobalExcludes()).trim();
+	const block = [
+		EXCLUDE_MARKER_START,
+		'# Files the manager injects into the copied workspace.',
+		...MANAGER_GIT_EXCLUDES,
+		...(globalExcludes
+			? ['# Replicated from the host global git excludes (core.excludesFile).', globalExcludes]
+			: []),
+		EXCLUDE_MARKER_END,
+		''
+	].join('\n');
+
+	await mkdir(infoDir, { recursive: true }).catch(() => {});
+	await writeFile(excludePath, existing ? `${existing}\n\n${block}` : block, 'utf8');
 }
 
 /**

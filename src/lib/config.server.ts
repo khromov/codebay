@@ -48,6 +48,22 @@ export const BASIC_AUTH_PASSWORD = process.env.BASIC_AUTH_PASSWORD || '';
  */
 export const HOST = process.env.HOST || '127.0.0.1';
 
+/** TCP port the server listens on. */
+export const PORT = Number(process.env.PORT) || 3333;
+
+/**
+ * Public origin the browser reaches this server on, used for Mochi's CSRF
+ * origin check (and to silence its "no proxy.origin" warning in production).
+ * Defaults to `http://localhost:<PORT>` for local access; override with
+ * PUBLIC_ORIGIN when fronted by a reverse proxy or a custom hostname. Extra
+ * allowed origins (e.g. a LAN IP) can be passed comma-separated in TRUSTED_ORIGINS.
+ */
+export const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN?.trim() || `http://localhost:${PORT}`;
+export const TRUSTED_ORIGINS = (process.env.TRUSTED_ORIGINS || '')
+	.split(',')
+	.map((o) => o.trim())
+	.filter(Boolean);
+
 /**
  * Optional token overrides for credential injection. When set, the manager injects
  * this token into every container instead of discovering the host's credentials

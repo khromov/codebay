@@ -2,9 +2,13 @@ import { Mochi, silenceInternalRoutes } from 'mochi-framework';
 import { routes } from './routes.ts';
 import { basicAuth } from './lib/auth.server.ts';
 import { PROXY_PREFIX } from './lib/proxy.server.ts';
-import { BASIC_AUTH_PASSWORD, HOST } from './lib/config.server.ts';
-
-const PORT = Number(process.env.PORT) || 3333;
+import {
+	BASIC_AUTH_PASSWORD,
+	HOST,
+	PORT,
+	PUBLIC_ORIGIN,
+	TRUSTED_ORIGINS
+} from './lib/config.server.ts';
 
 if (!BASIC_AUTH_PASSWORD) {
 	console.warn('⚠ BASIC_AUTH_PASSWORD is not set — the UI and all instances are unprotected.');
@@ -25,6 +29,16 @@ await Mochi.serve({
 	// the slash), and we don't want Mochi's global policy touching proxy paths.
 	// Gate the whole app (UI, APIs, proxy) behind one Basic Auth password.
 	handle: basicAuth,
+	// The app is served same-origin (no reverse proxy by default). Pin the public
+	// origin so Mochi's CSRF origin check accepts our own form POSTs in production
+	// mode — without this it refuses every form mutation and warns about a missing
+	// proxy.origin. Override PUBLIC_ORIGIN / TRUSTED_ORIGINS when fronted by a proxy.
+	proxy: {
+		origin: PUBLIC_ORIGIN
+	},
+	csrf: {
+		trustedOrigins: TRUSTED_ORIGINS
+	},
 	filters: {
 		'consoleLogger:line': (line, ctx) => {
 			const kept = silenceInternalRoutes(line, ctx);

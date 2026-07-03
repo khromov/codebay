@@ -19,12 +19,20 @@ export function getAttention(id: string): AttentionState | null {
 }
 
 export function setAttention(id: string, state: AttentionState): void {
-	if (attention.get(id) === state) return;
+	if (attention.get(id) === state) {
+		console.log(`[attention] setAttention id=${id} state=${state} — no change, skipping reconcile`);
+		return;
+	}
 	attention.set(id, state);
+	console.log(`[attention] setAttention id=${id} state=${state} → reconcile`);
 	triggerReconcile();
 }
 
 export function clearAttention(id: string): void {
-	if (!attention.delete(id)) return;
+	if (!attention.delete(id)) {
+		console.log(`[attention] clearAttention id=${id} — nothing set, skipping reconcile`);
+		return;
+	}
+	console.log(`[attention] clearAttention id=${id} → reconcile`);
 	triggerReconcile();
 }
