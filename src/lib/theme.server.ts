@@ -15,6 +15,17 @@ export function injectThemeAttribute(html: string, cookieValue: string | undefin
  */
 export const themeHandle: Handle = ({ event, resolve }) =>
 	resolve(event, {
-		transformPage: ({ html }) =>
-			injectThemeAttribute(html, getRequestContext().cookies.get('theme'))
+		transformPage: ({ html }) => {
+			// transformPage also fires for HTML responses (e.g. 404s) produced by
+			// Mochi's fetch-fallback path (static assets, proxy passthrough), which
+			// runs outside the page/api dispatchers' requestContext.run() — so no
+			// request context, and thus no theme cookie, is available there.
+			let cookieValue: string | undefined;
+			try {
+				cookieValue = getRequestContext().cookies.get('theme');
+			} catch {
+				return html;
+			}
+			return injectThemeAttribute(html, cookieValue);
+		}
 	});
