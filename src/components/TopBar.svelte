@@ -5,6 +5,7 @@
 	import type { AuthProvider } from '../types.ts';
 	import Brand from './Brand.svelte';
 	import SettingsCog from './SettingsCog.svelte';
+	import ThemeToggle from './ThemeToggle.svelte';
 	import CredMenu from './CredMenu.svelte';
 	import Button from './Button.svelte';
 
@@ -34,6 +35,7 @@
 		{#if isDev}
 			<Button variant="default" size="sm" icon={Component} href="/debug">Debug</Button>
 		{/if}
+		<ThemeToggle />
 		<SettingsCog />
 		<CredMenu {auth} />
 		<Button variant="danger" size="sm" onclick={onDeleteAll} disabled={!canDelete}>

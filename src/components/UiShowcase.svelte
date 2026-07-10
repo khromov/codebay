@@ -21,8 +21,10 @@
 
 	// --- Design tokens (mirrors :root in src/shell.html) ---
 	// `token` drives the swatch fill via var(--token) so it auto-syncs with the
-	// real value; `hex` is a text label only. `border` flags pale chips that need
-	// an outline to read against the panel.
+	// real value (including the dark-theme override — toggle it with the theme
+	// button in the top bar); `hex` is a text label only and reflects the
+	// light-theme value regardless of the active theme. `border` flags pale
+	// chips that need an outline to read against the panel.
 	const palette: { group: string; swatches: { token: string; hex: string; border?: boolean }[] }[] =
 		[
 			{

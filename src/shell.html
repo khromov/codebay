@@ -27,11 +27,32 @@
 				--attn-done: #22c55e;
 				--attn-waiting: #f59e0b;
 				--info: #388bfd;
+				--grid-line: rgba(0, 0, 0, 0.035);
+				/* --attn-done at reduced opacity — reads correctly on both themes' track color. */
+				--switch-on-bg: rgba(34, 197, 94, 0.32);
 				--font-display: 'Doto Variable', 'JetBrains Mono Variable', monospace;
 				--font-mono:
 					'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 				--font-serif: var(--font-display);
 				--font-sans: var(--font-mono);
+			}
+			:root[data-theme='dark'] {
+				--bg: #1b1c15;
+				--bg-card: #24261c;
+				--ink: #e8e9df;
+				--ink-soft: #b7b8a9;
+				--ink-faint: #85867a;
+				--rule: #46473a;
+				--rule-soft: #34352a;
+				--warn-bg: #4a3d12;
+				--warn-line: #c9a83a;
+				--warn-ink: #f3e3a0;
+				--ok-bg: #23421a;
+				--ok-line: #6fa84a;
+				--ok-ink: #cdeab8;
+				--danger: #e2564a;
+				--danger-soft: #4a231e;
+				--grid-line: rgba(255, 255, 255, 0.035);
 			}
 			* {
 				box-sizing: border-box;
@@ -69,9 +90,8 @@
 				font-family: var(--font-sans);
 				/* Pale LCD panel with a faint pixel-grid matrix overlay. */
 				background:
-					repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.035) 0 1px, transparent 1px 3px),
-					repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.035) 0 1px, transparent 1px 3px),
-					var(--bg);
+					repeating-linear-gradient(0deg, var(--grid-line) 0 1px, transparent 1px 3px),
+					repeating-linear-gradient(90deg, var(--grid-line) 0 1px, transparent 1px 3px), var(--bg);
 				color: var(--ink);
 				font-size: 14px;
 				line-height: 1.55;

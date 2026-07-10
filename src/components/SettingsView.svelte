@@ -705,7 +705,7 @@
 			background 0.15s ease;
 	}
 	.switch input:checked + .track {
-		background: rgba(34, 197, 94, 0.32);
+		background: var(--switch-on-bg);
 	}
 	.switch input:checked + .track .thumb {
 		transform: translateX(20px);

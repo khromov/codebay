@@ -1,6 +1,7 @@
-import { Mochi, silenceInternalRoutes } from 'mochi-framework';
+import { Mochi, sequence, silenceInternalRoutes } from 'mochi-framework';
 import { routes } from './routes.ts';
 import { basicAuth } from './lib/auth.server.ts';
+import { themeHandle } from './lib/theme.server.ts';
 import { PROXY_PREFIX } from './lib/proxy.server.ts';
 import {
 	BASIC_AUTH_PASSWORD,
@@ -27,8 +28,9 @@ await Mochi.serve({
 	// Trailing-slash normalization is disabled entirely: the proxy's `/p/:id`
 	// route does its own bare-`/p/<id>` → `/p/<id>/` redirect (code-server needs
 	// the slash), and we don't want Mochi's global policy touching proxy paths.
-	// Gate the whole app (UI, APIs, proxy) behind one Basic Auth password.
-	handle: basicAuth,
+	// Gate the whole app (UI, APIs, proxy) behind one Basic Auth password, then
+	// stamp the visitor's theme cookie onto the SSR'd <html> tag.
+	handle: sequence(basicAuth, themeHandle),
 	// The app is served same-origin (no reverse proxy by default). Pin the public
 	// origin so Mochi's CSRF origin check accepts our own form POSTs in production
 	// mode — without this it refuses every form mutation and warns about a missing

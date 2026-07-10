@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import House from '@lucide/svelte/icons/house';
+	import ThemeToggle from './ThemeToggle.svelte';
 
 	// The shared 44px top bar: a bordered home-icon cell on the left, then whatever
 	// the caller renders (IDE tabs + cog, or a settings title). Keeps the two bars
@@ -11,6 +12,8 @@
 <header class="bar">
 	<a class="home" href="/" title="All instances" aria-label="All instances"><House size={18} /></a>
 	{@render children?.()}
+	<div class="spacer"></div>
+	<div class="theme-cell"><ThemeToggle /></div>
 </header>
 
 <style>
@@ -34,5 +37,14 @@
 	.home:hover {
 		background: var(--ink);
 		color: var(--bg);
+	}
+	.spacer {
+		flex: 1;
+	}
+	.theme-cell {
+		display: flex;
+		align-items: center;
+		padding: 0 10px;
+		border-left: 1px solid var(--rule);
 	}
 </style>
