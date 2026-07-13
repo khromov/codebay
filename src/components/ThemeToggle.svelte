@@ -3,7 +3,6 @@
 	import Moon from '@lucide/svelte/icons/moon';
 	import { getTheme, setTheme, type Theme } from '../theme.ts';
 
-	// svelte-ignore state_referenced_locally
 	let theme: Theme = $state(getTheme());
 
 	function toggle() {

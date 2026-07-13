@@ -53,7 +53,11 @@ const CODE_SERVER_SETTINGS = {
 	// tasks are gated behind trust, and the bare default image isn't trusted by default.
 	'security.workspace.trust.enabled': false,
 	'security.workspace.trust.startupPrompt': 'never',
-	'security.workspace.trust.banner': 'never'
+	'security.workspace.trust.banner': 'never',
+	// Selecting terminal text copies it, and right-click pastes — Ctrl+Shift+V is
+	// intercepted by the browser for devtools, so this is the usable clipboard path.
+	'terminal.integrated.copyOnSelection': true,
+	'terminal.integrated.rightClickBehavior': 'paste'
 };
 
 /**
