@@ -35,6 +35,37 @@
 		Object.fromEntries(snapshot.map((i) => [i.id, i.attention]))
 	);
 
+	// Inline rename for the IDE tab bar — same pattern as DashboardView/InstanceCard.
+	let editingId = $state<string | null>(null);
+	let editingName = $state('');
+
+	function startRename(instance: Instance) {
+		editingId = instance.id;
+		editingName = instance.name;
+	}
+
+	function cancelRename() {
+		editingId = null;
+		editingName = '';
+	}
+
+	async function commitRename(id: string) {
+		const name = editingName.trim();
+		const original = instances.find((i) => i.id === id)?.name;
+		// Nothing to do on an empty or unchanged name — just close the editor.
+		if (!name || name === original) {
+			cancelRename();
+			return;
+		}
+		cancelRename();
+		try {
+			await apiPost(`/api/instances/${id}/rename`, { name }, 'Failed to rename');
+			// The SSE stream reflects the new name.
+		} catch (err) {
+			console.error('Failed to rename', err);
+		}
+	}
+
 	// --- Client-side router (Dashboard ⇄ IDE only) --------------------------------
 	// Mochi has no client router; we keep a reactive path and intercept the handful
 	// of in-app links so navigating between `/` and `/ide/:id` never reloads the
@@ -185,7 +216,17 @@
 
 <div class="app" class:ide={onIde}>
 	{#if onIde}
-		<IdeBar {running} {active} {attention} onselect={(id) => navigate(`/ide/${id}`)} />
+		<IdeBar
+			{running}
+			{active}
+			{attention}
+			{editingId}
+			bind:editingName
+			onselect={(id) => navigate(`/ide/${id}`)}
+			onstartrename={startRename}
+			oncommitrename={commitRename}
+			oncancelrename={cancelRename}
+		/>
 	{:else}
 		<DashboardView preflight={livePreflight} {instances} {loaded} />
 	{/if}

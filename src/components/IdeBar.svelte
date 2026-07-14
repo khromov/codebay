@@ -8,12 +8,22 @@
 		running,
 		active,
 		attention,
-		onselect
+		editingId,
+		editingName = $bindable(),
+		onselect,
+		onstartrename,
+		oncommitrename,
+		oncancelrename
 	}: {
 		running: Instance[];
 		active: string;
 		attention: Record<string, 'done' | 'waiting' | null>;
+		editingId: string | null;
+		editingName: string;
 		onselect: (id: string) => void;
+		onstartrename: (instance: Instance) => void;
+		oncommitrename: (id: string) => void;
+		oncancelrename: () => void;
 	} = $props();
 </script>
 
@@ -27,15 +37,33 @@
 					class:attn-done={inst.id !== active && attention[inst.id] === 'done'}
 					class:attn-waiting={inst.id !== active && attention[inst.id] === 'waiting'}
 				>
-					<button
-						type="button"
-						class="tab-label"
-						onclick={() => onselect(inst.id)}
-						title={inst.name}
-					>
-						<Avatar id={inst.id} name={inst.name} scale={4} />
-						<span class="tab-name">{inst.name}</span>
-					</button>
+					{#if editingId === inst.id}
+						<div class="tab-label editing">
+							<Avatar id={inst.id} name={inst.name} scale={4} />
+							<!-- svelte-ignore a11y_autofocus -->
+							<input
+								class="tab-name-edit"
+								bind:value={editingName}
+								autofocus
+								onblur={() => oncommitrename(inst.id)}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+									else if (e.key === 'Escape') oncancelrename();
+								}}
+							/>
+						</div>
+					{:else}
+						<button
+							type="button"
+							class="tab-label"
+							onclick={() => onselect(inst.id)}
+							ondblclick={() => onstartrename(inst)}
+							title={inst.name}
+						>
+							<Avatar id={inst.id} name={inst.name} scale={4} />
+							<span class="tab-name">{inst.name}</span>
+						</button>
+					{/if}
 				</div>
 			{/each}
 		</nav>
@@ -138,5 +166,21 @@
 	}
 	.tab.active .tab-label {
 		color: var(--bg);
+	}
+	.tab-label.editing {
+		cursor: default;
+	}
+	.tab-name-edit {
+		width: 130px;
+		font-family: var(--font-mono);
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		margin: 0;
+		padding: 2px 4px;
+		border: 1px solid var(--ink-soft);
+		background: var(--bg);
+		color: var(--ink);
+		outline: none;
 	}
 </style>
