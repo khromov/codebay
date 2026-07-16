@@ -360,6 +360,9 @@
 		border-bottom: 1px solid var(--rule-soft);
 		overflow-x: auto;
 		overflow-y: hidden;
+		/* Reserve a full line so the path isn't clipped by the horizontal scrollbar. */
+		min-height: 18px;
+		flex-shrink: 0;
 	}
 	.crumbs code {
 		font-family: var(--font-mono);
