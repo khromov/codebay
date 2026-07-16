@@ -90,6 +90,17 @@
 		const ok = await portAction(() => apiPost(`/api/instances/${id}/rebuild`));
 		if (ok) pendingRebuild = false;
 	}
+
+	// --- Copy logs --------------------------------------------------------------
+	let copied = $state(false);
+	let copyTimer: ReturnType<typeof setTimeout> | undefined;
+
+	async function copyLogs() {
+		await navigator.clipboard.writeText(logs);
+		copied = true;
+		clearTimeout(copyTimer);
+		copyTimer = setTimeout(() => (copied = false), 2000);
+	}
 </script>
 
 <header class="topbar">
@@ -195,7 +206,12 @@
 	</section>
 
 	<div class="logwrap panel">
-		<div class="panel-bar">Boot log</div>
+		<div class="log-bar panel-bar">
+			<span>Boot log</span>
+			<button class="copy" onclick={copyLogs} disabled={!logs}>
+				{copied ? 'Copied!' : 'Copy logs'}
+			</button>
+		</div>
 		<div class="logs" {@attach autoscroll}>
 			<pre>{logs || 'Waiting for output…'}<span class="caret"></span></pre>
 		</div>
@@ -426,6 +442,31 @@
 	}
 	.logwrap {
 		overflow: hidden;
+	}
+	.log-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.copy {
+		font-family: var(--font-mono);
+		font-weight: 600;
+		font-size: 10px;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		padding: 4px 9px;
+		background: var(--bg);
+		color: var(--ink);
+		border: 1px solid var(--bg);
+		cursor: pointer;
+	}
+	.copy:hover:not(:disabled) {
+		background: transparent;
+		color: var(--bg);
+	}
+	.copy:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 	/* The one "screen": a black LCD panel with faint scanlines. */
 	.logs {

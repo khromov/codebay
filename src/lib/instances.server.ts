@@ -43,7 +43,8 @@ import {
 import { clearAttention, getAttention } from './bridge.server.ts';
 import { proxyPathFor } from './proxy.server.ts';
 import { injections } from './injections.server.ts';
-import { readGitBranch } from './git.server.ts';
+import { cloneRepo, readGitBranch } from './git.server.ts';
+import { isRepoUrl, parseRepoUrl } from './repo-url.ts';
 import { currentHealthSnapshots, stopHealthMonitor, syncHealthMonitors } from './health.server.ts';
 import type { ServerWebSocket } from 'bun';
 import type { Instance, InstanceHealth } from '../types.ts';
@@ -287,11 +288,18 @@ function failInstance(id: string, err: unknown): void {
 	triggerReconcile();
 }
 
-/** Drive the first boot: copy workspace → seed declared ports → provision the container. */
-async function boot(row: InstanceRow): Promise<void> {
+/** Drive the first boot: fetch the workspace → seed declared ports → provision the container. */
+async function boot(row: InstanceRow, opts: { branch?: string } = {}): Promise<void> {
 	try {
-		appendLog(row.id, `Copying ${row.source_path} → ${row.workspace_path}\n`);
-		await copyWorkspace(row.source_path, row.workspace_path);
+		if (isRepoUrl(row.source_path)) {
+			appendLog(row.id, `Cloning ${row.source_path} → ${row.workspace_path}\n`);
+			await cloneRepo(row.source_path, row.workspace_path, (chunk) => appendLog(row.id, chunk), {
+				branch: opts.branch
+			});
+		} else {
+			appendLog(row.id, `Copying ${row.source_path} → ${row.workspace_path}\n`);
+			await copyWorkspace(row.source_path, row.workspace_path);
+		}
 		await seedDeclaredPorts(row);
 	} catch (err) {
 		failInstance(row.id, err);
@@ -407,15 +415,29 @@ function uniqueName(desired: string, excludeId?: string): string {
 	}
 }
 
-/** Create an instance row and kick off its boot in the background. */
-export async function createInstance(sourcePath: string, name?: string): Promise<InstanceRow> {
-	await assertDir(sourcePath);
+/**
+ * Create an instance row and kick off its boot in the background. `source` is
+ * either a local folder path (copied) or a Git repository URL (cloned — see
+ * `cloneRepo`); `opts.branch` selects a non-default branch for a repo source.
+ */
+export async function createInstance(
+	source: string,
+	name?: string,
+	opts: { branch?: string } = {}
+): Promise<InstanceRow> {
+	const parsedRepo = parseRepoUrl(source);
+	if (parsedRepo) {
+		// Normalize to the clean https clone URL so re-picks from history dedupe.
+		source = parsedRepo.cloneUrl;
+	} else {
+		await assertDir(source);
+	}
 	const id = crypto.randomUUID();
-	const folderName = basename(sourcePath) || 'workspace';
+	const folderName = parsedRepo?.repo || basename(source) || 'workspace';
 	const row: InstanceRow = {
 		id,
 		name: uniqueName(name?.trim() || folderName),
-		source_path: sourcePath,
+		source_path: source,
 		workspace_path: join(INSTANCES_DIR, id, folderName),
 		host_port: allocatePort(),
 		container_id: null,
@@ -429,9 +451,9 @@ export async function createInstance(sourcePath: string, name?: string): Promise
 	};
 	insertInstance(row);
 	// Strip the de-dup `#2` suffix so the recent-folders list keeps the base name.
-	recordFolder(sourcePath, row.name.replace(/ #\d+$/, ''));
+	recordFolder(source, row.name.replace(/ #\d+$/, ''));
 	triggerReconcile();
-	void boot(row);
+	void boot(row, { branch: opts.branch });
 	return row;
 }
 

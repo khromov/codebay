@@ -1,14 +1,20 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import type { BrowseResult, FolderHistoryEntry } from '../types.ts';
+	import { isRepoUrl } from '../lib/repo-url.ts';
 	import X from '@lucide/svelte/icons/x';
 	import FolderClock from '@lucide/svelte/icons/folder-clock';
+	import GitBranch from '@lucide/svelte/icons/git-branch';
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 	import Folder from '@lucide/svelte/icons/folder';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 	import { apiFetch, apiDelete } from '../api.ts';
 
-	let { onpick, onclose }: { onpick: (path: string) => void; onclose: () => void } = $props();
+	let {
+		onpick,
+		onclose
+	}: { onpick: (source: string, opts?: { branch?: string }) => void; onclose: () => void } =
+		$props();
 
 	let result = $state<BrowseResult | null>(null);
 	let loading = $state(true);
@@ -17,6 +23,15 @@
 	let searchInput = $state<HTMLInputElement | null>(null);
 	let history = $state<FolderHistoryEntry[]>([]);
 	let showAll = $state(false);
+	let repoUrl = $state('');
+	let repoBranch = $state('');
+
+	const repoValid = $derived(isRepoUrl(repoUrl));
+
+	function cloneRepoUrl() {
+		if (!repoValid) return;
+		onpick(repoUrl.trim(), { branch: repoBranch.trim() || undefined });
+	}
 
 	const filtered = $derived(
 		result
@@ -88,6 +103,41 @@
 			<button class="x" onclick={onclose} aria-label="Close"><X size={16} /></button>
 		</div>
 
+		<div class="clone">
+			<div class="clone-label">Clone a Git repository</div>
+			<div class="clone-row">
+				<input
+					class="clone-url"
+					type="text"
+					placeholder="https://github.com/owner/repo"
+					bind:value={repoUrl}
+					spellcheck="false"
+					autocomplete="off"
+					onkeydown={(e) => {
+						if (e.key === 'Enter') {
+							e.preventDefault();
+							cloneRepoUrl();
+						}
+					}}
+				/>
+				<input
+					class="clone-branch"
+					type="text"
+					placeholder="branch (optional)"
+					bind:value={repoBranch}
+					spellcheck="false"
+					autocomplete="off"
+					onkeydown={(e) => {
+						if (e.key === 'Enter') {
+							e.preventDefault();
+							cloneRepoUrl();
+						}
+					}}
+				/>
+				<button class="clone-btn" disabled={!repoValid} onclick={cloneRepoUrl}>Clone</button>
+			</div>
+		</div>
+
 		<div class="crumbs">
 			<code>{result?.path ?? '…'}</code>
 		</div>
@@ -98,7 +148,11 @@
 				{#each shownHistory as entry (entry.source_path)}
 					<div class="recent-row">
 						<button class="recent-pick" onclick={() => onpick(entry.source_path)}>
-							<span class="icon"><FolderClock size={16} /></span>
+							<span class="icon">
+								{#if isRepoUrl(entry.source_path)}<GitBranch size={16} />{:else}<FolderClock
+										size={16}
+									/>{/if}
+							</span>
 							<span class="recent-text">
 								<span class="recent-name">{entry.name}</span>
 								<span class="recent-path">{entry.source_path}</span>
@@ -239,10 +293,76 @@
 	.x:hover {
 		opacity: 0.7;
 	}
+	.clone {
+		padding: 12px 18px;
+		border-bottom: 1px solid var(--rule-soft);
+	}
+	.clone-label {
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--ink-faint);
+		padding-bottom: 6px;
+	}
+	.clone-row {
+		display: flex;
+		gap: 8px;
+	}
+	.clone-url,
+	.clone-branch {
+		font-family: var(--font-mono);
+		font-size: 13px;
+		padding: 8px 12px;
+		border: 1px solid var(--ink);
+		background: var(--bg);
+		color: var(--ink);
+	}
+	.clone-url {
+		flex: 1;
+		min-width: 0;
+	}
+	.clone-branch {
+		width: 140px;
+		flex: none;
+	}
+	.clone-url::placeholder,
+	.clone-branch::placeholder {
+		color: var(--ink-faint);
+	}
+	.clone-url:focus,
+	.clone-branch:focus {
+		outline: none;
+		box-shadow: inset 3px 3px 0 var(--rule-soft);
+	}
+	.clone-btn {
+		font-family: var(--font-mono);
+		font-weight: 700;
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 8px 14px;
+		border: 1px solid var(--ink);
+		background: var(--ink);
+		color: var(--bg);
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.clone-btn:hover:not(:disabled) {
+		background: var(--bg-card);
+		color: var(--ink);
+	}
+	.clone-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
 	.crumbs {
 		padding: 10px 18px;
 		border-bottom: 1px solid var(--rule-soft);
-		overflow: auto;
+		overflow-x: auto;
+		overflow-y: hidden;
+		/* Reserve a full line so the path isn't clipped by the horizontal scrollbar. */
+		min-height: 18px;
+		flex-shrink: 0;
 	}
 	.crumbs code {
 		font-family: var(--font-mono);

@@ -23,12 +23,16 @@
 
 	const ready = $derived(preflight.docker && preflight.cli);
 
-	async function createFrom(sourcePath: string) {
+	async function createFrom(sourcePath: string, opts?: { branch?: string }) {
 		browserOpen = false;
 		creating = true;
 		actionError = null;
 		try {
-			await apiPost('/api/instances', { sourcePath }, 'Failed to create instance');
+			await apiPost(
+				'/api/instances',
+				{ sourcePath, branch: opts?.branch },
+				'Failed to create instance'
+			);
 			// The SSE stream delivers the new instance; no manual insert needed.
 		} catch (err) {
 			actionError = (err as Error).message;

@@ -225,10 +225,11 @@ export const routes: Record<string, MochiRouteValue> = {
 			const body = (await request.json().catch(() => null)) as {
 				sourcePath?: string;
 				name?: string;
+				branch?: string;
 			} | null;
 			if (!body?.sourcePath) return apiError(400, 'sourcePath is required');
 			try {
-				const instance = await createInstance(body.sourcePath, body.name);
+				const instance = await createInstance(body.sourcePath, body.name, { branch: body.branch });
 				return json({ instance: sanitizeInstance(instance) }, { status: 201 });
 			} catch (err) {
 				return apiError(400, (err as Error).message);
