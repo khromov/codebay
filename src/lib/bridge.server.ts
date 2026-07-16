@@ -12,7 +12,8 @@ export type AttentionState = 'done' | 'waiting';
 const globalForAttention = globalThis as unknown as {
 	__codebayAttention?: Map<string, AttentionState>;
 };
-const attention: Map<string, AttentionState> = (globalForAttention.__codebayAttention ??= new Map());
+const attention: Map<string, AttentionState> = (globalForAttention.__codebayAttention ??=
+	new Map());
 
 export function getAttention(id: string): AttentionState | null {
 	return attention.get(id) ?? null;

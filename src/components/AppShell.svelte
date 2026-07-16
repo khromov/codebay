@@ -134,8 +134,7 @@
 	// Keep the document title in step with the focused instance.
 	$effect(() => {
 		const inst = running.find((i) => i.id === active);
-		document.title =
-			onIde && inst ? `${inst.name} — Codebay` : 'Codebay';
+		document.title = onIde && inst ? `${inst.name} — Codebay` : 'Codebay';
 	});
 
 	// Unlock/resume the chime's audio context on the first interaction with the page

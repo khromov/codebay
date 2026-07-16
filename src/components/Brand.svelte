@@ -27,10 +27,11 @@
 		align-self: center;
 	}
 	.tagline {
+		font-family: var(--font-sans);
 		font-size: 12px;
 		font-weight: 500;
 		letter-spacing: 0.08em;
-		opacity: 0.55;
+		color: var(--ink-soft);
 	}
 	@media (max-width: 640px) {
 		.tagline {

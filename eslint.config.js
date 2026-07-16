@@ -5,14 +5,7 @@ import globals from 'globals';
 
 export default ts.config(
 	{
-		ignores: [
-			'.mochi/',
-			'.codebay/',
-			'vendor/',
-			'node_modules/',
-			'public/',
-			'patches/'
-		]
+		ignores: ['.mochi/', '.codebay/', 'vendor/', 'node_modules/', 'public/', 'patches/']
 	},
 	js.configs.recommended,
 	...ts.configs.recommended,
