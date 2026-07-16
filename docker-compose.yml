@@ -1,49 +1,20 @@
-# Run codebay as a container that drives the HOST Docker daemon (Docker-out-of-Docker).
-#
-# Quick start:
-#   export BASIC_AUTH_PASSWORD=change-me
-#   export CODEBAY_DATA_DIR=/opt/codebay     # Linux; on Mac/Colima use a path under $HOME (see README)
-#   mkdir -p "$CODEBAY_DATA_DIR"
-#   docker compose up -d
-#
-# Then open http://localhost:3333 (or your host IP) and log in as `admin`.
 services:
   codebay:
     image: ghcr.io/khromov/codebay:latest
-    # To build from source instead of pulling, comment out `image:` and uncomment:
-    # build: .
     container_name: codebay
     restart: unless-stopped
-
-    # Host networking so the manager's instance proxy (127.0.0.1:<port>) and the
-    # attention bridge (containers → host.docker.internal:$PORT) work unchanged.
     network_mode: host
-
     environment:
-      # DATA_DIR MUST be bind-mounted below at the SAME absolute path: `devcontainer up`
-      # bind-mounts the copied workspace, and the daemon resolves that path on the host.
       DATA_DIR: ${CODEBAY_DATA_DIR:-/opt/codebay}
       DOCKER_HOST: unix:///var/run/docker.sock
-      # HOST=0.0.0.0 is required (sibling containers reach the bridge via host-gateway),
-      # so a password is mandatory — refuse to start without one.
       HOST: 0.0.0.0
       PORT: ${PORT:-3333}
       BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD:?set BASIC_AUTH_PASSWORD — HOST is 0.0.0.0}
-      # Recommended for a persistent deployment: a stable base64url-encoded 32-byte secret
-      # (`openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`), so signed image URLs and
-      # island props survive restarts. Optional — a random key is generated if unset.
       MOCHI_KEY: ${MOCHI_KEY:-}
-      # Credentials injected into every instance (cross-platform, no Keychain/gh needed).
       CODEBAY_GITHUB_TOKEN: ${CODEBAY_GITHUB_TOKEN:-}
       CODEBAY_CLAUDE_CODE_TOKEN: ${CODEBAY_CLAUDE_CODE_TOKEN:-}
-
     volumes:
-      # The host Docker daemon socket.
       - /var/run/docker.sock:/var/run/docker.sock
-      # State dir, mounted at an IDENTICAL path on both sides (see DATA_DIR note above).
       - ${CODEBAY_DATA_DIR:-/opt/codebay}:${CODEBAY_DATA_DIR:-/opt/codebay}
-      # Git identity for commits made inside instances (read-only).
       - ${HOME}/.gitconfig:/root/.gitconfig:ro
-      # Projects you want to browse & spin up from. These get copied into DATA_DIR,
-      # so this path doesn't need to match host↔container — mount whatever you browse.
       - ${CODEBAY_PROJECTS_DIR:-${HOME}/projects}:${CODEBAY_PROJECTS_DIR:-${HOME}/projects}:ro
