@@ -1,7 +1,43 @@
 {
 	"name": "codebay",
-	"private": true,
+	"version": "0.1.0",
+	"description": "Web UI for spinning up isolated devcontainer instances from any local folder, each with a browser-based VS Code (code-server) — built for parallel Claude Code workflows.",
 	"type": "module",
+	"license": "MIT",
+	"author": "Stanislav Khromov",
+	"homepage": "https://github.com/khromov/servbay#readme",
+	"bugs": {
+		"url": "https://github.com/khromov/codebay/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/khromov/codebay.git"
+	},
+	"keywords": [
+		"devcontainer",
+		"devcontainers",
+		"code-server",
+		"claude-code",
+		"vscode",
+		"docker",
+		"bun"
+	],
+	"bin": {
+		"codebay": "bin/codebay.ts"
+	},
+	"files": [
+		"bin",
+		"src",
+		"public",
+		"migrations",
+		".mochi",
+		"svelte.config.js",
+		"README.md",
+		"LICENSE"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
 	"engines": {
 		"bun": ">=1.3.13"
 	},

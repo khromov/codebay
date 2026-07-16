@@ -1,5 +1,7 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Root directory where all manager state (SQLite db + instance workspaces) lives.
@@ -100,7 +102,23 @@ export function dockerEnv(): Record<string, string | undefined> {
 	return DOCKER_HOST ? { ...process.env, DOCKER_HOST } : process.env;
 }
 
-/** Resolve the bundled @devcontainers/cli binary, preferring the local install. */
+/**
+ * Resolve the @devcontainers/cli binary from our own dependency tree rather than
+ * the cwd, so it works when installed globally / via `bunx codebay` (where cwd is
+ * the user's arbitrary folder). Falls back to the cwd-local path for dev checkouts.
+ */
 export function devcontainerBin(): string {
+	try {
+		const pkgJson = fileURLToPath(import.meta.resolve('@devcontainers/cli/package.json'));
+		// <node_modules>/@devcontainers/cli/package.json -> <node_modules>/.bin/devcontainer
+		const shim = join(dirname(pkgJson), '..', '..', '.bin', 'devcontainer');
+		if (existsSync(shim)) return shim;
+		// Fallback: the package's own bin entry (a node-shebanged .js).
+		const pkg = JSON.parse(readFileSync(pkgJson, 'utf8'));
+		const rel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.devcontainer;
+		if (rel) return join(dirname(pkgJson), rel);
+	} catch {
+		// Fall through to the dev-checkout path below.
+	}
 	return join(process.cwd(), 'node_modules', '.bin', 'devcontainer');
 }
