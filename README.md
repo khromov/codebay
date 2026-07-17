@@ -11,14 +11,14 @@ The app copies your Claude Code credentials and installs the attention hooks int
 - **Folders without a `devcontainer.json`** — the app generates a default config and automatically adds the [official Claude Code feature](https://github.com/anthropics/devcontainer-features), so `claude` is ready to use.
 - **Folders that ship their own `.devcontainer/devcontainer.json`** — you are responsible for making sure `claude` is available in the image. The manager respects your config and won't modify your tooling. The simplest way is to add the feature:
 
-  \`\`\`jsonc
+  ```jsonc
   // .devcontainer/devcontainer.json
   {
   "features": {
   "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
   }
   }
-  \`\`\`
+  ```
 
   (The feature installs Node.js if it isn't already present.) Alternatively, install it yourself in your Dockerfile, e.g. `npm install -g @anthropic-ai/claude-code`.
 
@@ -41,19 +41,22 @@ After `devcontainer up`, the app installs a few things into each container. Each
 
 ## Setup
 
-\`\`\`sh
+```sh
+bun run update:mochi # vendor the mochi framework (vendor/ is gitignored, so it isn't in a fresh clone)
 bun install
-\`\`\`
+```
+
+> `mochi-framework` is a `file:./vendor/mochi-framework` dependency and `vendor/` is gitignored, so a fresh clone doesn't include it. Run `bun run update:mochi` before `bun install` or the dev server won't boot. (The Docker build handles this step for you.)
 
 ## Commands
 
-\`\`\`sh
+```sh
 bun run dev # dev server (local DATA_DIR, no browser launch)
 bun run start # run the app
 bun run build # production build → .mochi/
 bun run typecheck # svelte-check + tsc --noEmit
 bun test # run tests
-\`\`\`
+```
 
 ## Run with Docker
 
