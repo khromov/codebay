@@ -10,10 +10,13 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Hammer from '@lucide/svelte/icons/hammer';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import { Toaster } from 'svelte-french-toast';
 	import { soundEnabled, setSoundEnabled } from '../settings.ts';
 	import { playChime, unlockAudio } from '../sound.ts';
 	import { apiPost } from '../api.ts';
 	import Button from './Button.svelte';
+	import CoinButton from './CoinButton.svelte';
+	import AvatarEditor from './AvatarEditor.svelte';
 
 	let {
 		defaultImage,
@@ -221,6 +224,16 @@
 		// A toggle is a user gesture — unlock audio and preview when enabling.
 		unlockAudio();
 		if (on) playChime('done');
+	}
+
+	// Easter egg: the coin in the corner opens a pixel editor for drawing (and
+	// contributing) a new avatar sprite.
+	let avatarEditorOpen = $state(false);
+
+	function openAvatarEditor() {
+		unlockAudio();
+		if (sound) playChime('done');
+		avatarEditorOpen = true;
 	}
 
 	async function deleteAndShutdown() {
@@ -520,8 +533,23 @@
 				{/if}
 			</div>
 		</section>
+
+		<CoinButton onclick={openAvatarEditor} />
 	</main>
+
+	{#if avatarEditorOpen}
+		<AvatarEditor onclose={() => (avatarEditorOpen = false)} />
+	{/if}
 </div>
+
+<!-- The Settings page renders outside AppShell (which hosts the app-wide
+     Toaster), so the avatar editor's copy toast needs its own mount. -->
+<Toaster
+	toastOptions={{
+		style:
+			'border:1px solid var(--ink); background:var(--bg-card); color:var(--ink); box-shadow:4px 4px 0 var(--ink); font-family:var(--font-mono); font-size:13px;'
+	}}
+/>
 
 <style>
 	.page {
