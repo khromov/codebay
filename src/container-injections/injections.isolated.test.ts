@@ -76,8 +76,9 @@ describe('tmux injection scripts', () => {
 		}
 	});
 
-	test('conf enables mouse scrollback', () => {
+	test('conf enables mouse scrollback and hides the status bar', () => {
 		expect(TMUX_CONF_LINES).toContain('set -g mouse on');
+		expect(TMUX_CONF_LINES).toContain('set -g status off');
 	});
 });
 

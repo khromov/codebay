@@ -23,12 +23,15 @@ export const INSTALL_SCRIPT =
  * wheel scroll tmux's own scrollback in xterm.js — the feature users actually
  * need — at the cost of tmux owning mouse selection (code-server's
  * copyOnSelection doesn't apply inside tmux); `set-clipboard on` (OSC52) keeps
- * tmux copy reaching the browser clipboard. Exported for the isolated tests.
+ * tmux copy reaching the browser clipboard; `status off` hides the status bar
+ * — the IDE terminal is a single dedicated session, so the bar only cost a
+ * row. Exported for the isolated tests.
  */
 export const TMUX_CONF_LINES = [
 	'set -g mouse on',
 	'set -g history-limit 50000',
-	'set -g set-clipboard on'
+	'set -g set-clipboard on',
+	'set -g status off'
 ];
 
 /**
