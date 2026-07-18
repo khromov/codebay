@@ -39,6 +39,7 @@ import snail from './snail.ts';
 import star from './star.ts';
 import target from './target.ts';
 import tree from './tree.ts';
+import ukraine from './ukraine.ts';
 import whale from './whale.ts';
 
 // Order is stable: a given id always resolves to the same index, so the artwork
@@ -81,6 +82,7 @@ export const avatars: AvatarArt[] = [
 	star,
 	target,
 	tree,
+	ukraine,
 	whale
 ];
 
