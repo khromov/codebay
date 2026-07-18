@@ -14,9 +14,9 @@ The app copies your Claude Code credentials and installs the attention hooks int
   ```jsonc
   // .devcontainer/devcontainer.json
   {
-  "features": {
-  "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
-  }
+  	"features": {
+  		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+  	}
   }
   ```
 
