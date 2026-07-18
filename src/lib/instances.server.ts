@@ -1,13 +1,6 @@
 import { rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import {
-	CODE_SERVER_PORT,
-	DATA_DIR,
-	DEFAULT_IMAGE,
-	INSTANCES_DIR,
-	PORT_BASE,
-	PORT_MAX
-} from './config.server.ts';
+import { CODE_SERVER_PORT, DATA_DIR, DEFAULT_IMAGE, INSTANCES_DIR } from './config.server.ts';
 import {
 	allForwards,
 	allInstances,
@@ -47,6 +40,7 @@ import { injections } from './injections.server.ts';
 import { cloneRepo, readGitBranch } from './git.server.ts';
 import { isRepoUrl, parseRepoUrl } from './repo-url.ts';
 import { currentHealthSnapshots, stopHealthMonitor, syncHealthMonitors } from './health.server.ts';
+import { pickFreePort } from './ports.server.ts';
 import type { ServerWebSocket } from 'bun';
 import type { Instance, InstanceHealth } from '../types.ts';
 
@@ -269,13 +263,9 @@ async function allocatePort(): Promise<number> {
 	for (const [port, reservedAt] of reservedPorts) {
 		if (dbPorts.has(port) || now - reservedAt > RESERVATION_TTL_MS) reservedPorts.delete(port);
 	}
-	for (let port = PORT_BASE; port <= PORT_MAX; port++) {
-		if (!dbPorts.has(port) && !dockerPorts.has(port) && !reservedPorts.has(port)) {
-			reservedPorts.set(port, now);
-			return port;
-		}
-	}
-	throw new Error('No free host ports available.');
+	const port = pickFreePort([dbPorts, dockerPorts, new Set(reservedPorts.keys())]);
+	reservedPorts.set(port, now);
+	return port;
 }
 
 /** Validate that a path exists and is a directory. */
