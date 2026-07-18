@@ -16,6 +16,7 @@ import crown from './crown.ts';
 import diamond from './diamond.ts';
 import dog from './dog.ts';
 import fish from './fish.ts';
+import fleurDeLis from './fleur-de-lis.ts';
 import flower from './flower.ts';
 import fox from './fox.ts';
 import frog from './frog.ts';
@@ -57,6 +58,7 @@ export const avatars: AvatarArt[] = [
 	diamond,
 	dog,
 	fish,
+	fleurDeLis,
 	flower,
 	fox,
 	frog,
