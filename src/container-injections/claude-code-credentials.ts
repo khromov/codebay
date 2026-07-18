@@ -2,13 +2,11 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { CLAUDE_CODE_TOKEN } from '../lib/config.server.ts';
+import { CLAUDE_CODE_TOKEN, CLAUDE_KEYCHAIN_SERVICE } from '../lib/config.server.ts';
 import { getOption } from '../lib/db.server.ts';
 import { checkPresence, execInContainer, writeSecretFileScript } from '../lib/exec.server.ts';
 import { spawnCapture } from '../lib/spawn.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
-
-const KEYCHAIN_SERVICE = 'Claude Code-credentials';
 
 /**
  * A token entered by the user in Settings, or null. Only honored when the
@@ -20,10 +18,25 @@ function manualClaudeToken(): string | null {
 	return getOption('manual_claude_code_token')?.trim() || null;
 }
 
-function isValid(json: string): boolean {
+/**
+ * Rejects credentials with no access token, and ones that are unrecoverably dead —
+ * an unusable snapshot would otherwise get injected verbatim and leave the container
+ * looking "logged in" (file present) while `claude` inside it isn't. A merely-stale
+ * access token is still fine to inject: `claude` refreshes it in-container on first
+ * run as long as the refresh token hasn't also expired, so expiry is judged by the
+ * refresh token when we know its expiry, falling back to the access token's own
+ * expiry only when there's no refresh-token expiry to go on.
+ */
+export function isValid(json: string): boolean {
 	try {
-		const data = JSON.parse(json) as { claudeAiOauth?: { accessToken?: string } };
-		return Boolean(data.claudeAiOauth?.accessToken);
+		const data = JSON.parse(json) as {
+			claudeAiOauth?: { accessToken?: string; expiresAt?: number; refreshTokenExpiresAt?: number };
+		};
+		const oauth = data.claudeAiOauth;
+		if (!oauth?.accessToken) return false;
+		const expiry = oauth.refreshTokenExpiresAt ?? oauth.expiresAt;
+		if (typeof expiry === 'number' && expiry <= Date.now()) return false;
+		return true;
 	} catch {
 		return false;
 	}
@@ -51,11 +64,11 @@ async function locateClaudeCredentials(): Promise<{ creds: string; source: strin
 			'security',
 			'find-generic-password',
 			'-s',
-			KEYCHAIN_SERVICE,
+			CLAUDE_KEYCHAIN_SERVICE,
 			'-w'
 		]);
 		if (out && isValid(out)) {
-			return { creds: out, source: `macOS Keychain — "${KEYCHAIN_SERVICE}"` };
+			return { creds: out, source: `macOS Keychain — "${CLAUDE_KEYCHAIN_SERVICE}"` };
 		}
 	}
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { injections } from '../lib/injections.server.ts';
 import { attentionHookSettings } from './attention-hooks.ts';
+import { isValid } from './claude-code-credentials.ts';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
 
 describe('injection registry', () => {
@@ -92,5 +93,39 @@ describe('attentionHookSettings', () => {
 		// The token must NOT be baked into settings.json — the hooks read it from a
 		// mode-600 header file at runtime, keeping it off curl's argv (and out of ps).
 		expect(json).toContain('.bridge-header');
+	});
+});
+
+describe('claude-code-credentials isValid', () => {
+	const oauth = (extra: Record<string, unknown>) =>
+		JSON.stringify({ claudeAiOauth: { accessToken: 'tok', ...extra } });
+
+	test('rejects malformed JSON', () => {
+		expect(isValid('not json')).toBe(false);
+	});
+
+	test('rejects a missing access token', () => {
+		expect(isValid(JSON.stringify({ claudeAiOauth: {} }))).toBe(false);
+	});
+
+	test('accepts a token with no expiry info at all', () => {
+		expect(isValid(oauth({}))).toBe(true);
+	});
+
+	test('accepts an access token that has expired, as long as the refresh token has not', () => {
+		expect(
+			isValid(oauth({ expiresAt: Date.now() - 1000, refreshTokenExpiresAt: Date.now() + 1000 }))
+		).toBe(true);
+	});
+
+	test('rejects once the refresh token itself has expired', () => {
+		expect(
+			isValid(oauth({ expiresAt: Date.now() + 1000, refreshTokenExpiresAt: Date.now() - 1000 }))
+		).toBe(false);
+	});
+
+	test('falls back to the access token expiry when there is no refresh-token expiry', () => {
+		expect(isValid(oauth({ expiresAt: Date.now() - 1000 }))).toBe(false);
+		expect(isValid(oauth({ expiresAt: Date.now() + 1000 }))).toBe(true);
 	});
 });

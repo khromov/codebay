@@ -80,6 +80,15 @@ export const GITHUB_TOKEN =
 	(process.env.CODEBAY_GITHUB_TOKEN ?? process.env.DCM_GITHUB_TOKEN)?.trim() || '';
 
 /**
+ * macOS Keychain service name Claude Code's OAuth credentials are read from
+ * (`security find-generic-password -s <name>`). Override to point host-credential
+ * discovery at a different Keychain entry, e.g. a secondary account. macOS only —
+ * the Linux/other fallback (~/.claude/.credentials.json) has no service name.
+ */
+export const CLAUDE_KEYCHAIN_SERVICE =
+	process.env.CODEBAY_CLAUDE_KEYCHAIN_SERVICE?.trim() || 'Claude Code-credentials';
+
+/**
  * Directories skipped when copying a source folder into an instance workspace.
  * `.git` is intentionally kept so each instance retains its history/remote and
  * `git pull`/`push` work (authenticated by the injected gh credentials).
