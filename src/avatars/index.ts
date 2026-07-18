@@ -8,6 +8,7 @@ import bee from './bee.ts';
 import bobMarley from './bob-marley.ts';
 import cat from './cat.ts';
 import catBody from './cat-body.ts';
+import catSits from './cat-sits.ts';
 import cherry from './cherry.ts';
 import crab from './crab.ts';
 import crown from './crown.ts';
@@ -47,6 +48,7 @@ export const avatars: AvatarArt[] = [
 	bobMarley,
 	cat,
 	catBody,
+	catSits,
 	cherry,
 	crab,
 	crown,
