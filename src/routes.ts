@@ -276,7 +276,7 @@ export const routes: Record<string, MochiRouteValue> = {
 	'/api/instances/:id/ports': mutationRoute('POST', async ({ params, request }) => {
 		const body = (await request.json().catch(() => null)) as { port?: number } | null;
 		if (typeof body?.port !== 'number') throw new Error('port (number) is required');
-		return { instance: sanitizeInstance(addForwardedPort(params.id!, body.port)) };
+		return { instance: sanitizeInstance(await addForwardedPort(params.id!, body.port)) };
 	}),
 
 	'/api/instances/:id/ports/:port': mutationRoute('DELETE', ({ params }) => {

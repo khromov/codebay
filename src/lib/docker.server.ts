@@ -73,6 +73,31 @@ export async function publishedContainerPorts(containerId: string): Promise<numb
 }
 
 /**
+ * Every host port currently published by any *running* container on the daemon,
+ * regardless of whether codebay's DB has a row for it. `allocatePort` unions this
+ * with the DB-derived set so a container the daemon still has bound — e.g. one
+ * orphaned by an app restart that lost its DB row, or started outside codebay
+ * entirely — can never be handed out to a new instance. Stopped containers don't
+ * hold their bind, so `listContainers()`'s running-only default is exactly what's
+ * needed here. Returns `[]` on any failure (daemon unreachable) rather than
+ * throwing — allocation still works from the DB view alone in that case.
+ */
+export async function hostPortsInUse(): Promise<number[]> {
+	try {
+		const containers = await (await getDocker()).listContainers();
+		const ports = new Set<number>();
+		for (const c of containers) {
+			for (const p of c.Ports ?? []) {
+				if (p.PublicPort) ports.add(p.PublicPort);
+			}
+		}
+		return [...ports];
+	} catch {
+		return [];
+	}
+}
+
+/**
  * Purge BuildKit's build cache (the layer cache `devcontainer up` reuses), so the
  * next build runs uncached. Hits `POST /build/prune?all=true` via the raw modem —
  * dockerode has no dedicated helper for it. Returns the bytes reclaimed. Does not

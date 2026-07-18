@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { removeContainer } from './docker.server.ts';
+import { hostPortsInUse, removeContainer } from './docker.server.ts';
 
 /**
  * `getDocker()` resolves a dockerode client pinned to `globalThis.__codebayDocker`.
@@ -105,5 +105,47 @@ describe('removeContainer', () => {
 		});
 		expect(await removeContainer('c1')).toBe(true);
 		expect(calls.volumesRemoved).toEqual(['v1']);
+	});
+});
+
+describe('hostPortsInUse', () => {
+	afterEach(() => {
+		g.__codebayDocker = undefined;
+	});
+
+	test('collects published host ports across every running container, deduped', async () => {
+		g.__codebayDocker = Promise.resolve({
+			listContainers: async () => [
+				{ Ports: [{ PrivatePort: 8080, PublicPort: 8001, Type: 'tcp' }] },
+				{
+					Ports: [
+						{ PrivatePort: 3333, PublicPort: 8002, Type: 'tcp' },
+						{ PrivatePort: 8080, PublicPort: 8001, Type: 'tcp' } // dup, e.g. seen on two networks
+					]
+				}
+			]
+		});
+		expect((await hostPortsInUse()).sort()).toEqual([8001, 8002]);
+	});
+
+	test('skips exposed-but-not-published ports (no PublicPort)', async () => {
+		g.__codebayDocker = Promise.resolve({
+			listContainers: async () => [{ Ports: [{ PrivatePort: 8080, Type: 'tcp' }] }]
+		});
+		expect(await hostPortsInUse()).toEqual([]);
+	});
+
+	test('returns [] when a container has no Ports field', async () => {
+		g.__codebayDocker = Promise.resolve({ listContainers: async () => [{}] });
+		expect(await hostPortsInUse()).toEqual([]);
+	});
+
+	test('returns [] when the daemon is unreachable', async () => {
+		g.__codebayDocker = Promise.resolve({
+			listContainers: async () => {
+				throw new Error('connect ECONNREFUSED');
+			}
+		});
+		expect(await hostPortsInUse()).toEqual([]);
 	});
 });
