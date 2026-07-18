@@ -20,6 +20,7 @@ import frog from './frog.ts';
 import ghost from './ghost.ts';
 import heart from './heart.ts';
 import invader from './invader.ts';
+import kangaroo from './kangaroo.ts';
 import key from './key.ts';
 import lightning from './lightning.ts';
 import mushroom from './mushroom.ts';
@@ -58,6 +59,7 @@ export const avatars: AvatarArt[] = [
 	ghost,
 	heart,
 	invader,
+	kangaroo,
 	key,
 	lightning,
 	mushroom,
