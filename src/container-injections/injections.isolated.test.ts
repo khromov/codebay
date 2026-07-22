@@ -88,6 +88,10 @@ describe('tmux injection scripts', () => {
 		expect(TMUX_CONF_LINES).toContain('set -g mouse on');
 		expect(TMUX_CONF_LINES).toContain('set -g status off');
 	});
+
+	test('conf binds a key to toggle mouse mode for copy/paste vs. scroll', () => {
+		expect(TMUX_CONF_LINES.some((line) => line.startsWith('bind m set -g mouse'))).toBe(true);
+	});
 });
 
 describe('attentionHookSettings', () => {

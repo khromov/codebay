@@ -19,19 +19,25 @@ export const INSTALL_SCRIPT =
 	'command -v tmux >/dev/null 2>&1';
 
 /**
- * Lines appended to the container user's `~/.tmux.conf`. `mouse on` makes the
- * wheel scroll tmux's own scrollback in xterm.js — the feature users actually
- * need — at the cost of tmux owning mouse selection (code-server's
- * copyOnSelection doesn't apply inside tmux); `set-clipboard on` (OSC52) keeps
- * tmux copy reaching the browser clipboard; `status off` hides the status bar
- * — the IDE terminal is a single dedicated session, so the bar only cost a
- * row. Exported for the isolated tests.
+ * Lines appended to the container user's `~/.tmux.conf`. `mouse on` gives
+ * wheel-scroll but costs code-server's native `copyOnSelection` (tmux owns
+ * mouse-drag; neither a Shift/Option-drag bypass nor OSC52 passthrough reaches
+ * code-server's xterm.js), so `bind m` toggles `mouse` on a keypress (prefix +
+ * m) to switch between scrolling and native drag-select/copy. This shadows
+ * tmux's default `prefix + m` (mark-pane) binding, unused here since the IDE
+ * terminal is always a single pane. `set-clipboard`/`allow-passthrough` still
+ * help keyboard-driven copy-mode against an OSC52-capable host terminal (e.g.
+ * `docker exec` from iTerm2/kitty/WezTerm). `status off` hides the status bar,
+ * which only cost a row for this single-session terminal. Exported for the
+ * isolated tests.
  */
 export const TMUX_CONF_LINES = [
 	'set -g mouse on',
 	'set -g history-limit 50000',
 	'set -g set-clipboard on',
-	'set -g status off'
+	'set -g allow-passthrough on',
+	'set -g status off',
+	'bind m set -g mouse \\; display-message "mouse: #{?mouse,on,off}"'
 ];
 
 /**
