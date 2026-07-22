@@ -42,9 +42,9 @@ USER root
 # HOST=0.0.0.0 is required, not just for LAN access: the code-server containers
 # reach the manager's attention bridge via host.docker.internal → host-gateway,
 # which a 127.0.0.1-only listener would never answer. Always set BASIC_AUTH_PASSWORD.
-ENV PORT=3333 \
+ENV PORT=6969 \
     HOST=0.0.0.0 \
     NODE_ENV=production
 
-EXPOSE 3333
+EXPOSE 6969
 CMD ["bun", "run", "start"]

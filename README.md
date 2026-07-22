@@ -4,6 +4,17 @@
 
 Pick a project folder → the app copies it, injects code-server into its `devcontainer.json`, runs `devcontainer up`, and publishes the editor on a unique host port. It also copies your host's Claude Code and GitHub CLI credentials into each container so `claude`, `gh`, and git-over-HTTPS work out of the box.
 
+## Quick start
+
+```sh
+bunx codebay@latest
+```
+
+That's it — no checkout, no install. It opens `http://localhost:6969` in your browser, keeps
+its state in `~/.codebay`, and binds to loopback only. Requires [Bun](https://bun.sh) >= 1.3.14
+and a running Docker daemon. Set `BASIC_AUTH_PASSWORD` (and `HOST=0.0.0.0`) if you want to
+reach it from another machine.
+
 ## Claude Code in your devcontainer
 
 The app copies your Claude Code credentials and installs the attention hooks into every container, but it only copies them — it does **not** install the `claude` binary for projects that ship their own devcontainer.
@@ -36,10 +47,10 @@ After `devcontainer up`, the app installs a few things into each container. Each
 ## Requirements
 
 - macOS and Linux are supported (Windows is untested — feel free to [open an issue](../../issues))
-- [Bun](https://bun.sh) >= 1.3.13 (Node.js is not supported)
+- [Bun](https://bun.sh) >= 1.3.14 (Node.js is not supported)
 - Docker (eg. Docker Desktop or Colima)
 
-## Setup
+## Run from source
 
 ```sh
 bun install
@@ -81,7 +92,7 @@ To build the image yourself instead of pulling:
    export CODEBAY_DATA_DIR=/opt/codebay && mkdir -p "$CODEBAY_DATA_DIR"
    docker compose up -d
    ```
-4. Open `http://localhost:3333` and log in as `admin` with that password.
+4. Open `http://localhost:6969` and log in as `admin` with that password.
 
 ### Run the published image
 
@@ -128,7 +139,7 @@ host paths, so put `CODEBAY_DATA_DIR` **under `$HOME`** (e.g. `$HOME/.codebay`);
 
 ## Configuration
 
-- `PORT` — server port (default `3333`)
+- `PORT` — server port (default `6969`)
 - `DATA_DIR` — where state lives (default `~/.codebay`)
 - `DOCKER_HOST` — Docker daemon socket/URL to connect to (e.g. `unix://$HOME/.colima/default/docker.sock` or `tcp://1.2.3.4:2375`); defaults to your active Docker context
 - `BASIC_AUTH_PASSWORD` — enables HTTP Basic Auth over the whole UI (disabled when unset)

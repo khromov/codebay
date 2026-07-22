@@ -5,7 +5,7 @@
 	"type": "module",
 	"license": "MIT",
 	"author": "Stanislav Khromov",
-	"homepage": "https://github.com/khromov/servbay#readme",
+	"homepage": "https://github.com/khromov/codebay#readme",
 	"bugs": {
 		"url": "https://github.com/khromov/codebay/issues"
 	},
@@ -28,6 +28,7 @@
 	"files": [
 		"bin",
 		"src",
+		"!src/**/*.test.ts",
 		"public",
 		"migrations",
 		".mochi",
@@ -42,9 +43,9 @@
 		"bun": ">=1.3.14"
 	},
 	"scripts": {
-		"build": "mochi-framework build",
+		"build": "mochi-framework build && bun scripts/portable-manifest.ts",
 		"start": "bun src/index.ts",
-		"prod": "bun run build && PORT=6969 bun run start",
+		"prod": "bun run build && bun run start",
 		"dev": "MODE=development DISABLE_OPEN_BROWSER=1 DATA_DIR=./.codebay bun src/index.ts",
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
 		"test": "bun test",
@@ -53,7 +54,8 @@
 		"checks": "bun run format && bun run typecheck && bun run test",
 		"clean": "rimraf .mochi",
 		"gen:chimes": "bun scripts/gen-chimes.ts",
-		"debug:tokens": "bun scripts/debug-tokens.ts"
+		"debug:tokens": "bun scripts/debug-tokens.ts",
+		"verify:package": "bun scripts/verify-package.ts"
 	},
 	"dependencies": {
 		"@devcontainers/cli": "^0.87.0",
@@ -79,7 +81,7 @@
 		"typescript": "^6.0.3",
 		"typescript-eslint": "^8.62.1"
 	},
-	"overrides": {
+	"resolutions": {
 		"msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*",
 		"svelte": "5.56.4"
 	},

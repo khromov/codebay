@@ -13,7 +13,7 @@ This runs on **Bun only** (Node.js is not supported). The app is built on **Moch
 ```sh
 bun run dev        # dev server (MODE=development, project-local DATA_DIR, no browser launch)
 bun run start      # runs src/index.ts directly (no separate build step needed)
-bun run build      # mochi-framework build → .mochi/
+bun run build      # mochi-framework build → .mochi/ (+ scripts/portable-manifest.ts, see npm packaging)
 bun run typecheck  # svelte-check (with a custom warning-ignore flag) + tsc --noEmit; run after any TS/Svelte change
 bun test           # all tests
 bun test src/index.isolated.test.ts          # single file
@@ -22,7 +22,7 @@ bun run checks     # format + typecheck + tests — run this after every change 
 bun run clean      # remove .mochi build output
 bun run lint       # prettier --check + eslint (read-only; `checks` runs format instead)
 bun run gen:chimes # re-render attention chimes to public/sounds/ WAVs (after editing scripts/gen-chimes.ts)
-bun run prod       # build + serve the production bundle on PORT=6969
+bun run prod       # build + serve the production bundle (default PORT=6969)
 ```
 
 **Always run `bun run checks` after implementing a change** (it runs `format`, then `typecheck`, then `test`) and fix anything it surfaces before considering the work done.
@@ -31,7 +31,7 @@ Tests that touch server state are named `*.isolated.test.ts`; pure unit tests (e
 
 Both `dev` and `start` execute `src/index.ts` with Bun (Mochi serves SSR pages on the fly); `build` is only needed for a precompiled production bundle. The `dev` script already sets `MODE=development`, `DISABLE_OPEN_BROWSER=1`, and `DATA_DIR=./.codebay` (keeps state inside the repo while developing).
 
-**Port:** the server reads `PORT` (default 3333). When _you_ (Claude Code) run the app, use `PORT=4444 DISABLE_OPEN_BROWSER=1 bun run dev` so your instance stays separate from one the user may have running on 3333.
+**Port:** the server reads `PORT` (default 6969). When _you_ (Claude Code) run the app, use `PORT=4444 DISABLE_OPEN_BROWSER=1 bun run dev` so your instance stays separate from one the user may have running on 6969.
 
 **Browser launch:** on startup the server opens the web UI in the user's default browser. Set `DISABLE_OPEN_BROWSER=1` to skip it — _you_ (Claude Code) should always run with this set (the `dev` script already does).
 
@@ -85,6 +85,43 @@ _To add one:_ create `src/container-injections/<name>.ts` exporting an `Injectio
 **Distribution.** Three ways this ships: `bunx codebay` (bin entry `bin/codebay.ts`, which `chdir`s to the package root before importing `src/index.ts` because the server resolves the shell, pages, `public/`, and the `.mochi` manifest relative to cwd — so a published release must include a built `.mochi/`; the `files` list in `package.json` governs what's published); a GHCR image (`Dockerfile` + `docker-compose.yml`) that drives the **host's** daemon Docker-out-of-Docker — needs `--network host`, hence `BASIC_AUTH_PASSWORD`, and a `DATA_DIR` bind-mounted at an identical host↔container path; and running from source. Versioning/publishing is automated by release-please (`release-please-config.json`), so use conventional commit messages. README's Configuration section is the canonical env-var list (`PORT`, `DATA_DIR`, `DOCKER_HOST`, `BASIC_AUTH_PASSWORD`, `MOCHI_KEY`, `CODEBAY_CLAUDE_CODE_TOKEN`, `CODEBAY_GITHUB_TOKEN`, `DISABLE_OPEN_BROWSER`).
 
 `writeOverrideConfig` parses the existing `devcontainer.json` as JSONC (custom `stripJsonc` strips comments/trailing commas) and merges in the code-server feature non-destructively — it operates on the _copy_, so rewriting/normalizing the file is safe.
+
+## npm packaging (`bunx codebay`)
+
+The app is published to npm as **`codebay`** and is meant to run via `bunx codebay@latest`.
+`bin/codebay.ts` is the entry point: it `process.chdir()`s to the package root (the server resolves
+`./src/shell.html`, `./.mochi`, and `./public` relative to cwd) after absolutizing a relative
+`DATA_DIR` against the caller's cwd. `devcontainerBin()` resolves `@devcontainers/cli` via
+`import.meta.resolve`, so it works from any cwd.
+
+The tarball **ships the production build** (`.mochi` is in `files`): in production Mochi serves
+static assets (the chime WAVs) only from the prebuilt manifest, so without it `/sounds/*.wav` 404s.
+Both `bun pm pack` and `npm pack` honor `files` over `.gitignore`, so the gitignored `.mochi` is
+packed. The version pins live in **`resolutions`**, not `overrides` — bun treats the two the same,
+but npm rejects an `overrides` entry that conflicts with a direct dependency (`EOVERRIDE`), which
+would break `npm publish`.
+
+**`scripts/portable-manifest.ts` is load-bearing** (chained into `bun run build`): Mochi writes
+`components[*].ssrModule` in `.mochi/manifest.json` as an _absolute_ build-machine path, and
+`fromManifest()` `import()`s it — so an unprocessed manifest crashes on any other machine (and
+locally silently loads _this checkout's_ SSR modules, giving two `svelte` instances and
+`lifecycle_outside_component` island errors). The script rewrites build-root paths to relative and
+exits non-zero if any disk path is still absolute. Re-check it after bumping `mochi-framework`.
+
+**`bun run verify:package` (`scripts/verify-package.ts`) is the gate for all of the above**: it
+packs the tarball, installs it into a throwaway project, boots it there in **production** mode, and
+asserts the page renders, `/sounds/done.wav` is served, no island SSR errors are logged, and no
+manifest path escapes the package. Run it after touching packaging; the release workflow runs it
+right before publishing. Test in production mode only — dev mode chdir's into `.mochi/dev` and masks
+both the cwd and manifest issues.
+
+Releases go through `.github/workflows/release.yml`: release-please opens the release PR (and syncs
+`bun.lock` on its branch); merging it cuts the tag, and the `publish` job checks out **that tag**,
+typechecks, tests, builds, verifies the tarball, and runs `npm publish --provenance` (npm, not bun —
+only npm can attach provenance; it needs `id-token: write` and the `NPM_TOKEN` secret). A failed
+publish can be retried without a new version via the workflow's `workflow_dispatch` `tag` input.
+Release-please also needs "Allow GitHub Actions to create and approve pull requests" enabled in
+Settings → Actions → General, or it fails at PR creation.
 
 ## Mochi framework
 
