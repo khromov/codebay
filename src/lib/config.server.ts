@@ -51,7 +51,7 @@ export const BASIC_AUTH_PASSWORD = process.env.BASIC_AUTH_PASSWORD || '';
 export const HOST = process.env.HOST || '127.0.0.1';
 
 /** TCP port the server listens on. */
-export const PORT = Number(process.env.PORT) || 3333;
+export const PORT = Number(process.env.PORT) || 6969;
 
 /**
  * Public origin the browser reaches this server on, used for Mochi's CSRF
