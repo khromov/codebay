@@ -53,8 +53,7 @@
 		"checks": "bun run format && bun run typecheck && bun run test",
 		"clean": "rimraf .mochi",
 		"gen:chimes": "bun scripts/gen-chimes.ts",
-		"debug:tokens": "bun scripts/debug-tokens.ts",
-		"update:mochi": "bash scripts/update-mochi.sh"
+		"debug:tokens": "bun scripts/debug-tokens.ts"
 	},
 	"dependencies": {
 		"@devcontainers/cli": "^0.87.0",
@@ -63,7 +62,7 @@
 		"@lucide/svelte": "^1.21.0",
 		"@zihaolam/bun-sqlite-migrations": "^1.0.3",
 		"dockerode": "^5.0.1",
-		"mochi-framework": "file:./vendor/mochi-framework",
+		"mochi-framework": "^0.8.2",
 		"svelte": "^5.56.4",
 		"svelte-french-toast": "^1.2.0"
 	},

@@ -42,11 +42,8 @@ After `devcontainer up`, the app installs a few things into each container. Each
 ## Setup
 
 ```sh
-bun run update:mochi # vendor the mochi framework (vendor/ is gitignored, so it isn't in a fresh clone)
 bun install
 ```
-
-> `mochi-framework` is a `file:./vendor/mochi-framework` dependency and `vendor/` is gitignored, so a fresh clone doesn't include it. Run `bun run update:mochi` before `bun install` or the dev server won't boot. (The Docker build handles this step for you.)
 
 ## Commands
 
@@ -72,7 +69,7 @@ docker pull ghcr.io/khromov/codebay:latest
 
 To build the image yourself instead of pulling:
 
-1. Build it (vendors mochi and produces a production build — no local Bun needed):
+1. Build it (produces a production build — no local Bun needed):
    ```sh
    docker build -t codebay .
    ```

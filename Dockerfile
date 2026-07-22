@@ -6,22 +6,16 @@
 # the "Run with Docker" section in README.md for the run recipe (host networking
 # + a same-path DATA_DIR bind mount are both required).
 
-# ---- builder: vendor mochi, install deps, produce the production build ----
+# ---- builder: install deps, produce the production build ----
 FROM oven/bun:1.3.14-alpine AS builder
 WORKDIR /app
 
-# scripts/update-mochi.sh needs git + bash (mochi is a gitignored file: dep that
-# must be vendored at build time; it clones mochi's `main` — pin a ref later for
-# fully reproducible builds).
-RUN apk add --no-cache git bash
-
-# Install layer: only what `bun run update:mochi` (clone + bun install) needs, so
-# it caches independently of source changes. patches/ is required because
-# package.json declares a patchedDependency applied during install.
+# Install layer: only the manifest, lockfile, and patches, so it caches
+# independently of source changes. patches/ is required because package.json
+# declares a patchedDependency applied during install.
 COPY package.json bun.lock* ./
 COPY patches ./patches
-COPY scripts ./scripts
-RUN bun run update:mochi
+RUN bun install --frozen-lockfile
 
 # Build layer: the rest of the source, then the production SSR/client build.
 COPY . .

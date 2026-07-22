@@ -38,11 +38,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-
 
-      # vendor/ is gitignored and package.json depends on it via
-      # file:./vendor/mochi-framework, so a bare `bun install` would fail on a
-      # fresh checkout. This script vendors mochi-framework and runs bun install.
-      - name: Vendor mochi-framework and install dependencies
-        run: bun run update:mochi
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
       - name: Typecheck
         run: bun run typecheck

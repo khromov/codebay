@@ -8,7 +8,7 @@ A web UI for spinning up isolated [devcontainer](https://containers.dev/) instan
 
 ## Runtime & commands
 
-This runs on **Bun only** (Node.js is not supported). The app is built on **Mochi**, an SSR Svelte 5 framework with islands-based selective hydration, vendored under `vendor/mochi-framework`.
+This runs on **Bun only** (Node.js is not supported). The app is built on **Mochi**, an SSR Svelte 5 framework with islands-based selective hydration, installed from npm as `mochi-framework`.
 
 ```sh
 bun run dev        # dev server (MODE=development, project-local DATA_DIR, no browser launch)
@@ -79,8 +79,8 @@ _To add one:_ create `src/container-injections/<name>.ts` exporting an `Injectio
 
 `writeOverrideConfig` parses the existing `devcontainer.json` as JSONC (custom `stripJsonc` strips comments/trailing commas) and merges in the code-server feature non-destructively — it operates on the _copy_, so rewriting/normalizing the file is safe.
 
-## Vendored Mochi framework
+## Mochi framework
 
-`vendor/` is **gitignored** — the framework is vendored from `github.com/khromov/mochi` (the `packages/mochi` subdir) because Bun can't install a git subdirectory. Update it with `bun run update:mochi` (optionally pass a ref). Do not hand-edit files under `vendor/mochi-framework`; changes there are wiped on the next update.
+The framework is a normal npm dependency, `mochi-framework@^0.8.2` (published from `github.com/khromov/mochi`, the `packages/mochi` subdir). Bump it like any other dependency; there is no vendoring step.
 
 Two MCP servers are configured (`.mcp.json`) for reference: `mochi` (framework docs) and `bun-docs`. Consult them when working with Mochi APIs (`Mochi.page/api/ws`, hydration directives like `mochi:hydrate`) or Bun-specific APIs.

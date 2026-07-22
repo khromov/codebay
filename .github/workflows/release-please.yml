@@ -29,11 +29,9 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      # vendor/ is gitignored and package.json depends on it via
-      # file:./vendor/mochi-framework, so vendor it before publishing.
-      - name: Vendor mochi-framework and install dependencies
+      - name: Install dependencies
         if: ${{ steps.release.outputs.release_created }}
-        run: bun run update:mochi
+        run: bun install --frozen-lockfile
 
       # Ship a production build: Mochi only serves static assets (the chime WAVs)
       # from a prebuilt manifest, so `.mochi/` must be built and packaged.
