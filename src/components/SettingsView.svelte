@@ -607,16 +607,26 @@
 			{/if}
 		</section>
 
-		<section class="card">
+		<section class="card" class:disabled-card={manualTokens}>
 			<div class="row">
 				<div class="label">
 					<KeyRound size={18} />
 					<div class="text">
-						<div class="name">LiteLLM + Bedrock</div>
+						<div class="name">
+							LiteLLM + Bedrock
+							{#if manualTokens}
+								<span class="arch" title="Disabled while Set tokens manually is on">disabled</span>
+							{/if}
+						</div>
 						<div class="desc">
-							Route <code>claude</code> through a LiteLLM proxy fronting AWS Bedrock instead of Anthropic's
-							default API. When enabled, the Bedrock endpoint variables are injected into every new container,
-							host OAuth credentials are not used, and "Set tokens manually" is disabled.
+							{#if manualTokens}
+								Not available while "Set tokens manually" is enabled — these modes are mutually
+								incompatible.
+							{:else}
+								Route <code>claude</code> through a LiteLLM proxy fronting AWS Bedrock instead of Anthropic's
+								default API. When enabled, the Bedrock endpoint variables are injected into every new
+								container, host OAuth credentials are not used, and "Set tokens manually" is disabled.
+							{/if}
 						</div>
 					</div>
 				</div>
@@ -624,7 +634,7 @@
 					<input
 						type="checkbox"
 						checked={customEndpoint}
-						disabled={savingCustomToggle}
+						disabled={savingCustomToggle || manualTokens}
 						onchange={(e) => toggleCustomEndpoint(e.currentTarget.checked)}
 					/>
 					<span class="track"><span class="thumb"></span></span>
