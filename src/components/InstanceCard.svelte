@@ -73,9 +73,17 @@
 		{:else if instance.status === 'stopped' || (instance.status === 'error' && instance.container_id)}
 			<Button size="sm" onclick={() => onact('start')}>Start</Button>
 		{:else if instance.status === 'creating'}
-			<Button size="sm" href={`/instances/${instance.id}`}>View logs</Button>
+			<Button size="sm" href={`/instances/${instance.id}`} target="_blank" rel="noopener noreferrer"
+				>View logs</Button
+			>
 		{/if}
-		<Button size="sm" ghost href={`/instances/${instance.id}`}>Details</Button>
+		<Button
+			size="sm"
+			ghost
+			href={`/instances/${instance.id}`}
+			target="_blank"
+			rel="noopener noreferrer">Details</Button
+		>
 		<Button variant="danger" size="sm" onclick={() => onact('delete')}>Delete</Button>
 	</div>
 </li>

@@ -91,25 +91,40 @@ async function writeBridgeHeader(
 }
 
 /**
- * Merge the attention hooks into a running container's Claude config dir. Passes the
- * JSON via a scrubbed shell variable (never argv) and deep-merges it into any existing
+ * Shell snippet that deep-merges the JSON in `$CODEBAY_STDIN` into any existing
  * `$CLAUDE_CONFIG_DIR/settings.json` (default ~/.claude/settings.json) with `jq`, so
- * a config the image already ships (e.g. a `statusLine`) is preserved — our hooks win
- * only on key conflicts. Falls back to writing our JSON outright when there's no
- * existing file, no `jq`, or the existing file isn't valid JSON.
+ * keys the file already has — hooks another injection wrote, a `statusLine`, or
+ * whatever the base image ships — survive; the incoming JSON wins only on key
+ * conflicts. Falls back to writing the incoming JSON outright when there's no
+ * existing file, no `jq`, or the existing file isn't valid JSON. Shared by every
+ * injection that touches `settings.json` (attention hooks, statusLine) so they
+ * compose regardless of apply order. Must run via `execInContainer` with `stdin`
+ * set to the JSON to merge in.
  */
-async function injectClaudeHooks(
-	target: ContainerTarget,
-	settingsJson: string
-): Promise<{ ok: boolean; error?: string }> {
-	const script =
+export function mergeClaudeSettingsScript(): string {
+	return (
 		'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; mkdir -p "$d"; ' +
 		'f="$d/settings.json"; new="$CODEBAY_STDIN"; ' +
 		'if command -v jq >/dev/null 2>&1 && [ -s "$f" ] && ' +
 		'merged=$(printf \'%s\' "$new" | jq -s \'.[0] * .[1]\' "$f" - 2>/dev/null); then ' +
 		'printf \'%s\' "$merged" > "$f"; else printf \'%s\' "$new" > "$f"; fi; ' +
-		'chmod 644 "$f"';
-	const res = await execInContainer(target, { script, stdin: settingsJson });
+		'chmod 644 "$f"'
+	);
+}
+
+/**
+ * Merge the attention hooks into a running container's Claude config dir. Passes the
+ * JSON via a scrubbed shell variable (never argv); see `mergeClaudeSettingsScript`
+ * for the merge behavior.
+ */
+async function injectClaudeHooks(
+	target: ContainerTarget,
+	settingsJson: string
+): Promise<{ ok: boolean; error?: string }> {
+	const res = await execInContainer(target, {
+		script: mergeClaudeSettingsScript(),
+		stdin: settingsJson
+	});
 	return res.ok ? { ok: true } : { ok: false, error: res.error };
 }
 

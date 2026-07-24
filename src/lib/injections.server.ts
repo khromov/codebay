@@ -8,8 +8,10 @@ import { claudeCodeCredentials } from '../container-injections/claude-code-crede
 import { claudeCodeCustom } from '../container-injections/claude-code-custom.ts';
 import { githubCredentials } from '../container-injections/github-credentials.ts';
 import { attentionHooks } from '../container-injections/attention-hooks.ts';
+import { claudeStatusline } from '../container-injections/claude-statusline.ts';
 import { claudeSkipPermissions } from '../container-injections/claude-skip-permissions.ts';
 import { claudeAliases } from '../container-injections/claude-aliases.ts';
+import { hostEnvVars } from '../container-injections/host-env-vars.ts';
 
 /**
  * A running container an injection acts on, plus the instance row behind it.
@@ -71,8 +73,10 @@ const BASE_INJECTIONS_HEAD: Injection[] = [
 const BASE_INJECTIONS_TAIL: Injection[] = [
 	githubCredentials,
 	attentionHooks,
+	claudeStatusline,
 	claudeSkipPermissions,
-	claudeAliases
+	claudeAliases,
+	hostEnvVars
 ];
 
 /**

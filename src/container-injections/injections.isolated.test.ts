@@ -4,6 +4,9 @@ import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings } from './attention-hooks.ts';
 import { isValid } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
+import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
+import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
+import { extractScriptPath } from './claude-statusline.ts';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
 
 describe('injection registry', () => {
@@ -52,6 +55,22 @@ describe('injection registry', () => {
 		expect(typeof aliases!.check).toBe('function');
 		// No host dependency, so no auth chip.
 		expect(aliases!.auth).toBeUndefined();
+	});
+
+	test('claude-statusline is registered with an auth chip and a health check', () => {
+		const statusline = injections.find((i) => i.id === 'claude-statusline');
+		expect(statusline).toBeDefined();
+		expect(statusline!.auth).toBeDefined();
+		expect(typeof statusline!.check).toBe('function');
+	});
+
+	test('host-env-vars is registered with a health check and no auth chip', () => {
+		const hostEnvVars = injections.find((i) => i.id === 'host-env-vars');
+		expect(hostEnvVars).toBeDefined();
+		expect(typeof hostEnvVars!.check).toBe('function');
+		// Opt-in convenience feature, not a discovered host credential — omitting
+		// `auth` keeps it out of the global credentials chip when unconfigured.
+		expect(hostEnvVars!.auth).toBeUndefined();
 	});
 
 	test('tmux is registered with a health check', () => {
@@ -211,6 +230,167 @@ describe('customEndpointConfig', () => {
 		const config = customEndpointConfig()!;
 		expect(config.opusModel).toBe('my-custom-opus');
 		setOption('custom_endpoint_opus_model', ''); // cleanup
+	});
+});
+
+describe('parseHostEnvVarNames', () => {
+	test('returns an empty array for null/missing input', () => {
+		expect(parseHostEnvVarNames(null)).toEqual([]);
+	});
+
+	test('returns an empty array for malformed JSON', () => {
+		expect(parseHostEnvVarNames('not json')).toEqual([]);
+	});
+
+	test('drops non-string entries', () => {
+		expect(parseHostEnvVarNames(JSON.stringify(['FOO', 123, null, 'BAR']))).toEqual(['FOO', 'BAR']);
+	});
+
+	test('parses a valid name list', () => {
+		expect(parseHostEnvVarNames(JSON.stringify(['FOO', 'BAR']))).toEqual(['FOO', 'BAR']);
+	});
+});
+
+describe('hostEnvVarPresence', () => {
+	const TEST_VAR = 'CODEBAY_TEST_PRESENCE_VAR';
+
+	afterEach(() => {
+		delete Bun.env[TEST_VAR];
+	});
+
+	test('marks a name present when its host value is non-empty', () => {
+		Bun.env[TEST_VAR] = 'hello';
+		expect(hostEnvVarPresence([TEST_VAR])).toEqual({ [TEST_VAR]: true });
+	});
+
+	test('marks a name absent when unset', () => {
+		delete Bun.env[TEST_VAR];
+		expect(hostEnvVarPresence([TEST_VAR])).toEqual({ [TEST_VAR]: false });
+	});
+
+	test('returns one entry per requested name', () => {
+		const missingVar = 'CODEBAY_TEST_PRESENCE_MISSING';
+		Bun.env[TEST_VAR] = 'hello';
+		expect(hostEnvVarPresence([TEST_VAR, missingVar])).toEqual({
+			[TEST_VAR]: true,
+			[missingVar]: false
+		});
+	});
+});
+
+describe('hostEnvVarsConfig', () => {
+	const TEST_VAR = 'CODEBAY_TEST_HOST_ENV_VAR';
+
+	beforeEach(() => {
+		setOption('host_env_vars_enabled', '0');
+		setOption('host_env_var_names', '[]');
+		delete Bun.env[TEST_VAR];
+	});
+
+	afterEach(() => {
+		setOption('host_env_vars_enabled', '0');
+		setOption('host_env_var_names', '[]');
+		delete Bun.env[TEST_VAR];
+	});
+
+	test('returns null when disabled', () => {
+		Bun.env[TEST_VAR] = 'hello';
+		setOption('host_env_var_names', JSON.stringify([TEST_VAR]));
+		expect(hostEnvVarsConfig()).toBeNull();
+	});
+
+	test('returns null when enabled but no names configured', () => {
+		setOption('host_env_vars_enabled', '1');
+		expect(hostEnvVarsConfig()).toBeNull();
+	});
+
+	test('returns null when enabled but none of the configured names resolve on the host', () => {
+		setOption('host_env_vars_enabled', '1');
+		setOption('host_env_var_names', JSON.stringify([TEST_VAR]));
+		expect(hostEnvVarsConfig()).toBeNull();
+	});
+
+	test('resolves a configured name that has a host value', () => {
+		Bun.env[TEST_VAR] = 'hello';
+		setOption('host_env_vars_enabled', '1');
+		setOption('host_env_var_names', JSON.stringify([TEST_VAR]));
+		const config = hostEnvVarsConfig();
+		expect(config).not.toBeNull();
+		expect(config!.resolved).toEqual([{ name: TEST_VAR, value: 'hello' }]);
+		expect(config!.missing).toEqual([]);
+	});
+
+	test('reports unresolved names as missing without dropping resolved ones', () => {
+		const missingVar = 'CODEBAY_TEST_MISSING_VAR';
+		Bun.env[TEST_VAR] = 'hello';
+		delete Bun.env[missingVar];
+		setOption('host_env_vars_enabled', '1');
+		setOption('host_env_var_names', JSON.stringify([TEST_VAR, missingVar]));
+		const config = hostEnvVarsConfig()!;
+		expect(config.resolved).toEqual([{ name: TEST_VAR, value: 'hello' }]);
+		expect(config.missing).toEqual([missingVar]);
+	});
+});
+
+describe('parseGhHosts', () => {
+	test('returns an empty array when hosts.yml is empty', () => {
+		expect(parseGhHosts('')).toEqual([]);
+	});
+
+	test('parses a single host', () => {
+		const raw = 'github.com:\n    oauth_token: gho_abc\n    git_protocol: https\n';
+		expect(parseGhHosts(raw)).toEqual(['github.com']);
+	});
+
+	test('parses multiple hosts, including a GitHub Enterprise host', () => {
+		const raw =
+			'github.com:\n    oauth_token: gho_abc\n    git_protocol: https\n' +
+			'schibsted.ghe.com:\n    oauth_token: gho_def\n    git_protocol: https\n    user: stanislav-khromov\n';
+		expect(parseGhHosts(raw)).toEqual(['github.com', 'schibsted.ghe.com']);
+	});
+
+	test('does not mistake an indented key for a host', () => {
+		const raw = 'github.com:\n    oauth_token: gho_abc\n';
+		expect(parseGhHosts(raw)).toEqual(['github.com']);
+	});
+});
+
+describe('ghHostBlock', () => {
+	const raw =
+		'github.com:\n    oauth_token: gho_abc\n    git_protocol: https\n    user: khromov\n' +
+		'schibsted.ghe.com:\n    oauth_token: gho_def\n    git_protocol: ssh\n    user: stanislav-khromov\n';
+
+	test('returns null for a host not present', () => {
+		expect(ghHostBlock(raw, 'gitlab.example.com')).toBeNull();
+	});
+
+	test('extracts only the requested host block, not the next host', () => {
+		const block = ghHostBlock(raw, 'github.com')!;
+		expect(block).toContain('oauth_token: gho_abc');
+		expect(block).toContain('user: khromov');
+		expect(block).not.toContain('gho_def');
+		expect(block).not.toContain('schibsted.ghe.com');
+	});
+
+	test('extracts the last host block through end of file', () => {
+		const block = ghHostBlock(raw, 'schibsted.ghe.com')!;
+		expect(block).toContain('oauth_token: gho_def');
+		expect(block).toContain('git_protocol: ssh');
+	});
+});
+
+describe('extractScriptPath', () => {
+	test('returns null for a bare package-runner command with no file reference', () => {
+		expect(extractScriptPath('npx ccstatusline@latest')).toBeNull();
+	});
+
+	test('returns null when the referenced path does not exist on disk', () => {
+		expect(extractScriptPath('/no/such/file/statusline.sh')).toBeNull();
+	});
+
+	test('finds an existing absolute-path token amid other arguments', () => {
+		// Use a file guaranteed to exist without depending on codebay-specific state.
+		expect(extractScriptPath(`bash ${import.meta.path} --flag`)).toBe(import.meta.path);
 	});
 });
 

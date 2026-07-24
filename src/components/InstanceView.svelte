@@ -7,6 +7,8 @@
 	import Skeleton from './Skeleton.svelte';
 	import { liveSocket, liveStream } from '../live.ts';
 	import { apiPost, apiDelete } from '../api.ts';
+	import { enhance } from 'mochi-framework';
+	import type { MochiEnhanceOptions } from 'mochi-framework';
 
 	let { id, injectionChecks = 0 }: { id: string; injectionChecks?: number } = $props();
 
@@ -91,6 +93,26 @@
 		if (ok) pendingRebuild = false;
 	}
 
+	// --- Restart container (header button) -------------------------------------
+	let restartError = $state<string | null>(null);
+	// In-flight from the click until the rebuild kicks the instance to `creating`
+	// (at which point `building` takes over the disabled/label state).
+	let restarting = $state(false);
+
+	const restartOpts: MochiEnhanceOptions<Record<string, never>, { error: string }> = {
+		onPending: (v) => (restarting = v),
+		submit: () => {
+			restartError = null;
+			return ({ result }) => {
+				if (result.type === 'failure') {
+					restartError = result.data?.error ?? 'Restart failed';
+				} else if (result.type === 'error') {
+					restartError = 'Network error. Try again.';
+				}
+			};
+		}
+	};
+
 	// --- Copy logs --------------------------------------------------------------
 	let copied = $state(false);
 	let copyTimer: ReturnType<typeof setTimeout> | undefined;
@@ -114,11 +136,17 @@
 		{/if}
 	</div>
 	{#if instance?.status === 'running'}
+		<form method="POST" action="?/restart" {@attach enhance(restartOpts)}>
+			<button class="restart" type="submit" disabled={restarting || building}>
+				{restarting || building ? 'Restarting…' : 'Restart container'}
+			</button>
+		</form>
 		<a class="open" href={url} target="_blank" rel="noopener"
 			>Open in new tab <ArrowUpRight size={15} /></a
 		>
 	{/if}
 </header>
+{#if restartError}<p class="restart-err">{restartError}</p>{/if}
 
 <main class="stage">
 	<div class="meta">
@@ -273,6 +301,36 @@
 	.open:hover {
 		background: var(--ink);
 		color: var(--bg);
+	}
+	.restart {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-family: var(--font-mono);
+		font-weight: 600;
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--ink);
+		background: var(--bg);
+		border: 1px solid var(--ink);
+		padding: 7px 12px;
+		cursor: pointer;
+	}
+	.restart:hover:not(:disabled) {
+		background: var(--ink);
+		color: var(--bg);
+	}
+	.restart:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+	.restart-err {
+		margin: 0;
+		padding: 8px 24px 0;
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--danger);
 	}
 	.stage {
 		max-width: 1200px;

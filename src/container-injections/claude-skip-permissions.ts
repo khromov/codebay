@@ -31,7 +31,7 @@ const CHECK_SCRIPT =
  */
 export const claudeSkipPermissions: Injection = {
 	id: 'claude-skip-permissions',
-	label: 'claude alias',
+	label: 'claude skip-permissions alias',
 
 	async apply(target, log) {
 		log('Installing claude --dangerously-skip-permissions alias…\n');

@@ -45,14 +45,14 @@ export async function cloneRepo(
 		GIT_TERMINAL_PROMPT: '0'
 	};
 
-	if (parsed.host === 'github.com') {
-		const found = await readGhToken();
-		if (found) {
-			const basic = Buffer.from(`x-access-token:${found.token}`).toString('base64');
-			env.GIT_CONFIG_COUNT = '1';
-			env.GIT_CONFIG_KEY_0 = 'http.https://github.com/.extraheader';
-			env.GIT_CONFIG_VALUE_0 = `Authorization: Basic ${basic}`;
-		}
+	// Authenticate for whichever GitHub host the URL points at — github.com or a
+	// GitHub Enterprise Server host `gh auth login` has set up — not just github.com.
+	const found = await readGhToken(parsed.host);
+	if (found) {
+		const basic = Buffer.from(`x-access-token:${found.token}`).toString('base64');
+		env.GIT_CONFIG_COUNT = '1';
+		env.GIT_CONFIG_KEY_0 = `http.https://${parsed.host}/.extraheader`;
+		env.GIT_CONFIG_VALUE_0 = `Authorization: Basic ${basic}`;
 	}
 
 	const args = ['git', 'clone', '--progress'];
