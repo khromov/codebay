@@ -6,6 +6,7 @@ import { isValid } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
 import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
 import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
+import { extractScriptPath } from './claude-statusline.ts';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
 
 describe('injection registry', () => {
@@ -54,6 +55,13 @@ describe('injection registry', () => {
 		expect(typeof aliases!.check).toBe('function');
 		// No host dependency, so no auth chip.
 		expect(aliases!.auth).toBeUndefined();
+	});
+
+	test('claude-statusline is registered with an auth chip and a health check', () => {
+		const statusline = injections.find((i) => i.id === 'claude-statusline');
+		expect(statusline).toBeDefined();
+		expect(statusline!.auth).toBeDefined();
+		expect(typeof statusline!.check).toBe('function');
 	});
 
 	test('host-env-vars is registered with a health check and no auth chip', () => {
@@ -368,6 +376,21 @@ describe('ghHostBlock', () => {
 		const block = ghHostBlock(raw, 'schibsted.ghe.com')!;
 		expect(block).toContain('oauth_token: gho_def');
 		expect(block).toContain('git_protocol: ssh');
+	});
+});
+
+describe('extractScriptPath', () => {
+	test('returns null for a bare package-runner command with no file reference', () => {
+		expect(extractScriptPath('npx ccstatusline@latest')).toBeNull();
+	});
+
+	test('returns null when the referenced path does not exist on disk', () => {
+		expect(extractScriptPath('/no/such/file/statusline.sh')).toBeNull();
+	});
+
+	test('finds an existing absolute-path token amid other arguments', () => {
+		// Use a file guaranteed to exist without depending on codebay-specific state.
+		expect(extractScriptPath(`bash ${import.meta.path} --flag`)).toBe(import.meta.path);
 	});
 });
 
