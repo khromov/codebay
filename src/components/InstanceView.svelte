@@ -91,6 +91,18 @@
 		if (ok) pendingRebuild = false;
 	}
 
+	// --- Restart container (header button) -------------------------------------
+	let restartError = $state<string | null>(null);
+
+	async function restartContainer() {
+		restartError = null;
+		try {
+			await apiPost(`/api/instances/${id}/rebuild`);
+		} catch (err) {
+			restartError = (err as Error).message;
+		}
+	}
+
 	// --- Copy logs --------------------------------------------------------------
 	let copied = $state(false);
 	let copyTimer: ReturnType<typeof setTimeout> | undefined;
@@ -114,11 +126,15 @@
 		{/if}
 	</div>
 	{#if instance?.status === 'running'}
+		<button class="restart" onclick={restartContainer} disabled={building}>
+			{building ? 'Restarting…' : 'Restart container'}
+		</button>
 		<a class="open" href={url} target="_blank" rel="noopener"
 			>Open in new tab <ArrowUpRight size={15} /></a
 		>
 	{/if}
 </header>
+{#if restartError}<p class="restart-err">{restartError}</p>{/if}
 
 <main class="stage">
 	<div class="meta">
@@ -273,6 +289,36 @@
 	.open:hover {
 		background: var(--ink);
 		color: var(--bg);
+	}
+	.restart {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-family: var(--font-mono);
+		font-weight: 600;
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--ink);
+		background: var(--bg);
+		border: 1px solid var(--ink);
+		padding: 7px 12px;
+		cursor: pointer;
+	}
+	.restart:hover:not(:disabled) {
+		background: var(--ink);
+		color: var(--bg);
+	}
+	.restart:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+	.restart-err {
+		margin: 0;
+		padding: 8px 24px 0;
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--danger);
 	}
 	.stage {
 		max-width: 1200px;
