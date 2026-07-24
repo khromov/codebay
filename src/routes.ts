@@ -16,6 +16,7 @@ import {
 	DEFAULT_SMALL_FAST_MODEL,
 	DEFAULT_SONNET_MODEL
 } from './container-injections/claude-code-custom.ts';
+import { parseHostEnvVarNames } from './container-injections/host-env-vars.ts';
 import { browse } from './lib/picker.server.ts';
 import {
 	addForwardedPort,
@@ -138,29 +139,41 @@ export const routes: Record<string, MochiRouteValue> = {
 	}),
 
 	'/settings': Mochi.page('./src/pages/Settings.svelte', {
-		serverProps: async () => ({
-			defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
-			builtinImage: DEFAULT_IMAGE,
-			disableBuildCache: getOption('disable_build_cache') === '1',
-			dockerArch: await dockerArch(),
-			// Manual token overrides: send only whether each is set (never the secret
-			// value itself) plus the toggle state, so the page can render placeholders.
-			manualTokensEnabled: getOption('manual_tokens_enabled') === '1',
-			githubTokenSet: !!getOption('manual_github_token'),
-			claudeTokenSet: !!getOption('manual_claude_code_token'),
-			// Custom endpoint (LiteLLM / Bedrock): toggle state, base URL (non-secret),
-			// whether the token is set (never the secret value), and model IDs prefilled
-			// from the module defaults when not yet customised.
-			customEndpointEnabled: getOption('custom_endpoint_enabled') === '1',
-			customEndpointBaseUrl: getOption('custom_endpoint_base_url') ?? '',
-			customEndpointTokenSet: !!getOption('custom_endpoint_token')?.trim(),
-			customEndpointOpusModel: getOption('custom_endpoint_opus_model') ?? DEFAULT_OPUS_MODEL,
-			customEndpointSonnetModel: getOption('custom_endpoint_sonnet_model') ?? DEFAULT_SONNET_MODEL,
-			customEndpointHaikuModel: getOption('custom_endpoint_haiku_model') ?? DEFAULT_HAIKU_MODEL,
-			customEndpointSmallFastModel:
-				getOption('custom_endpoint_small_fast_model') ?? DEFAULT_SMALL_FAST_MODEL,
-			customEndpointModel: getOption('custom_endpoint_model') ?? DEFAULT_MODEL
-		})
+		serverProps: async () => {
+			// Host env vars: only names are ever sent to the client — never values.
+			// `hostEnvVarPresence` tells the UI which configured names currently have a
+			// value on this process's env, so it can show a per-row "set / missing" hint.
+			const hostEnvVarNames = parseHostEnvVarNames(getOption('host_env_var_names'));
+			return {
+				defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
+				builtinImage: DEFAULT_IMAGE,
+				disableBuildCache: getOption('disable_build_cache') === '1',
+				dockerArch: await dockerArch(),
+				// Manual token overrides: send only whether each is set (never the secret
+				// value itself) plus the toggle state, so the page can render placeholders.
+				manualTokensEnabled: getOption('manual_tokens_enabled') === '1',
+				githubTokenSet: !!getOption('manual_github_token'),
+				claudeTokenSet: !!getOption('manual_claude_code_token'),
+				// Custom endpoint (LiteLLM / Bedrock): toggle state, base URL (non-secret),
+				// whether the token is set (never the secret value), and model IDs prefilled
+				// from the module defaults when not yet customised.
+				customEndpointEnabled: getOption('custom_endpoint_enabled') === '1',
+				customEndpointBaseUrl: getOption('custom_endpoint_base_url') ?? '',
+				customEndpointTokenSet: !!getOption('custom_endpoint_token')?.trim(),
+				customEndpointOpusModel: getOption('custom_endpoint_opus_model') ?? DEFAULT_OPUS_MODEL,
+				customEndpointSonnetModel:
+					getOption('custom_endpoint_sonnet_model') ?? DEFAULT_SONNET_MODEL,
+				customEndpointHaikuModel: getOption('custom_endpoint_haiku_model') ?? DEFAULT_HAIKU_MODEL,
+				customEndpointSmallFastModel:
+					getOption('custom_endpoint_small_fast_model') ?? DEFAULT_SMALL_FAST_MODEL,
+				customEndpointModel: getOption('custom_endpoint_model') ?? DEFAULT_MODEL,
+				hostEnvVarsEnabled: getOption('host_env_vars_enabled') === '1',
+				hostEnvVarNames,
+				hostEnvVarPresence: Object.fromEntries(
+					hostEnvVarNames.map((name) => [name, Bun.env[name] !== undefined && Bun.env[name] !== ''])
+				)
+			};
+		}
 	}),
 
 	// Persist the default container image used when a source folder ships no devcontainer.json.
@@ -256,6 +269,36 @@ export const routes: Record<string, MochiRouteValue> = {
 		if ('defaultModel' in body) {
 			if (typeof body.defaultModel !== 'string') throw new Error('defaultModel must be a string');
 			setOption('custom_endpoint_model', body.defaultModel.trim());
+		}
+		return { ok: true };
+	}),
+
+	// Host env vars forwarded into containers (partial update: only the keys present
+	// in the body are written). Only variable *names* are stored — values are read
+	// fresh from this process's environment at apply time, never persisted, and never
+	// accepted from the client. `names` replaces the full list; validated as
+	// non-empty, deduped, shell-identifier-safe strings.
+	'/api/settings/host-env-vars': mutationRoute('POST', async ({ request }) => {
+		const body = (await request.json().catch(() => null)) as {
+			enabled?: boolean;
+			names?: string[];
+		} | null;
+		if (!body) throw new Error('Invalid body');
+		if ('enabled' in body) {
+			if (typeof body.enabled !== 'boolean') throw new Error('enabled must be a boolean');
+			setOption('host_env_vars_enabled', body.enabled ? '1' : '0');
+		}
+		if ('names' in body) {
+			if (!Array.isArray(body.names) || !body.names.every((n) => typeof n === 'string')) {
+				throw new Error('names must be an array of strings');
+			}
+			const names = [...new Set(body.names.map((n) => n.trim()))].filter(Boolean);
+			for (const name of names) {
+				if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+					throw new Error(`invalid variable name: ${name}`);
+				}
+			}
+			setOption('host_env_var_names', JSON.stringify(names));
 		}
 		return { ok: true };
 	}),

@@ -10,6 +10,9 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Hammer from '@lucide/svelte/icons/hammer';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import Variable from '@lucide/svelte/icons/variable';
+	import Plus from '@lucide/svelte/icons/plus';
+	import X from '@lucide/svelte/icons/x';
 	import { Toaster } from 'svelte-french-toast';
 	import { soundEnabled, setSoundEnabled } from '../settings.ts';
 	import { playChime, unlockAudio } from '../sound.ts';
@@ -33,7 +36,10 @@
 		customEndpointSonnetModel,
 		customEndpointHaikuModel,
 		customEndpointSmallFastModel,
-		customEndpointModel
+		customEndpointModel,
+		hostEnvVarsEnabled,
+		hostEnvVarNames,
+		hostEnvVarPresence
 	}: {
 		defaultImage: string;
 		builtinImage: string;
@@ -50,6 +56,9 @@
 		customEndpointHaikuModel: string;
 		customEndpointSmallFastModel: string;
 		customEndpointModel: string;
+		hostEnvVarsEnabled: boolean;
+		hostEnvVarNames: string[];
+		hostEnvVarPresence: Record<string, boolean>;
 	} = $props();
 
 	// Initialize from localStorage on the client; defaults to on during SSR.
@@ -334,6 +343,71 @@
 		} finally {
 			savingCustomModels = false;
 		}
+	}
+
+	// Host env vars forwarded into containers. Only *names* round-trip with the
+	// server — values are never sent to or stored by the client; `hostEnvVarPresence`
+	// (name -> whether this process's env currently has a value) drives the
+	// per-row "set on host" / "missing" hint.
+	// svelte-ignore state_referenced_locally
+	let hostEnvVars = $state(hostEnvVarsEnabled);
+	let savingHostEnvToggle = $state(false);
+	let hostEnvToggleError = $state<string | null>(null);
+
+	// svelte-ignore state_referenced_locally
+	let hostEnvNames = $state([...hostEnvVarNames]);
+	let newHostEnvName = $state('');
+	let savingHostEnvNames = $state(false);
+	let hostEnvNamesMsg = $state<string | null>(null);
+	let hostEnvNamesError = $state<string | null>(null);
+
+	async function toggleHostEnvVars(on: boolean) {
+		hostEnvVars = on;
+		hostEnvToggleError = null;
+		savingHostEnvToggle = true;
+		try {
+			await apiPost('/api/settings/host-env-vars', { enabled: on });
+		} catch (err) {
+			hostEnvVars = !on; // revert the optimistic flip on failure
+			hostEnvToggleError = (err as Error).message;
+		} finally {
+			savingHostEnvToggle = false;
+		}
+	}
+
+	async function saveHostEnvNames(names: string[]) {
+		hostEnvNamesError = null;
+		hostEnvNamesMsg = null;
+		savingHostEnvNames = true;
+		try {
+			await apiPost('/api/settings/host-env-vars', { names });
+			hostEnvNames = names;
+			hostEnvNamesMsg = 'Saved.';
+		} catch (err) {
+			hostEnvNamesError = (err as Error).message;
+		} finally {
+			savingHostEnvNames = false;
+		}
+	}
+
+	function addHostEnvName(e: Event) {
+		e.preventDefault();
+		const name = newHostEnvName.trim().toUpperCase();
+		if (!name) return;
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+			hostEnvNamesError = `Invalid variable name: ${name}`;
+			return;
+		}
+		if (hostEnvNames.includes(name)) {
+			newHostEnvName = '';
+			return;
+		}
+		newHostEnvName = '';
+		void saveHostEnvNames([...hostEnvNames, name]);
+	}
+
+	function removeHostEnvName(name: string) {
+		void saveHostEnvNames(hostEnvNames.filter((n) => n !== name));
 	}
 
 	function toggleSound(on: boolean) {
@@ -793,6 +867,84 @@
 		<section class="card">
 			<div class="row">
 				<div class="label">
+					<Variable size={18} />
+					<div class="text">
+						<div class="name">Host environment variables</div>
+						<div class="desc">
+							Forward selected environment variables from this machine into every new container's
+							interactive shells. Values are read from this process's own environment at container
+							start and are never shown here or stored — only the variable names are saved.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						checked={hostEnvVars}
+						disabled={savingHostEnvToggle}
+						onchange={(e) => toggleHostEnvVars(e.currentTarget.checked)}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</div>
+			{#if hostEnvToggleError}
+				<div class="sub"><div class="msg error">{hostEnvToggleError}</div></div>
+			{/if}
+
+			{#if hostEnvVars}
+				<div class="row divided var-row">
+					<div class="var-list">
+						{#each hostEnvNames as name (name)}
+							<div class="var-item">
+								<span class="var-name">{name}</span>
+								<span
+									class="var-status"
+									class:present={hostEnvVarPresence[name]}
+									title={hostEnvVarPresence[name]
+										? 'Set on this host — will be injected'
+										: 'Not set on this host — will be skipped'}
+								>
+									{hostEnvVarPresence[name] ? 'set' : 'missing'}
+								</span>
+								<button
+									type="button"
+									class="var-remove"
+									disabled={savingHostEnvNames}
+									onclick={() => removeHostEnvName(name)}
+									aria-label={`Remove ${name}`}
+								>
+									<X size={13} />
+								</button>
+							</div>
+						{:else}
+							<div class="var-empty">No variables added yet.</div>
+						{/each}
+					</div>
+					<form class="var-add" onsubmit={addHostEnvName}>
+						<input
+							type="text"
+							class="image-input"
+							bind:value={newHostEnvName}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							autocomplete="off"
+							placeholder="ANTHROPIC_API_KEY"
+						/>
+						<Button type="submit" icon={Plus} disabled={savingHostEnvNames}>Add</Button>
+					</form>
+					{#if hostEnvNamesError}
+						<div class="msg error">{hostEnvNamesError}</div>
+					{:else if hostEnvNamesMsg}
+						<div class="msg ok">{hostEnvNamesMsg}</div>
+					{/if}
+				</div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<div class="row">
+				<div class="label">
 					<SunMoon size={18} />
 					<div class="text">
 						<div class="name">Theme</div>
@@ -1106,5 +1258,75 @@
 		display: flex;
 		justify-content: flex-end;
 		margin-top: 4px;
+	}
+	/* Host env var list: a stacked list of name/status/remove rows, plus an add form. */
+	.var-row {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 10px;
+	}
+	.var-list {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.var-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 8px;
+		background: var(--bg);
+		border: 1px solid var(--rule);
+	}
+	.var-name {
+		flex: 1;
+		min-width: 0;
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--ink);
+		word-break: break-all;
+	}
+	.var-status {
+		flex: none;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		letter-spacing: 0.04em;
+		color: var(--danger);
+	}
+	.var-status.present {
+		color: var(--ink-soft);
+	}
+	.var-remove {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		padding: 0;
+		color: var(--ink-soft);
+		background: transparent;
+		border: 1px solid var(--rule);
+		cursor: pointer;
+	}
+	.var-remove:hover:not(:disabled) {
+		color: var(--danger);
+		border-color: var(--danger);
+	}
+	.var-remove:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+	.var-empty {
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--ink-faint);
+	}
+	.var-add {
+		display: flex;
+		gap: 8px;
+	}
+	.var-add :global(.btn) {
+		flex: none;
 	}
 </style>

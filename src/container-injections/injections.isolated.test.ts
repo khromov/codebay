@@ -4,6 +4,7 @@ import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings } from './attention-hooks.ts';
 import { isValid } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
+import { hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
 
 describe('injection registry', () => {
@@ -52,6 +53,13 @@ describe('injection registry', () => {
 		expect(typeof aliases!.check).toBe('function');
 		// No host dependency, so no auth chip.
 		expect(aliases!.auth).toBeUndefined();
+	});
+
+	test('host-env-vars is registered with an auth chip and a health check', () => {
+		const hostEnvVars = injections.find((i) => i.id === 'host-env-vars');
+		expect(hostEnvVars).toBeDefined();
+		expect(hostEnvVars!.auth).toBeDefined();
+		expect(typeof hostEnvVars!.check).toBe('function');
 	});
 
 	test('tmux is registered with a health check', () => {
@@ -211,6 +219,78 @@ describe('customEndpointConfig', () => {
 		const config = customEndpointConfig()!;
 		expect(config.opusModel).toBe('my-custom-opus');
 		setOption('custom_endpoint_opus_model', ''); // cleanup
+	});
+});
+
+describe('parseHostEnvVarNames', () => {
+	test('returns an empty array for null/missing input', () => {
+		expect(parseHostEnvVarNames(null)).toEqual([]);
+	});
+
+	test('returns an empty array for malformed JSON', () => {
+		expect(parseHostEnvVarNames('not json')).toEqual([]);
+	});
+
+	test('drops non-string entries', () => {
+		expect(parseHostEnvVarNames(JSON.stringify(['FOO', 123, null, 'BAR']))).toEqual(['FOO', 'BAR']);
+	});
+
+	test('parses a valid name list', () => {
+		expect(parseHostEnvVarNames(JSON.stringify(['FOO', 'BAR']))).toEqual(['FOO', 'BAR']);
+	});
+});
+
+describe('hostEnvVarsConfig', () => {
+	const TEST_VAR = 'CODEBAY_TEST_HOST_ENV_VAR';
+
+	beforeEach(() => {
+		setOption('host_env_vars_enabled', '0');
+		setOption('host_env_var_names', '[]');
+		delete Bun.env[TEST_VAR];
+	});
+
+	afterEach(() => {
+		setOption('host_env_vars_enabled', '0');
+		setOption('host_env_var_names', '[]');
+		delete Bun.env[TEST_VAR];
+	});
+
+	test('returns null when disabled', () => {
+		Bun.env[TEST_VAR] = 'hello';
+		setOption('host_env_var_names', JSON.stringify([TEST_VAR]));
+		expect(hostEnvVarsConfig()).toBeNull();
+	});
+
+	test('returns null when enabled but no names configured', () => {
+		setOption('host_env_vars_enabled', '1');
+		expect(hostEnvVarsConfig()).toBeNull();
+	});
+
+	test('returns null when enabled but none of the configured names resolve on the host', () => {
+		setOption('host_env_vars_enabled', '1');
+		setOption('host_env_var_names', JSON.stringify([TEST_VAR]));
+		expect(hostEnvVarsConfig()).toBeNull();
+	});
+
+	test('resolves a configured name that has a host value', () => {
+		Bun.env[TEST_VAR] = 'hello';
+		setOption('host_env_vars_enabled', '1');
+		setOption('host_env_var_names', JSON.stringify([TEST_VAR]));
+		const config = hostEnvVarsConfig();
+		expect(config).not.toBeNull();
+		expect(config!.resolved).toEqual([{ name: TEST_VAR, value: 'hello' }]);
+		expect(config!.missing).toEqual([]);
+	});
+
+	test('reports unresolved names as missing without dropping resolved ones', () => {
+		const missingVar = 'CODEBAY_TEST_MISSING_VAR';
+		Bun.env[TEST_VAR] = 'hello';
+		delete Bun.env[missingVar];
+		setOption('host_env_vars_enabled', '1');
+		setOption('host_env_var_names', JSON.stringify([TEST_VAR, missingVar]));
+		const config = hostEnvVarsConfig()!;
+		expect(config.resolved).toEqual([{ name: TEST_VAR, value: 'hello' }]);
+		expect(config.missing).toEqual([missingVar]);
 	});
 });
 

@@ -18,7 +18,10 @@
 		customEndpointSonnetModel,
 		customEndpointHaikuModel,
 		customEndpointSmallFastModel,
-		customEndpointModel
+		customEndpointModel,
+		hostEnvVarsEnabled,
+		hostEnvVarNames,
+		hostEnvVarPresence
 	}: {
 		defaultImage: string;
 		builtinImage: string;
@@ -35,6 +38,9 @@
 		customEndpointHaikuModel: string;
 		customEndpointSmallFastModel: string;
 		customEndpointModel: string;
+		hostEnvVarsEnabled: boolean;
+		hostEnvVarNames: string[];
+		hostEnvVarPresence: Record<string, boolean>;
 	} = $props();
 </script>
 
@@ -54,5 +60,8 @@
 	{customEndpointHaikuModel}
 	{customEndpointSmallFastModel}
 	{customEndpointModel}
+	{hostEnvVarsEnabled}
+	{hostEnvVarNames}
+	{hostEnvVarPresence}
 	mochi:hydrate
 />
