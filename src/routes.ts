@@ -153,6 +153,18 @@ export const routes: Record<string, MochiRouteValue> = {
 			// Registry-derived count of injection-backed health checks, so the health
 			// panel's skeleton renders one row per real check before the first snapshot.
 			return { id: params.id, injectionChecks: resolveInjections().filter((i) => i.check).length };
+		},
+		actions: {
+			// Header "Restart container" button — re-runs `devcontainer up` (recreates
+			// the container), same operation as the ports panel's "Restart to apply".
+			restart: ({ params }) => {
+				try {
+					rebuildInstance(params.id!);
+				} catch (err) {
+					return fail(400, { error: (err as Error).message });
+				}
+				return success({});
+			}
 		}
 	}),
 

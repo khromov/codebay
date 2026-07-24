@@ -78,7 +78,14 @@ async function injectHostEnvVars(
 	target: ContainerTarget,
 	resolved: ResolvedVar[]
 ): Promise<{ ok: boolean; error?: string }> {
-	const payload = resolved.map(({ name, value }) => `export ${name}=${value}`).join('\n');
+	// Single-quote each value so arbitrary host values (spaces, `$`, backticks,
+	// newlines) source as literal data instead of being re-parsed as shell — the
+	// file is sourced by every interactive shell. Names are already validated to
+	// `[A-Za-z_][A-Za-z0-9_]*` so they need no quoting. `'` inside a value is
+	// closed, escaped as `\'`, and reopened (the standard `'\''` dance).
+	const payload = resolved
+		.map(({ name, value }) => `export ${name}='${value.replaceAll("'", "'\\''")}'`)
+		.join('\n');
 	const script =
 		'set -e; f=$(eval echo "' +
 		ENV_FILE +

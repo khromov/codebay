@@ -7,6 +7,8 @@
 	import Skeleton from './Skeleton.svelte';
 	import { liveSocket, liveStream } from '../live.ts';
 	import { apiPost, apiDelete } from '../api.ts';
+	import { enhance } from 'mochi-framework';
+	import type { MochiEnhanceOptions } from 'mochi-framework';
 
 	let { id, injectionChecks = 0 }: { id: string; injectionChecks?: number } = $props();
 
@@ -93,15 +95,23 @@
 
 	// --- Restart container (header button) -------------------------------------
 	let restartError = $state<string | null>(null);
+	// In-flight from the click until the rebuild kicks the instance to `creating`
+	// (at which point `building` takes over the disabled/label state).
+	let restarting = $state(false);
 
-	async function restartContainer() {
-		restartError = null;
-		try {
-			await apiPost(`/api/instances/${id}/rebuild`);
-		} catch (err) {
-			restartError = (err as Error).message;
+	const restartOpts: MochiEnhanceOptions<Record<string, never>, { error: string }> = {
+		onPending: (v) => (restarting = v),
+		submit: () => {
+			restartError = null;
+			return ({ result }) => {
+				if (result.type === 'failure') {
+					restartError = result.data?.error ?? 'Restart failed';
+				} else if (result.type === 'error') {
+					restartError = 'Network error. Try again.';
+				}
+			};
 		}
-	}
+	};
 
 	// --- Copy logs --------------------------------------------------------------
 	let copied = $state(false);
@@ -126,9 +136,11 @@
 		{/if}
 	</div>
 	{#if instance?.status === 'running'}
-		<button class="restart" onclick={restartContainer} disabled={building}>
-			{building ? 'Restarting…' : 'Restart container'}
-		</button>
+		<form method="POST" action="?/restart" {@attach enhance(restartOpts)}>
+			<button class="restart" type="submit" disabled={restarting || building}>
+				{restarting || building ? 'Restarting…' : 'Restart container'}
+			</button>
+		</form>
 		<a class="open" href={url} target="_blank" rel="noopener"
 			>Open in new tab <ArrowUpRight size={15} /></a
 		>
