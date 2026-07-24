@@ -4,7 +4,7 @@ import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings } from './attention-hooks.ts';
 import { isValid } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
-import { hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
+import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
 
 describe('injection registry', () => {
@@ -55,11 +55,13 @@ describe('injection registry', () => {
 		expect(aliases!.auth).toBeUndefined();
 	});
 
-	test('host-env-vars is registered with an auth chip and a health check', () => {
+	test('host-env-vars is registered with a health check and no auth chip', () => {
 		const hostEnvVars = injections.find((i) => i.id === 'host-env-vars');
 		expect(hostEnvVars).toBeDefined();
-		expect(hostEnvVars!.auth).toBeDefined();
 		expect(typeof hostEnvVars!.check).toBe('function');
+		// Opt-in convenience feature, not a discovered host credential — omitting
+		// `auth` keeps it out of the global credentials chip when unconfigured.
+		expect(hostEnvVars!.auth).toBeUndefined();
 	});
 
 	test('tmux is registered with a health check', () => {
@@ -237,6 +239,33 @@ describe('parseHostEnvVarNames', () => {
 
 	test('parses a valid name list', () => {
 		expect(parseHostEnvVarNames(JSON.stringify(['FOO', 'BAR']))).toEqual(['FOO', 'BAR']);
+	});
+});
+
+describe('hostEnvVarPresence', () => {
+	const TEST_VAR = 'CODEBAY_TEST_PRESENCE_VAR';
+
+	afterEach(() => {
+		delete Bun.env[TEST_VAR];
+	});
+
+	test('marks a name present when its host value is non-empty', () => {
+		Bun.env[TEST_VAR] = 'hello';
+		expect(hostEnvVarPresence([TEST_VAR])).toEqual({ [TEST_VAR]: true });
+	});
+
+	test('marks a name absent when unset', () => {
+		delete Bun.env[TEST_VAR];
+		expect(hostEnvVarPresence([TEST_VAR])).toEqual({ [TEST_VAR]: false });
+	});
+
+	test('returns one entry per requested name', () => {
+		const missingVar = 'CODEBAY_TEST_PRESENCE_MISSING';
+		Bun.env[TEST_VAR] = 'hello';
+		expect(hostEnvVarPresence([TEST_VAR, missingVar])).toEqual({
+			[TEST_VAR]: true,
+			[missingVar]: false
+		});
 	});
 });
 

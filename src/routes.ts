@@ -16,7 +16,7 @@ import {
 	DEFAULT_SMALL_FAST_MODEL,
 	DEFAULT_SONNET_MODEL
 } from './container-injections/claude-code-custom.ts';
-import { parseHostEnvVarNames } from './container-injections/host-env-vars.ts';
+import { hostEnvVarPresence, parseHostEnvVarNames } from './container-injections/host-env-vars.ts';
 import { browse } from './lib/picker.server.ts';
 import {
 	addForwardedPort,
@@ -169,9 +169,7 @@ export const routes: Record<string, MochiRouteValue> = {
 				customEndpointModel: getOption('custom_endpoint_model') ?? DEFAULT_MODEL,
 				hostEnvVarsEnabled: getOption('host_env_vars_enabled') === '1',
 				hostEnvVarNames,
-				hostEnvVarPresence: Object.fromEntries(
-					hostEnvVarNames.map((name) => [name, Bun.env[name] !== undefined && Bun.env[name] !== ''])
-				)
+				hostEnvVarPresence: hostEnvVarPresence(hostEnvVarNames)
 			};
 		}
 	}),
@@ -300,7 +298,10 @@ export const routes: Record<string, MochiRouteValue> = {
 			}
 			setOption('host_env_var_names', JSON.stringify(names));
 		}
-		return { ok: true };
+		// Return fresh presence for the current name list so the client can update its
+		// "set on host" / "missing" hints without a full page reload.
+		const names = parseHostEnvVarNames(getOption('host_env_var_names'));
+		return { ok: true, presence: hostEnvVarPresence(names) };
 	}),
 
 	// Clear BuildKit's build cache so the next build runs uncached. Returns bytes freed.

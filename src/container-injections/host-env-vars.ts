@@ -27,6 +27,18 @@ export function parseHostEnvVarNames(raw: string | null): string[] {
 }
 
 /**
+ * Whether each name currently has a non-empty value on this process's env. Shared
+ * by the `/settings` serverProps (initial render) and the settings mutation route
+ * (so the client can refresh presence after adding/removing a name without a full
+ * page reload).
+ */
+export function hostEnvVarPresence(names: string[]): Record<string, boolean> {
+	return Object.fromEntries(
+		names.map((name) => [name, Bun.env[name] !== undefined && Bun.env[name] !== ''])
+	);
+}
+
+/**
  * Read the host-env-vars configuration from the options store. Returns null when
  * the feature is disabled or when no configured name has a value on this process's
  * env — both are skip conditions for the injection. `resolved` holds only the names
@@ -94,21 +106,15 @@ async function injectHostEnvVars(
  * values are read fresh from this process's environment at apply time and never
  * stored in the options DB. Skipped (with a log line) when the feature is disabled,
  * unconfigured, or none of the configured names resolve on the host.
+ *
+ * No `auth` block: unlike git identity or GitHub/Claude credentials, this isn't a
+ * host credential the manager discovers — it's an opt-in feature that's off by
+ * default, so it shouldn't make the global credentials chip (which flags missing
+ * *required* auth) look broken. Its status lives entirely in the Settings card.
  */
 export const hostEnvVars: Injection = {
 	id: 'host-env-vars',
 	label: 'host env vars',
-
-	auth: {
-		hint: 'add variable names in Settings and export them before starting codebay',
-		async status() {
-			const config = hostEnvVarsConfig();
-			return {
-				available: config !== null,
-				source: config ? `${config.resolved.length} var(s)` : null
-			};
-		}
-	},
 
 	async apply(target, log) {
 		const config = hostEnvVarsConfig();

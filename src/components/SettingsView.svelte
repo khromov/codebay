@@ -346,9 +346,11 @@
 	}
 
 	// Host env vars forwarded into containers. Only *names* round-trip with the
-	// server — values are never sent to or stored by the client; `hostEnvVarPresence`
+	// server — values are never sent to or stored by the client; `hostEnvPresence`
 	// (name -> whether this process's env currently has a value) drives the
-	// per-row "set on host" / "missing" hint.
+	// per-row "set on host" / "missing" hint. Seeded from the server-rendered prop,
+	// then refreshed from each save response so a newly-added name doesn't read as
+	// "missing" until the next full page load.
 	// svelte-ignore state_referenced_locally
 	let hostEnvVars = $state(hostEnvVarsEnabled);
 	let savingHostEnvToggle = $state(false);
@@ -356,6 +358,8 @@
 
 	// svelte-ignore state_referenced_locally
 	let hostEnvNames = $state([...hostEnvVarNames]);
+	// svelte-ignore state_referenced_locally
+	let hostEnvPresence = $state({ ...hostEnvVarPresence });
 	let newHostEnvName = $state('');
 	let savingHostEnvNames = $state(false);
 	let hostEnvNamesMsg = $state<string | null>(null);
@@ -380,8 +384,11 @@
 		hostEnvNamesMsg = null;
 		savingHostEnvNames = true;
 		try {
-			await apiPost('/api/settings/host-env-vars', { names });
+			const res = (await apiPost('/api/settings/host-env-vars', { names })) as {
+				presence?: Record<string, boolean>;
+			};
 			hostEnvNames = names;
+			hostEnvPresence = res?.presence ?? {};
 			hostEnvNamesMsg = 'Saved.';
 		} catch (err) {
 			hostEnvNamesError = (err as Error).message;
@@ -899,12 +906,12 @@
 								<span class="var-name">{name}</span>
 								<span
 									class="var-status"
-									class:present={hostEnvVarPresence[name]}
-									title={hostEnvVarPresence[name]
+									class:present={hostEnvPresence[name]}
+									title={hostEnvPresence[name]
 										? 'Set on this host — will be injected'
 										: 'Not set on this host — will be skipped'}
 								>
-									{hostEnvVarPresence[name] ? 'set' : 'missing'}
+									{hostEnvPresence[name] ? 'set' : 'missing'}
 								</span>
 								<button
 									type="button"
@@ -929,7 +936,7 @@
 							autocapitalize="off"
 							autocorrect="off"
 							autocomplete="off"
-							placeholder="ANTHROPIC_API_KEY"
+							placeholder="AWS_ACCESS_KEY_ID"
 						/>
 						<Button type="submit" icon={Plus} disabled={savingHostEnvNames}>Add</Button>
 					</form>
