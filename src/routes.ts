@@ -2,7 +2,9 @@ import {
 	Mochi,
 	apiError,
 	error,
+	fail,
 	json,
+	success,
 	type MochiApiEvent,
 	type MochiRouteValue
 } from 'mochi-framework';
@@ -104,6 +106,22 @@ function mutationRoute(
 	});
 }
 
+/** Trimmed string value of a form field, defaulting to `''` when absent. */
+function str(formData: FormData, key: string): string {
+	return String(formData.get(key) ?? '').trim();
+}
+
+/**
+ * Whether a checkbox field is checked. A checked checkbox serializes as `"on"`
+ * (unless it carries an explicit `value`); an unchecked one is omitted from the
+ * form entirely — there's no way to distinguish "off" from "not submitted" other
+ * than by this presence check. `enhance`'s `requestSubmit()` call fires after the
+ * browser has already flipped the box, so this always reflects the new state.
+ */
+function onChecked(formData: FormData, key: string): boolean {
+	return formData.get(key) === 'on';
+}
+
 export const routes: Record<string, MochiRouteValue> = {
 	// Dashboard and the tabbed IDE share one persistent hydrated shell so that
 	// navigating between them is an in-place client transition (no full reload) and
@@ -138,6 +156,12 @@ export const routes: Record<string, MochiRouteValue> = {
 		}
 	}),
 
+	// Settings mutations are Mochi Form actions (see `actions` below) rather than
+	// separate JSON API routes — one `<form method="POST" action="?/name">` per
+	// control, progressively enhanced client-side via `{@attach enhance(...)}` in
+	// SettingsView.svelte. `str`/`onChecked` normalize FormData reads; every action
+	// returns `success(data)` (data round-trips to the enhanced client) or
+	// `fail(400, { error })` (mirrors the old thrown-Error-becomes-400 convention).
 	'/settings': Mochi.page('./src/pages/Settings.svelte', {
 		serverProps: async () => {
 			// Host env vars: only names are ever sent to the client — never values.
@@ -171,148 +195,115 @@ export const routes: Record<string, MochiRouteValue> = {
 				hostEnvVarNames,
 				hostEnvVarPresence: hostEnvVarPresence(hostEnvVarNames)
 			};
-		}
-	}),
+		},
+		actions: {
+			// Persist the default container image used when a source folder ships no devcontainer.json.
+			defaultImage: ({ formData }) => {
+				const image = str(formData, 'image');
+				if (!image) return fail(400, { error: 'image is required' });
+				setOption('default_image', image);
+				return success({ image });
+			},
 
-	// Persist the default container image used when a source folder ships no devcontainer.json.
-	'/api/settings/default-image': mutationRoute('POST', async ({ request }) => {
-		const body = (await request.json().catch(() => null)) as { image?: string } | null;
-		const image = body?.image?.trim();
-		if (!image) throw new Error('image is required');
-		setOption('default_image', image);
-		return { ok: true };
-	}),
+			// Global "disable build cache" flag: when on, every build (first boot + rebuild)
+			// passes --build-no-cache. Stored in the options table like default_image.
+			disableBuildCache: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('disable_build_cache', enabled ? '1' : '0');
+				return success({ enabled });
+			},
 
-	// Global "disable build cache" flag: when on, every build (first boot + rebuild)
-	// passes --build-no-cache. Stored in the options table like default_image.
-	'/api/settings/disable-build-cache': mutationRoute('POST', async ({ request }) => {
-		const body = (await request.json().catch(() => null)) as { enabled?: boolean } | null;
-		if (typeof body?.enabled !== 'boolean') throw new Error('enabled (boolean) is required');
-		setOption('disable_build_cache', body.enabled ? '1' : '0');
-		return { ok: true };
-	}),
+			// Manual credential toggle + individual token saves. Overrides host credential
+			// discovery for container injection when enabled — see the two credential
+			// injections. A blank token clears that key. Stored plaintext in the options
+			// table; values are never sent back to the client (serverProps only reports "is set").
+			manualTokensToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('manual_tokens_enabled', enabled ? '1' : '0');
+				return success({ enabled });
+			},
+			githubToken: ({ formData }) => {
+				const value = str(formData, 'githubToken');
+				setOption('manual_github_token', value);
+				return success({ set: value.length > 0 });
+			},
+			claudeToken: ({ formData }) => {
+				const value = str(formData, 'claudeToken');
+				setOption('manual_claude_code_token', value);
+				return success({ set: value.length > 0 });
+			},
 
-	// Manually-provided GitHub / Claude Code tokens (partial update: only the keys
-	// present in the body are written). These override host credential discovery for
-	// container injection when the toggle is enabled — see the two credential injections.
-	// A blank token string clears that key. Stored plaintext in the options table; the
-	// values are never sent back to the client (serverProps only reports "is set").
-	'/api/settings/manual-tokens': mutationRoute('POST', async ({ request }) => {
-		const body = (await request.json().catch(() => null)) as {
-			enabled?: boolean;
-			githubToken?: string;
-			claudeToken?: string;
-		} | null;
-		if (!body) throw new Error('Invalid body');
-		if ('enabled' in body) {
-			if (typeof body.enabled !== 'boolean') throw new Error('enabled must be a boolean');
-			setOption('manual_tokens_enabled', body.enabled ? '1' : '0');
-		}
-		if ('githubToken' in body) {
-			if (typeof body.githubToken !== 'string') throw new Error('githubToken must be a string');
-			setOption('manual_github_token', body.githubToken.trim());
-		}
-		if ('claudeToken' in body) {
-			if (typeof body.claudeToken !== 'string') throw new Error('claudeToken must be a string');
-			setOption('manual_claude_code_token', body.claudeToken.trim());
-		}
-		return { ok: true };
-	}),
+			// Custom LiteLLM / Bedrock endpoint: toggle + individual field saves. The token
+			// is stored plaintext (same as the manual Claude token) and never returned to
+			// the client. A blank string clears the corresponding key.
+			customEndpointToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('custom_endpoint_enabled', enabled ? '1' : '0');
+				return success({ enabled });
+			},
+			customBaseUrl: ({ formData }) => {
+				const value = str(formData, 'baseUrl');
+				setOption('custom_endpoint_base_url', value);
+				return success({ set: value.length > 0 });
+			},
+			customToken: ({ formData }) => {
+				const value = str(formData, 'token');
+				setOption('custom_endpoint_token', value);
+				return success({ set: value.length > 0 });
+			},
+			customModels: ({ formData }) => {
+				setOption('custom_endpoint_opus_model', str(formData, 'opusModel'));
+				setOption('custom_endpoint_sonnet_model', str(formData, 'sonnetModel'));
+				setOption('custom_endpoint_haiku_model', str(formData, 'haikuModel'));
+				setOption('custom_endpoint_small_fast_model', str(formData, 'smallFastModel'));
+				setOption('custom_endpoint_model', str(formData, 'defaultModel'));
+				return success({});
+			},
 
-	// Custom LiteLLM / Bedrock endpoint settings (partial update: only the keys
-	// present in the body are written). The token is stored plaintext in the options
-	// table (same as the manual Claude token) and is never returned to the client.
-	// A blank string clears the corresponding key.
-	'/api/settings/custom-endpoint': mutationRoute('POST', async ({ request }) => {
-		const body = (await request.json().catch(() => null)) as {
-			enabled?: boolean;
-			baseUrl?: string;
-			token?: string;
-			opusModel?: string;
-			sonnetModel?: string;
-			haikuModel?: string;
-			smallFastModel?: string;
-			defaultModel?: string;
-		} | null;
-		if (!body) throw new Error('Invalid body');
-		if ('enabled' in body) {
-			if (typeof body.enabled !== 'boolean') throw new Error('enabled must be a boolean');
-			setOption('custom_endpoint_enabled', body.enabled ? '1' : '0');
-		}
-		if ('baseUrl' in body) {
-			if (typeof body.baseUrl !== 'string') throw new Error('baseUrl must be a string');
-			setOption('custom_endpoint_base_url', body.baseUrl.trim());
-		}
-		if ('token' in body) {
-			if (typeof body.token !== 'string') throw new Error('token must be a string');
-			setOption('custom_endpoint_token', body.token.trim());
-		}
-		if ('opusModel' in body) {
-			if (typeof body.opusModel !== 'string') throw new Error('opusModel must be a string');
-			setOption('custom_endpoint_opus_model', body.opusModel.trim());
-		}
-		if ('sonnetModel' in body) {
-			if (typeof body.sonnetModel !== 'string') throw new Error('sonnetModel must be a string');
-			setOption('custom_endpoint_sonnet_model', body.sonnetModel.trim());
-		}
-		if ('haikuModel' in body) {
-			if (typeof body.haikuModel !== 'string') throw new Error('haikuModel must be a string');
-			setOption('custom_endpoint_haiku_model', body.haikuModel.trim());
-		}
-		if ('smallFastModel' in body) {
-			if (typeof body.smallFastModel !== 'string')
-				throw new Error('smallFastModel must be a string');
-			setOption('custom_endpoint_small_fast_model', body.smallFastModel.trim());
-		}
-		if ('defaultModel' in body) {
-			if (typeof body.defaultModel !== 'string') throw new Error('defaultModel must be a string');
-			setOption('custom_endpoint_model', body.defaultModel.trim());
-		}
-		return { ok: true };
-	}),
-
-	// Host env vars forwarded into containers (partial update: only the keys present
-	// in the body are written). Only variable *names* are stored — values are read
-	// fresh from this process's environment at apply time, never persisted, and never
-	// accepted from the client. `names` replaces the full list; validated as
-	// non-empty, deduped, shell-identifier-safe strings.
-	'/api/settings/host-env-vars': mutationRoute('POST', async ({ request }) => {
-		const body = (await request.json().catch(() => null)) as {
-			enabled?: boolean;
-			names?: string[];
-		} | null;
-		if (!body) throw new Error('Invalid body');
-		if ('enabled' in body) {
-			if (typeof body.enabled !== 'boolean') throw new Error('enabled must be a boolean');
-			setOption('host_env_vars_enabled', body.enabled ? '1' : '0');
-		}
-		if ('names' in body) {
-			if (!Array.isArray(body.names) || !body.names.every((n) => typeof n === 'string')) {
-				throw new Error('names must be an array of strings');
-			}
-			const names = [...new Set(body.names.map((n) => n.trim()))].filter(Boolean);
-			for (const name of names) {
-				if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-					throw new Error(`invalid variable name: ${name}`);
+			// Host env vars forwarded into containers. Only variable *names* are stored —
+			// values are read fresh from this process's environment at apply time, never
+			// persisted, and never accepted from the client.
+			hostEnvVarsToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('host_env_vars_enabled', enabled ? '1' : '0');
+				const names = parseHostEnvVarNames(getOption('host_env_var_names'));
+				return success({ enabled, presence: hostEnvVarPresence(names) });
+			},
+			// Replaces the full name list — used by both the "add" form (existing names +
+			// the new one) and each row's "remove" form (existing names minus one).
+			// Validated as non-empty, deduped, shell-identifier-safe strings.
+			hostEnvVarNames: ({ formData }) => {
+				const raw = formData.getAll('names').map(String);
+				const names = [...new Set(raw.map((n) => n.trim()))].filter(Boolean);
+				for (const name of names) {
+					if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+						return fail(400, { error: `invalid variable name: ${name}` });
+					}
 				}
+				setOption('host_env_var_names', JSON.stringify(names));
+				const saved = parseHostEnvVarNames(getOption('host_env_var_names'));
+				return success({ presence: hostEnvVarPresence(saved) });
+			},
+
+			// Clear BuildKit's build cache so the next build runs uncached. Returns bytes freed.
+			clearBuildCache: async () => {
+				const { spaceReclaimed } = await pruneBuildCache();
+				return success({ spaceReclaimed: spaceReclaimed ?? 0 });
+			},
+
+			// Rebuild every currently-running instance from scratch (no build cache).
+			rebuildAllNoCache: () => success({ count: rebuildRunningInstancesNoCache() }),
+
+			// Full reset: tear down every instance, delete the database, then shut the
+			// server down. The process exits ~150ms after `deleteDatabaseAndShutdown`
+			// resolves, so the client may see this succeed or may see the connection drop
+			// mid-flight — SettingsView treats both the same ("shutting down").
+			shutdown: async () => {
+				await deleteDatabaseAndShutdown();
+				return success({});
 			}
-			setOption('host_env_var_names', JSON.stringify(names));
 		}
-		// Return fresh presence for the current name list so the client can update its
-		// "set on host" / "missing" hints without a full page reload.
-		const names = parseHostEnvVarNames(getOption('host_env_var_names'));
-		return { ok: true, presence: hostEnvVarPresence(names) };
 	}),
-
-	// Clear BuildKit's build cache so the next build runs uncached. Returns bytes freed.
-	'/api/settings/clear-build-cache': mutationRoute('POST', async () => {
-		return await pruneBuildCache();
-	}),
-
-	// Rebuild every currently-running instance from scratch (no build cache).
-	'/api/instances/rebuild-all-no-cache': mutationRoute('POST', () => ({
-		count: rebuildRunningInstancesNoCache()
-	})),
 
 	// Filesystem browser for picking a project folder.
 	'/api/browse': Mochi.api(async ({ url }) => {
@@ -369,14 +360,6 @@ export const routes: Record<string, MochiRouteValue> = {
 
 	'/api/instances/delete-all': mutationRoute('POST', async () => {
 		await deleteAllInstances();
-		return { ok: true };
-	}),
-
-	// Full reset: tear down every instance, delete the database, then shut the server
-	// down. Behind Basic Auth (when configured) and the CSRF guard like the rest of
-	// the UI/APIs — see auth.server.ts.
-	'/api/shutdown': mutationRoute('POST', async () => {
-		await deleteDatabaseAndShutdown();
 		return { ok: true };
 	}),
 
