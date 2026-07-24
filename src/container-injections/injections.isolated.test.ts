@@ -4,6 +4,7 @@ import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings } from './attention-hooks.ts';
 import { isValid } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
+import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
 import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
 
@@ -320,6 +321,53 @@ describe('hostEnvVarsConfig', () => {
 		const config = hostEnvVarsConfig()!;
 		expect(config.resolved).toEqual([{ name: TEST_VAR, value: 'hello' }]);
 		expect(config.missing).toEqual([missingVar]);
+	});
+});
+
+describe('parseGhHosts', () => {
+	test('returns an empty array when hosts.yml is empty', () => {
+		expect(parseGhHosts('')).toEqual([]);
+	});
+
+	test('parses a single host', () => {
+		const raw = 'github.com:\n    oauth_token: gho_abc\n    git_protocol: https\n';
+		expect(parseGhHosts(raw)).toEqual(['github.com']);
+	});
+
+	test('parses multiple hosts, including a GitHub Enterprise host', () => {
+		const raw =
+			'github.com:\n    oauth_token: gho_abc\n    git_protocol: https\n' +
+			'schibsted.ghe.com:\n    oauth_token: gho_def\n    git_protocol: https\n    user: stanislav-khromov\n';
+		expect(parseGhHosts(raw)).toEqual(['github.com', 'schibsted.ghe.com']);
+	});
+
+	test('does not mistake an indented key for a host', () => {
+		const raw = 'github.com:\n    oauth_token: gho_abc\n';
+		expect(parseGhHosts(raw)).toEqual(['github.com']);
+	});
+});
+
+describe('ghHostBlock', () => {
+	const raw =
+		'github.com:\n    oauth_token: gho_abc\n    git_protocol: https\n    user: khromov\n' +
+		'schibsted.ghe.com:\n    oauth_token: gho_def\n    git_protocol: ssh\n    user: stanislav-khromov\n';
+
+	test('returns null for a host not present', () => {
+		expect(ghHostBlock(raw, 'gitlab.example.com')).toBeNull();
+	});
+
+	test('extracts only the requested host block, not the next host', () => {
+		const block = ghHostBlock(raw, 'github.com')!;
+		expect(block).toContain('oauth_token: gho_abc');
+		expect(block).toContain('user: khromov');
+		expect(block).not.toContain('gho_def');
+		expect(block).not.toContain('schibsted.ghe.com');
+	});
+
+	test('extracts the last host block through end of file', () => {
+		const block = ghHostBlock(raw, 'schibsted.ghe.com')!;
+		expect(block).toContain('oauth_token: gho_def');
+		expect(block).toContain('git_protocol: ssh');
 	});
 });
 
