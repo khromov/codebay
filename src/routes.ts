@@ -39,6 +39,7 @@ import {
 	subscribeLogs
 } from './lib/instances.server.ts';
 import {
+	allInstances,
 	deleteFolderHistory,
 	getInstance,
 	getOption,
@@ -50,29 +51,42 @@ import { wsUpgradeAllowed } from './lib/auth.server.ts';
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
+import { agentEnabled, enabledAgents, isAgent, setAgentEnabled } from './lib/agents.server.ts';
+import type { Agent } from './types.ts';
 
 async function preflight() {
+	const selectableAgents = enabledAgents();
+	// Disabled agents still matter for instances that already use them: keep
+	// their credential status visible so those instances remain supportable.
+	const relevantAgents = new Set<Agent>([
+		...selectableAgents,
+		...allInstances().map((instance) => instance.agent)
+	]);
+	const authInjections = new Map(
+		[...relevantAgents]
+			.flatMap((agent) => resolveInjections(agent))
+			.filter((injection) => injection.auth)
+			.map((injection) => [injection.id, injection])
+	);
 	const [docker, cli, auth] = await Promise.all([
 		dockerAvailable(),
 		devcontainerCliAvailable(),
 		// Provider-agnostic: every injection that declares host-side auth surfaces a
 		// chip automatically, so adding an injection extends the setup UI for free.
 		Promise.all(
-			resolveInjections()
-				.filter((i) => i.auth)
-				.map(async (i) => {
-					const status = await i.auth!.status();
-					return {
-						id: i.id,
-						label: i.label,
-						available: status.available,
-						source: status.source,
-						hint: i.auth!.hint
-					};
-				})
+			[...authInjections.values()].map(async (i) => {
+				const status = await i.auth!.status();
+				return {
+					id: i.id,
+					label: i.label,
+					available: status.available,
+					source: status.source,
+					hint: i.auth!.hint
+				};
+			})
 		)
 	]);
-	return { docker, cli, auth };
+	return { docker, cli, auth, enabledAgents: selectableAgents };
 }
 
 /**
@@ -149,10 +163,14 @@ export const routes: Record<string, MochiRouteValue> = {
 	'/instances/:id': Mochi.page('./src/pages/Instance.svelte', {
 		serverProps: (_req, params) => {
 			// Validate the instance exists, but the view hydrates its data from the stream.
-			if (!params.id || !getInstance(params.id)) error(404, 'Instance not found');
+			const instance = params.id ? getInstance(params.id) : null;
+			if (!instance) error(404, 'Instance not found');
 			// Registry-derived count of injection-backed health checks, so the health
 			// panel's skeleton renders one row per real check before the first snapshot.
-			return { id: params.id, injectionChecks: resolveInjections().filter((i) => i.check).length };
+			return {
+				id: params.id,
+				injectionChecks: resolveInjections(instance.agent).filter((i) => i.check).length
+			};
 		},
 		actions: {
 			// Header "Restart container" button — re-runs `devcontainer up` (recreates
@@ -190,6 +208,9 @@ export const routes: Record<string, MochiRouteValue> = {
 				manualTokensEnabled: getOption('manual_tokens_enabled') === '1',
 				githubTokenSet: !!getOption('manual_github_token'),
 				claudeTokenSet: !!getOption('manual_claude_code_token'),
+				openaiApiKeySet: !!getOption('manual_openai_api_key'),
+				claudeEnabled: agentEnabled('claude'),
+				codexEnabled: agentEnabled('codex'),
 				// Custom endpoint (LiteLLM / Bedrock): toggle state, base URL (non-secret),
 				// whether the token is set (never the secret value), and model IDs prefilled
 				// from the module defaults when not yet customised.
@@ -209,6 +230,20 @@ export const routes: Record<string, MochiRouteValue> = {
 			};
 		},
 		actions: {
+			// Controls which agents may be selected for future instances. The
+			// per-instance value is immutable, so toggling this never changes rebuilds.
+			agentToggle: ({ formData }) => {
+				const agent = str(formData, 'agent');
+				if (!isAgent(agent)) return fail(400, { error: 'unknown coding agent' });
+				const enabled = onChecked(formData, 'enabled');
+				try {
+					setAgentEnabled(agent, enabled);
+					return success({ agent, enabled });
+				} catch (err) {
+					return fail(400, { error: (err as Error).message });
+				}
+			},
+
 			// Persist the default container image used when a source folder ships no devcontainer.json.
 			defaultImage: ({ formData }) => {
 				const image = str(formData, 'image');
@@ -242,6 +277,11 @@ export const routes: Record<string, MochiRouteValue> = {
 			claudeToken: ({ formData }) => {
 				const value = str(formData, 'claudeToken');
 				setOption('manual_claude_code_token', value);
+				return success({ set: value.length > 0 });
+			},
+			openaiApiKey: ({ formData }) => {
+				const value = str(formData, 'openaiApiKey');
+				setOption('manual_openai_api_key', value);
 				return success({ set: value.length > 0 });
 			},
 
@@ -344,10 +384,17 @@ export const routes: Record<string, MochiRouteValue> = {
 				sourcePath?: string;
 				name?: string;
 				branch?: string;
+				agent?: unknown;
 			} | null;
 			if (!body?.sourcePath) return apiError(400, 'sourcePath is required');
+			if (body.agent !== undefined && !isAgent(body.agent)) {
+				return apiError(400, 'agent must be "claude" or "codex"');
+			}
 			try {
-				const instance = await createInstance(body.sourcePath, body.name, { branch: body.branch });
+				const instance = await createInstance(body.sourcePath, body.name, {
+					branch: body.branch,
+					agent: body.agent
+				});
 				return json({ instance: sanitizeInstance(instance) }, { status: 201 });
 			} catch (err) {
 				return apiError(400, (err as Error).message);
@@ -447,7 +494,7 @@ export const routes: Record<string, MochiRouteValue> = {
 		}
 		if (state === 'done') setAttention(id, 'done');
 		else if (state === 'waiting') setAttention(id, 'waiting');
-		else clearAttention(id); // 'busy' / anything else → Claude resumed, dismiss the pulse
+		else clearAttention(id); // 'busy' / anything else → agent resumed, dismiss the pulse
 		console.log(
 			`[bridge] accepted id=${id} → attention=${state === 'done' || state === 'waiting' ? state : 'cleared'}`
 		);

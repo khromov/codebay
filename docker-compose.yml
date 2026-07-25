@@ -13,6 +13,7 @@ services:
       MOCHI_KEY: ${MOCHI_KEY:-}
       CODEBAY_GITHUB_TOKEN: ${CODEBAY_GITHUB_TOKEN:-}
       CODEBAY_CLAUDE_CODE_TOKEN: ${CODEBAY_CLAUDE_CODE_TOKEN:-}
+      CODEBAY_OPENAI_API_KEY: ${CODEBAY_OPENAI_API_KEY:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${CODEBAY_DATA_DIR:-/opt/codebay}:${CODEBAY_DATA_DIR:-/opt/codebay}

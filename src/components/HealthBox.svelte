@@ -35,7 +35,7 @@
 		return [
 			{ label: FIXED_CHECKS[0], ...v(health.containerRunning) },
 			{ label: FIXED_CHECKS[1], ...v(health.codeServerAccessible) },
-			// One row per injection that reports health (e.g. Claude Code, GitHub CLI, Claude hooks).
+			// One row per injection that reports health (e.g. agent auth, GitHub CLI, hooks).
 			...health.injections.map((i) => ({ label: i.label, ...v(i.ok) }))
 		];
 	});

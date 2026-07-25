@@ -12,6 +12,7 @@ process.env.DATA_DIR = dataDir;
 import type { InstanceRow } from './db.server.ts';
 
 const db = await import('./db.server.ts');
+const agents = await import('./agents.server.ts');
 
 afterAll(() => rmSync(dataDir, { recursive: true, force: true }));
 
@@ -19,6 +20,7 @@ function makeInstance(id: string, hostPort: number): InstanceRow {
 	return {
 		id,
 		name: id,
+		agent: 'claude',
 		source_path: '/tmp/src',
 		workspace_path: '/tmp/ws',
 		host_port: hostPort,
@@ -90,5 +92,33 @@ describe('updateInstance image_source + insert round-trip', () => {
 		expect(db.getInstance('img')?.image_source).toBe('local');
 		db.updateInstance('img', { image_source: 'mcr.microsoft.com/devcontainers/universal:2' });
 		expect(db.getInstance('img')?.image_source).toBe('mcr.microsoft.com/devcontainers/universal:2');
+	});
+});
+
+describe('instance agent persistence', () => {
+	test('round-trips the selected agent', () => {
+		const row = makeInstance('codex-instance', 8102);
+		row.agent = 'codex';
+		db.insertInstance(row);
+		expect(db.getInstance(row.id)?.agent).toBe('codex');
+	});
+});
+
+describe('coding agent settings', () => {
+	test('keeps at least one agent enabled and updates the default', () => {
+		db.setOption('agent_claude_enabled', '1');
+		db.setOption('agent_codex_enabled', '0');
+		expect(() => agents.setAgentEnabled('claude', false)).toThrow(
+			'At least one coding agent must remain enabled'
+		);
+
+		agents.setAgentEnabled('codex', true);
+		agents.setAgentEnabled('claude', false);
+		expect(agents.enabledAgents()).toEqual(['codex']);
+		expect(agents.defaultAgent()).toBe('codex');
+
+		// Leave the shared test DB in the product-default state.
+		agents.setAgentEnabled('claude', true);
+		agents.setAgentEnabled('codex', false);
 	});
 });

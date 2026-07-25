@@ -91,6 +91,15 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		expect(terminal.command).toContain('exec ${env:SHELL} -l');
 	});
 
+	test('launches Codex with sandbox and hook-trust bypasses when selected', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'codex');
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		expect(terminal.command).toContain(
+			'codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust'
+		);
+		expect(terminal.command).not.toContain('claude --dangerously-skip-permissions');
+	});
+
 	test('stages task.allowAutomaticTasks in code-server settings', async () => {
 		await writeOverrideConfig(dir, 8001);
 		expect(readSettings()['task.allowAutomaticTasks']).toBe('on');
@@ -227,6 +236,23 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		expect(features['ghcr.io/devcontainers/features/node:1']).toBeDefined();
 	});
 
+	test('installs only the selected Codex tooling for a generated config', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'codex');
+		const features = readDevcontainer().features;
+		expect(features['ghcr.io/devcontainers/features/node:1']).toBeDefined();
+		expect(features['./codebay-codex']).toEqual({});
+		expect(features['ghcr.io/anthropics/devcontainer-features/claude-code:1.0']).toBeUndefined();
+
+		const featureDir = join(dir, '.devcontainer', 'codebay-codex');
+		const metadata = JSON.parse(
+			readFileSync(join(featureDir, 'devcontainer-feature.json'), 'utf8')
+		);
+		expect(metadata.installsAfter).toContain('ghcr.io/devcontainers/features/node:1');
+		expect(readFileSync(join(featureDir, 'install.sh'), 'utf8')).toContain(
+			'npm install --global @openai/codex@latest'
+		);
+	});
+
 	test('does not add the Claude Code feature when the folder ships a config', async () => {
 		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
 		writeFileSync(
@@ -239,6 +265,19 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		// Node rides the same default-only branch, so it isn't added either.
 		expect(features['ghcr.io/devcontainers/features/node:1']).toBeUndefined();
 		// code-server is still injected for project-supplied configs.
+		expect(features['ghcr.io/coder/devcontainer-features/code-server:1']).toBeDefined();
+	});
+
+	test('does not add Codex tooling when the folder ships a config', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1' })
+		);
+		await writeOverrideConfig(dir, 8001, [], undefined, 'codex');
+		const features = readDevcontainer().features;
+		expect(features['./codebay-codex']).toBeUndefined();
+		expect(features['ghcr.io/devcontainers/features/node:1']).toBeUndefined();
 		expect(features['ghcr.io/coder/devcontainer-features/code-server:1']).toBeDefined();
 	});
 });
@@ -261,6 +300,7 @@ describe('writeOverrideConfig local git excludes', () => {
 		expect(text).toContain('# >>> codebay (auto-generated) >>>');
 		expect(text).toContain('/.devcontainer/code-server-settings.json');
 		expect(text).toContain('/.devcontainer/devcontainer-lock.json');
+		expect(text).toContain('/.devcontainer/codebay-codex/');
 		expect(text).toContain('/.vscode/tasks.json');
 	});
 

@@ -1,3 +1,6 @@
+/** Coding agent available inside a Codebay instance. */
+export type Agent = 'claude' | 'codex';
+
 /** One published container→host port mapping, reachable at http://localhost:<host_port>. */
 export interface PortForward {
 	container_port: number;
@@ -10,6 +13,8 @@ export interface PortForward {
 export interface Instance {
 	id: string;
 	name: string;
+	/** Coding agent selected when this instance was created. */
+	agent: Agent;
 	source_path: string;
 	workspace_path: string;
 	host_port: number;
@@ -25,7 +30,7 @@ export interface Instance {
 	image_source: string | null;
 	/** Branch checked out in the container, polled per reconcile; null if unknown. */
 	git_branch: string | null;
-	/** Live signal raised by the in-container Claude hook: task done, waiting on input, or none. */
+	/** Live signal raised by the in-container agent hook: task done, waiting on input, or none. */
 	attention: 'done' | 'waiting' | null;
 	/** App ports published from the container, each on its own unique host port. */
 	forwarded_ports: PortForward[];
@@ -42,7 +47,7 @@ export interface InstanceHealth {
 	/** code-server answered an HTTP probe on its host port. */
 	codeServerAccessible: boolean;
 	/**
-	 * One presence row per injection that defines a `check()` (Claude Code creds,
+	 * One presence row per injection that defines a `check()` (agent credentials,
 	 * GitHub CLI, attention hooks). Driven by the injection registry, so it grows
 	 * automatically as injections are added. Empty while the container is down.
 	 */
@@ -53,7 +58,7 @@ export interface InstanceHealth {
 	checkedAt: number;
 }
 
-/** One authorization the manager can inject into instances (e.g. Claude Code). */
+/** One authorization the manager can inject into instances (e.g. an agent login). */
 export interface AuthProvider {
 	id: string;
 	label: string;
@@ -68,6 +73,8 @@ export interface Preflight {
 	docker: boolean;
 	cli: boolean;
 	auth: AuthProvider[];
+	/** Agents currently available when creating a new instance. */
+	enabledAgents: Agent[];
 }
 
 /**

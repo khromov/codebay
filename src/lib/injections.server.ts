@@ -12,6 +12,10 @@ import { claudeStatusline } from '../container-injections/claude-statusline.ts';
 import { claudeSkipPermissions } from '../container-injections/claude-skip-permissions.ts';
 import { claudeAliases } from '../container-injections/claude-aliases.ts';
 import { hostEnvVars } from '../container-injections/host-env-vars.ts';
+import { codexCredentials } from '../container-injections/codex-credentials.ts';
+import { codexAttentionHooks } from '../container-injections/codex-attention-hooks.ts';
+import { codexAlias } from '../container-injections/codex-alias.ts';
+import type { Agent } from '../types.ts';
 
 /**
  * A running container an injection acts on, plus the instance row behind it.
@@ -56,11 +60,7 @@ export interface Injection {
 }
 
 /**
- * Base injection list — the Claude credential injection slot is filled at
- * runtime by `resolveInjections()` so the choice between the default OAuth
- * injection and the custom-endpoint injection stays consistent across all
- * consumers (boot, health, routes). Direct callers should use
- * `resolveInjections()` rather than this array.
+ * Common injections shared by both coding agents.
  */
 const BASE_INJECTIONS_HEAD: Injection[] = [
 	gitSafeDirectory,
@@ -68,15 +68,6 @@ const BASE_INJECTIONS_HEAD: Injection[] = [
 	// early shrinks the window in which a first folderOpen finds tmux missing.
 	tmux,
 	gitIdentity
-];
-
-const BASE_INJECTIONS_TAIL: Injection[] = [
-	githubCredentials,
-	attentionHooks,
-	claudeStatusline,
-	claudeSkipPermissions,
-	claudeAliases,
-	hostEnvVars
 ];
 
 /**
@@ -89,10 +80,29 @@ const BASE_INJECTIONS_TAIL: Injection[] = [
  * The Claude credential injection is resolved at call time so toggling the
  * "custom endpoint" setting takes effect without restarting the server.
  */
-export function resolveInjections(): Injection[] {
+export function resolveInjections(agent: Agent = 'claude'): Injection[] {
+	if (agent === 'codex') {
+		return [
+			...BASE_INJECTIONS_HEAD,
+			codexCredentials,
+			githubCredentials,
+			codexAttentionHooks,
+			codexAlias,
+			hostEnvVars
+		];
+	}
 	const claudeInjection =
 		getOption('custom_endpoint_enabled') === '1' ? claudeCodeCustom : claudeCodeCredentials;
-	return [...BASE_INJECTIONS_HEAD, claudeInjection, ...BASE_INJECTIONS_TAIL];
+	return [
+		...BASE_INJECTIONS_HEAD,
+		claudeInjection,
+		githubCredentials,
+		attentionHooks,
+		claudeStatusline,
+		claudeSkipPermissions,
+		claudeAliases,
+		hostEnvVars
+	];
 }
 
 /**
@@ -103,5 +113,10 @@ export function resolveInjections(): Injection[] {
 export const injections: Injection[] = [
 	...BASE_INJECTIONS_HEAD,
 	claudeCodeCredentials,
-	...BASE_INJECTIONS_TAIL
+	githubCredentials,
+	attentionHooks,
+	claudeStatusline,
+	claudeSkipPermissions,
+	claudeAliases,
+	hostEnvVars
 ];

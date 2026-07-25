@@ -68,16 +68,17 @@ export const TRUSTED_ORIGINS = (process.env.TRUSTED_ORIGINS || '')
 
 /**
  * Optional token overrides for credential injection. When set, the manager injects
- * this token into every container instead of discovering the host's credentials
- * (macOS Keychain / ~/.claude / `gh auth token`). Useful on servers/CI or to pin a
- * specific identity. A token entered in Settings ("Set tokens manually") takes
- * precedence over these env vars; see the two credential injections for the order.
+ * this token into matching containers instead of discovering the host's credentials
+ * (macOS Keychain / ~/.claude / ~/.codex / `gh auth token`). Useful on servers/CI
+ * or to pin a specific identity. A token entered in Settings ("Set tokens manually")
+ * takes precedence over these env vars; see the credential injections for the order.
  * The legacy `DCM_*` names are still honored as a fallback.
  */
 export const CLAUDE_CODE_TOKEN =
 	(process.env.CODEBAY_CLAUDE_CODE_TOKEN ?? process.env.DCM_CLAUDE_CODE_TOKEN)?.trim() || '';
 export const GITHUB_TOKEN =
 	(process.env.CODEBAY_GITHUB_TOKEN ?? process.env.DCM_GITHUB_TOKEN)?.trim() || '';
+export const OPENAI_API_KEY = process.env.CODEBAY_OPENAI_API_KEY?.trim() || '';
 
 /**
  * macOS Keychain service name Claude Code's OAuth credentials are read from

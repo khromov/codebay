@@ -3,7 +3,7 @@ import { migrate, getMigrations } from '@zihaolam/bun-sqlite-migrations';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DATA_DIR, DB_PATH } from './config.server.ts';
-import type { FolderHistoryEntry } from '../types.ts';
+import type { Agent, FolderHistoryEntry } from '../types.ts';
 
 // db.server.ts lives in src/lib, so ../../migrations resolves to the repo root.
 const MIGRATIONS_DIR = join(import.meta.dir, '../../migrations');
@@ -15,6 +15,8 @@ export type InstanceStatus = 'creating' | 'running' | 'stopped' | 'error';
 export interface InstanceRow {
 	id: string;
 	name: string;
+	/** Coding agent selected for this instance. Immutable after creation. */
+	agent: Agent;
 	source_path: string;
 	workspace_path: string;
 	host_port: number;
@@ -23,7 +25,7 @@ export interface InstanceRow {
 	status: InstanceStatus;
 	error: string | null;
 	created_at: number;
-	/** Per-instance secret the in-container Claude hook uses to authenticate to the bridge. */
+	/** Per-instance secret the in-container agent hook uses to authenticate to the bridge. */
 	bridge_token: string;
 	/** Container user the workspace runs as; needed to exec health checks in its home dir. */
 	remote_user: string | null;
@@ -65,11 +67,12 @@ export function closeDb(): void {
 export function insertInstance(row: InstanceRow): void {
 	db.query(
 		`INSERT INTO instances
-       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source)
-     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source)`
+       (id, name, agent, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source)
+     VALUES ($id, $name, $agent, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source)`
 	).run({
 		$id: row.id,
 		$name: row.name,
+		$agent: row.agent,
 		$source_path: row.source_path,
 		$workspace_path: row.workspace_path,
 		$host_port: row.host_port,

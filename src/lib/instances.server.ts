@@ -42,7 +42,8 @@ import { isRepoUrl, parseRepoUrl } from './repo-url.ts';
 import { currentHealthSnapshots, stopHealthMonitor, syncHealthMonitors } from './health.server.ts';
 import { pickFreePort } from './ports.server.ts';
 import type { ServerWebSocket } from 'bun';
-import type { Instance, InstanceHealth } from '../types.ts';
+import type { Agent, Instance, InstanceHealth } from '../types.ts';
+import { agentEnabled, defaultAgent } from './agents.server.ts';
 
 /**
  * Client-safe instance shape: every field except `bridge_token`, a
@@ -194,10 +195,9 @@ async function reconcileAndBroadcast(): Promise<void> {
  * Notify all clients that the instance list changed (immediate push). Refreshes
  * only the instance list, not the docker/CLI preflight: `triggerReconcile` is
  * called from high-frequency paths too — every mutation, but also every
- * attention-bridge ping, i.e. every Claude `Stop`/`Notification`/
- * `UserPromptSubmit` hook event across every running instance. Re-probing the
- * CLI on each of those would mean spawning a `devcontainer --version` process
- * on essentially every Claude tool-call boundary; the periodic tick above
+ * attention-bridge ping, i.e. agent lifecycle hook events across every running
+ * instance. Re-probing the CLI on each would mean spawning a
+ * `devcontainer --version` process on essentially every tool-call boundary; the periodic tick above
  * keeps preflight fresh (every 5s) without that cost.
  */
 export function triggerReconcile(): void {
@@ -346,7 +346,8 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			row.workspace_path,
 			row.host_port,
 			forwards,
-			defaultImage
+			defaultImage,
+			row.agent
 		);
 		updateInstance(row.id, { image_source: imageSource });
 
@@ -382,7 +383,7 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			remoteUser: result.remoteUser,
 			instance: row
 		};
-		for (const injection of resolveInjections()) {
+		for (const injection of resolveInjections(row.agent)) {
 			try {
 				await injection.apply(target, (msg) => appendLog(row.id, msg));
 			} catch (err) {
@@ -422,8 +423,12 @@ function uniqueName(desired: string, excludeId?: string): string {
 export async function createInstance(
 	source: string,
 	name?: string,
-	opts: { branch?: string } = {}
+	opts: { branch?: string; agent?: Agent } = {}
 ): Promise<InstanceRow> {
+	const agent = opts.agent ?? defaultAgent();
+	if (!agentEnabled(agent)) {
+		throw new Error(`${agent === 'claude' ? 'Claude' : 'Codex'} is disabled for new instances`);
+	}
 	const parsedRepo = parseRepoUrl(source);
 	if (parsedRepo) {
 		// Normalize to the clean https clone URL so re-picks from history dedupe.
@@ -437,6 +442,7 @@ export async function createInstance(
 	const row: InstanceRow = {
 		id,
 		name: uniqueName(name?.trim() || folderName),
+		agent,
 		source_path: source,
 		workspace_path: join(INSTANCES_DIR, id, folderName),
 		host_port: hostPort,

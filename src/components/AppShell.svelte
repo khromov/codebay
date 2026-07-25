@@ -30,7 +30,7 @@
 	let loaded = $state(snapshot.length > 0);
 	const running = $derived(instances.filter((i) => i.status === 'running'));
 
-	// Live attention signal per instance, raised by the in-container Claude hook:
+	// Live attention signal per instance, raised by the in-container agent hook:
 	// 'done' (task finished) pulses green, 'waiting' (needs input) pulses amber.
 	let attention = $state<Record<string, 'done' | 'waiting' | null>>(
 		Object.fromEntries(snapshot.map((i) => [i.id, i.attention]))
