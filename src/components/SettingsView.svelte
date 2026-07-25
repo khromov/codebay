@@ -13,6 +13,7 @@
 	import Variable from '@lucide/svelte/icons/variable';
 	import Plus from '@lucide/svelte/icons/plus';
 	import X from '@lucide/svelte/icons/x';
+	import Bot from '@lucide/svelte/icons/bot';
 	import { Toaster } from 'svelte-french-toast';
 	import { flushSync } from 'svelte';
 	import { enhance } from 'mochi-framework';
@@ -34,6 +35,9 @@
 		manualTokensEnabled,
 		githubTokenSet,
 		claudeTokenSet,
+		openaiApiKeySet,
+		claudeEnabled,
+		codexEnabled,
 		customEndpointEnabled,
 		customEndpointBaseUrl,
 		customEndpointTokenSet,
@@ -53,6 +57,9 @@
 		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
 		claudeTokenSet: boolean;
+		openaiApiKeySet: boolean;
+		claudeEnabled: boolean;
+		codexEnabled: boolean;
 		customEndpointEnabled: boolean;
 		customEndpointBaseUrl: string;
 		customEndpointTokenSet: boolean;
@@ -216,6 +223,27 @@
 		}
 	});
 
+	// Coding agents available for newly-created instances. Existing instances keep
+	// their persisted agent; the server rejects turning off the final enabled one.
+	// svelte-ignore state_referenced_locally
+	let claudeAgent = $state(claudeEnabled);
+	// svelte-ignore state_referenced_locally
+	let codexAgent = $state(codexEnabled);
+	let savingClaudeAgent = $state(false);
+	let savingCodexAgent = $state(false);
+	let agentError = $state<string | null>(null);
+
+	const claudeAgentToggleOpts = toggleOpts({
+		set: (v) => (claudeAgent = v),
+		setSaving: (v) => (savingClaudeAgent = v),
+		setError: (v) => (agentError = v)
+	});
+	const codexAgentToggleOpts = toggleOpts({
+		set: (v) => (codexAgent = v),
+		setSaving: (v) => (savingCodexAgent = v),
+		setError: (v) => (agentError = v)
+	});
+
 	// Manual credential tokens. The DB is the source of truth; initialize the toggle
 	// from the prop. Token values are never sent to the client — we only know whether
 	// each is already set (to show a "saved" placeholder) and never render the secret.
@@ -263,6 +291,24 @@
 			claudeSaved = data?.set ?? false;
 			claudeToken = '';
 			claudeMsg = claudeSaved ? 'Saved.' : 'Cleared.';
+		}
+	});
+
+	// svelte-ignore state_referenced_locally
+	let openaiSaved = $state(openaiApiKeySet);
+	let openaiApiKey = $state('');
+	let savingOpenai = $state(false);
+	let openaiMsg = $state<string | null>(null);
+	let openaiError = $state<string | null>(null);
+
+	const openaiApiKeyOpts = saveOpts<{ set: boolean }>({
+		setSaving: (v) => (savingOpenai = v),
+		setError: (v) => (openaiError = v),
+		setMsg: (v) => (openaiMsg = v),
+		onSuccess: (data) => {
+			openaiSaved = data?.set ?? false;
+			openaiApiKey = '';
+			openaiMsg = openaiSaved ? 'Saved.' : 'Cleared.';
 		}
 	});
 
@@ -467,6 +513,80 @@
 
 	<main class="content">
 		<section class="card">
+			<div class="row">
+				<div class="label">
+					<Bot size={18} />
+					<div class="text">
+						<div class="name">Coding agents</div>
+						<div class="desc">
+							Choose which agents are offered for new instances. Existing instances keep their
+							original agent, including after rebuilds. At least one agent must remain enabled.
+						</div>
+					</div>
+				</div>
+			</div>
+			<form
+				class="row divided"
+				method="POST"
+				action="?/agentToggle"
+				{@attach enhance(claudeAgentToggleOpts)}
+			>
+				<input type="hidden" name="agent" value="claude" />
+				<div class="label">
+					<div class="text">
+						<div class="name">Claude Code</div>
+						<div class="desc">Anthropic's coding agent. Enabled by default.</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={claudeAgent}
+						disabled={savingClaudeAgent}
+						onchange={(e) => {
+							claudeAgent = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			<form
+				class="row divided"
+				method="POST"
+				action="?/agentToggle"
+				{@attach enhance(codexAgentToggleOpts)}
+			>
+				<input type="hidden" name="agent" value="codex" />
+				<div class="label">
+					<div class="text">
+						<div class="name">Codex</div>
+						<div class="desc">
+							OpenAI's coding agent. Enable it to offer Codex for new instances.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={codexAgent}
+						disabled={savingCodexAgent}
+						onchange={(e) => {
+							codexAgent = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if agentError}
+				<div class="sub"><div class="msg error">{agentError}</div></div>
+			{/if}
+		</section>
+
+		<section class="card">
 			<form
 				class="row image-row"
 				method="POST"
@@ -615,7 +735,7 @@
 			</form>
 		</section>
 
-		<section class="card" class:disabled-card={customEndpoint}>
+		<section class="card">
 			<form
 				class="row"
 				method="POST"
@@ -625,24 +745,11 @@
 				<div class="label">
 					<KeyRound size={18} />
 					<div class="text">
-						<div class="name">
-							Set tokens manually
-							{#if customEndpoint}
-								<span class="arch" title="Disabled while LiteLLM + Bedrock mode is on"
-									>disabled</span
-								>
-							{/if}
-						</div>
+						<div class="name">Set tokens manually</div>
 						<div class="desc">
-							{#if customEndpoint}
-								Not available while LiteLLM + Bedrock mode is enabled — Claude credentials are
-								provided by the LiteLLM endpoint instead.
-							{:else}
-								Provide GitHub and Claude Code tokens yourself instead of discovering them from this
-								machine. Useful on a headless server or when signed in as a different identity. A
-								token set here is injected into every new container and overrides host credential
-								discovery.
-							{/if}
+							Provide GitHub, Claude Code, and OpenAI credentials instead of discovering them from
+							this machine. Useful on a headless server or with a different identity. The Claude
+							token is ignored while LiteLLM + Bedrock mode is enabled.
 						</div>
 					</div>
 				</div>
@@ -651,7 +758,7 @@
 						type="checkbox"
 						name="enabled"
 						checked={manualTokens}
-						disabled={savingManualToggle || customEndpoint}
+						disabled={savingManualToggle}
 						onchange={(e) => {
 							manualTokens = e.currentTarget.checked;
 							e.currentTarget.form?.requestSubmit();
@@ -664,7 +771,7 @@
 				<div class="sub"><div class="msg error">{manualToggleError}</div></div>
 			{/if}
 
-			{#if manualTokens && !customEndpoint}
+			{#if manualTokens}
 				<form
 					class="row divided token-row"
 					method="POST"
@@ -741,10 +848,47 @@
 						<div class="msg ok">{claudeMsg}</div>
 					{/if}
 				</form>
+
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/openaiApiKey"
+					{@attach enhance(openaiApiKeyOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">OpenAI API key</div>
+							<div class="desc">
+								Used to sign Codex in with <code>codex login --with-api-key</code>. Leave blank and
+								Save to clear. File-backed host auth from <code>~/.codex/auth.json</code> is used when
+								no manual or environment key is set.
+							</div>
+						</div>
+					</div>
+					<div class="image-controls">
+						<input
+							type="password"
+							name="openaiApiKey"
+							class="image-input"
+							bind:value={openaiApiKey}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							autocomplete="off"
+							placeholder={openaiSaved ? '•••••••• (saved)' : 'sk-…'}
+						/>
+						<Button type="submit" disabled={savingOpenai}>Save</Button>
+					</div>
+					{#if openaiError}
+						<div class="msg error">{openaiError}</div>
+					{:else if openaiMsg}
+						<div class="msg ok">{openaiMsg}</div>
+					{/if}
+				</form>
 			{/if}
 		</section>
 
-		<section class="card" class:disabled-card={manualTokens}>
+		<section class="card">
 			<form
 				class="row"
 				method="POST"
@@ -754,21 +898,11 @@
 				<div class="label">
 					<KeyRound size={18} />
 					<div class="text">
-						<div class="name">
-							LiteLLM + Bedrock
-							{#if manualTokens}
-								<span class="arch" title="Disabled while Set tokens manually is on">disabled</span>
-							{/if}
-						</div>
+						<div class="name">LiteLLM + Bedrock</div>
 						<div class="desc">
-							{#if manualTokens}
-								Not available while "Set tokens manually" is enabled — these modes are mutually
-								incompatible.
-							{:else}
-								Route <code>claude</code> through a LiteLLM proxy fronting AWS Bedrock instead of Anthropic's
-								default API. When enabled, the Bedrock endpoint variables are injected into every new
-								container, host OAuth credentials are not used, and "Set tokens manually" is disabled.
-							{/if}
+							Route <code>claude</code> through a LiteLLM proxy fronting AWS Bedrock instead of Anthropic's
+							default API. This applies only to Claude instances; Codex authentication and behavior are
+							unchanged.
 						</div>
 					</div>
 				</div>
@@ -777,7 +911,7 @@
 						type="checkbox"
 						name="enabled"
 						checked={customEndpoint}
-						disabled={savingCustomToggle || manualTokens}
+						disabled={savingCustomToggle}
 						onchange={(e) => {
 							customEndpoint = e.currentTarget.checked;
 							e.currentTarget.form?.requestSubmit();
@@ -1168,11 +1302,6 @@
 	}
 	.danger-card {
 		border-color: var(--danger);
-	}
-	/* Muted appearance for a card whose controls are locked by another setting. */
-	.disabled-card {
-		opacity: 0.55;
-		pointer-events: none;
 	}
 	/* Keep the action button on one line; in the flex row it would otherwise shrink and wrap. */
 	.danger-card :global(.btn) {

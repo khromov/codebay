@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { type Instance, type Preflight } from '../types.ts';
+	import { type Agent, type Instance, type Preflight } from '../types.ts';
 	import FolderBrowser from './FolderBrowser.svelte';
 	import InstanceCard from './InstanceCard.svelte';
 	import TopBar from './TopBar.svelte';
@@ -23,14 +23,14 @@
 
 	const ready = $derived(preflight.docker && preflight.cli);
 
-	async function createFrom(sourcePath: string, opts?: { branch?: string }) {
+	async function createFrom(sourcePath: string, opts?: { branch?: string; agent: Agent }) {
 		browserOpen = false;
 		creating = true;
 		actionError = null;
 		try {
 			await apiPost(
 				'/api/instances',
-				{ sourcePath, branch: opts?.branch },
+				{ sourcePath, branch: opts?.branch, agent: opts?.agent },
 				'Failed to create instance'
 			);
 			// The SSE stream delivers the new instance; no manual insert needed.
@@ -142,7 +142,11 @@
 </main>
 
 {#if browserOpen}
-	<FolderBrowser onpick={createFrom} onclose={() => (browserOpen = false)} />
+	<FolderBrowser
+		enabledAgents={preflight.enabledAgents}
+		onpick={createFrom}
+		onclose={() => (browserOpen = false)}
+	/>
 {/if}
 
 <style>

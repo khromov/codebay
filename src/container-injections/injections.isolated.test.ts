@@ -8,6 +8,8 @@ import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
 import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
 import { extractScriptPath } from './claude-statusline.ts';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
+import { mergeCodexHooks } from './codex-attention-hooks.ts';
+import { CODEX_ALIAS_LINE } from './codex-alias.ts';
 
 describe('injection registry', () => {
 	test('every injection has a unique id', () => {
@@ -18,6 +20,15 @@ describe('injection registry', () => {
 	test('resolveInjections returns unique ids', () => {
 		const ids = resolveInjections().map((i) => i.id);
 		expect(new Set(ids).size).toBe(ids.length);
+	});
+
+	test('Codex registry contains Codex-only auth, hooks, and alias injections', () => {
+		const ids = resolveInjections('codex').map((i) => i.id);
+		expect(ids).toContain('codex-credentials');
+		expect(ids).toContain('codex-attention-hooks');
+		expect(ids).toContain('codex-bypass-alias');
+		expect(ids).not.toContain('claude-code-credentials');
+		expect(ids).not.toContain('attention-hooks');
 	});
 
 	test('injections that declare auth provide a hint and status()', () => {
@@ -87,6 +98,43 @@ describe('injection registry', () => {
 		// Terminal task falls back to non-persistent mode until it lands.
 		expect(injections[0]!.id).toBe('git-safe-directory');
 		expect(injections[1]!.id).toBe('tmux');
+	});
+});
+
+describe('Codex integration', () => {
+	test('sandbox-bypass alias also bypasses hook trust', () => {
+		expect(CODEX_ALIAS_LINE).toContain('--dangerously-bypass-approvals-and-sandbox');
+		expect(CODEX_ALIAS_LINE).toContain('--dangerously-bypass-hook-trust');
+	});
+
+	test('attention hooks preserve unrelated entries and map all three states', () => {
+		const raw = JSON.stringify({
+			description: 'user hooks',
+			hooks: {
+				Stop: [{ hooks: [{ type: 'command', command: 'echo user-stop' }] }],
+				PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo check' }] }]
+			}
+		});
+		const merged = JSON.parse(mergeCodexHooks(raw, 'inst-123')) as {
+			description: string;
+			hooks: Record<string, unknown[]>;
+		};
+		expect(merged.description).toBe('user hooks');
+		expect(JSON.stringify(merged.hooks.PreToolUse)).toContain('echo check');
+		expect(JSON.stringify(merged.hooks.Stop)).toContain('echo user-stop');
+		expect(JSON.stringify(merged.hooks.Stop)).toContain(' done inst-123');
+		expect(JSON.stringify(merged.hooks.PermissionRequest)).toContain(' waiting inst-123');
+		expect(JSON.stringify(merged.hooks.UserPromptSubmit)).toContain(' busy inst-123');
+		expect(JSON.stringify(merged)).not.toContain('X-Bridge-Token');
+	});
+
+	test('attention hook merge is idempotent for Codebay-owned groups', () => {
+		const once = mergeCodexHooks('{}', 'inst-123');
+		const twice = mergeCodexHooks(once, 'inst-123');
+		for (const event of ['Stop', 'PermissionRequest', 'UserPromptSubmit']) {
+			const groups = (JSON.parse(twice) as { hooks: Record<string, unknown[]> }).hooks[event];
+			expect(groups).toHaveLength(1);
+		}
 	});
 });
 

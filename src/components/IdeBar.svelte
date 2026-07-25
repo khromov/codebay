@@ -100,7 +100,7 @@
 	.tab.active {
 		background: var(--ink);
 	}
-	/* Attention pulse raised by the in-container Claude hook. The focused tab never
+	/* Attention pulse raised by the in-container agent hook. The focused tab never
      gets these classes, so a pulsing tab always means "needs your eyes". */
 	.tab.attn-done {
 		animation: attn-pulse-green 1.8s ease-in-out infinite;

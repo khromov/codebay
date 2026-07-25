@@ -58,8 +58,8 @@ await Mochi.serve({
 			if (ctx.source.name === 'ws:message' && ctx.path.startsWith(PROXY_PREFIX + '/')) {
 				return null;
 			}
-			// The bridge fires on every Claude hook event (Stop/Notification/
-			// UserPromptSubmit) — far more often than any human action — and these
+			// The bridge fires on agent hook events — far more often than any human
+			// action — and these
 			// requests carry the per-instance bridge token. Keep them out of the log
 			// entirely rather than relying on remembering not to log secrets elsewhere.
 			if (ctx.path.startsWith('/api/bridge/')) {
@@ -80,7 +80,7 @@ const url = 'http://localhost:' + PORT;
 console.log(`Server running at ${url} (bound to ${HOST})`);
 
 // Open the web UI in the user's default browser on startup.
-// Set DISABLE_OPEN_BROWSER=1 to skip (e.g. headless or Claude Code runs).
+// Set DISABLE_OPEN_BROWSER=1 to skip (e.g. headless or coding-agent runs).
 if (process.env.DISABLE_OPEN_BROWSER !== '1') {
 	const openCmd =
 		process.platform === 'darwin'

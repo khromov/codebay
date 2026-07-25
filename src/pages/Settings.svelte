@@ -11,6 +11,9 @@
 		manualTokensEnabled,
 		githubTokenSet,
 		claudeTokenSet,
+		openaiApiKeySet,
+		claudeEnabled,
+		codexEnabled,
 		customEndpointEnabled,
 		customEndpointBaseUrl,
 		customEndpointTokenSet,
@@ -30,6 +33,9 @@
 		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
 		claudeTokenSet: boolean;
+		openaiApiKeySet: boolean;
+		claudeEnabled: boolean;
+		codexEnabled: boolean;
 		customEndpointEnabled: boolean;
 		customEndpointBaseUrl: string;
 		customEndpointTokenSet: boolean;
@@ -52,6 +58,9 @@
 	{manualTokensEnabled}
 	{githubTokenSet}
 	{claudeTokenSet}
+	{openaiApiKeySet}
+	{claudeEnabled}
+	{codexEnabled}
 	{customEndpointEnabled}
 	{customEndpointBaseUrl}
 	{customEndpointTokenSet}

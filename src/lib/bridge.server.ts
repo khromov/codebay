@@ -1,10 +1,10 @@
 import { triggerReconcile } from './instances.server.ts';
 
 /**
- * Ephemeral "attention" signal each container can raise via the bridge: Claude
+ * Ephemeral "attention" signal each container can raise via the bridge: its agent
  * finished a task (`done`) or is waiting on the user (`waiting`). It's UI-only
  * state — kept in memory, never persisted — surfaced on the instance list and
- * cleared when the user looks at the tab or Claude resumes work.
+ * cleared when the user looks at the tab or the agent resumes work.
  */
 export type AttentionState = 'done' | 'waiting';
 

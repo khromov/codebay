@@ -48,12 +48,13 @@
 				class="attn"
 				class:attn-done={instance.attention === 'done'}
 				class:attn-waiting={instance.attention === 'waiting'}
-				title={instance.attention === 'waiting' ? 'Claude is waiting for input' : 'Claude finished'}
+				title={instance.attention === 'waiting' ? 'Agent is waiting for input' : 'Agent finished'}
 				aria-label={instance.attention === 'waiting'
-					? 'Claude is waiting for input'
-					: 'Claude finished'}
+					? 'Agent is waiting for input'
+					: 'Agent finished'}
 			></span>
 		{/if}
+		<span class="agent">{instance.agent === 'claude' ? 'Claude' : 'Codex'}</span>
 		<StatusBadge status={instance.status} />
 	</div>
 	<div class="path" title={instance.source_path}>{instance.source_path}</div>
@@ -105,13 +106,24 @@
 		align-items: center;
 		gap: 11px;
 	}
-	/* Attention pulse raised by the in-container Claude hook, mirroring the IDE tabs:
+	/* Attention pulse raised by the in-container agent hook, mirroring the IDE tabs:
      'done' pulses green, 'waiting' pulses amber. */
 	.attn {
 		flex: none;
 		width: 14px;
 		height: 14px;
 		border: 1px solid var(--ink);
+	}
+	.agent {
+		flex: none;
+		border: 1px solid var(--ink-faint);
+		padding: 2px 5px;
+		font-family: var(--font-mono);
+		font-size: 9px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--ink-soft);
 	}
 	.attn.attn-done {
 		background: var(--attn-done);

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { BrowseResult, FolderHistoryEntry } from '../types.ts';
+	import type { Agent, BrowseResult, FolderHistoryEntry } from '../types.ts';
 	import { isRepoUrl } from '../lib/repo-url.ts';
 	import X from '@lucide/svelte/icons/x';
 	import FolderClock from '@lucide/svelte/icons/folder-clock';
@@ -11,10 +11,14 @@
 	import { apiFetch, apiDelete } from '../api.ts';
 
 	let {
+		enabledAgents,
 		onpick,
 		onclose
-	}: { onpick: (source: string, opts?: { branch?: string }) => void; onclose: () => void } =
-		$props();
+	}: {
+		enabledAgents: Agent[];
+		onpick: (source: string, opts: { branch?: string; agent: Agent }) => void;
+		onclose: () => void;
+	} = $props();
 
 	let result = $state<BrowseResult | null>(null);
 	let loading = $state(true);
@@ -25,12 +29,18 @@
 	let showAll = $state(false);
 	let repoUrl = $state('');
 	let repoBranch = $state('');
+	// svelte-ignore state_referenced_locally
+	let selectedAgent = $state<Agent>(enabledAgents[0] ?? 'claude');
 
 	const repoValid = $derived(isRepoUrl(repoUrl));
 
+	function pick(source: string, opts: { branch?: string } = {}) {
+		onpick(source, { ...opts, agent: selectedAgent });
+	}
+
 	function cloneRepoUrl() {
 		if (!repoValid) return;
-		onpick(repoUrl.trim(), { branch: repoBranch.trim() || undefined });
+		pick(repoUrl.trim(), { branch: repoBranch.trim() || undefined });
 	}
 
 	const filtered = $derived(
@@ -103,6 +113,18 @@
 			<button class="x" onclick={onclose} aria-label="Close"><X size={16} /></button>
 		</div>
 
+		{#if enabledAgents.length > 1}
+			<fieldset class="agent-picker">
+				<legend>Coding agent</legend>
+				{#each enabledAgents as agent (agent)}
+					<label class:active={selectedAgent === agent}>
+						<input type="radio" name="agent" value={agent} bind:group={selectedAgent} />
+						<span>{agent === 'claude' ? 'Claude Code' : 'Codex'}</span>
+					</label>
+				{/each}
+			</fieldset>
+		{/if}
+
 		<div class="clone">
 			<div class="clone-label">Clone a Git repository</div>
 			<div class="clone-row">
@@ -147,7 +169,7 @@
 				<div class="recent-label">Recent</div>
 				{#each shownHistory as entry (entry.source_path)}
 					<div class="recent-row">
-						<button class="recent-pick" onclick={() => onpick(entry.source_path)}>
+						<button class="recent-pick" onclick={() => pick(entry.source_path)}>
 							<span class="icon">
 								{#if isRepoUrl(entry.source_path)}<GitBranch size={16} />{:else}<FolderClock
 										size={16}
@@ -221,7 +243,7 @@
 							<span class="ename">{entry.name}</span>
 							{#if entry.hasDevcontainer}<span class="badge">devcontainer</span>{/if}
 						</button>
-						<button class="pick-inline" onclick={() => onpick(entry.path)}>Select</button>
+						<button class="pick-inline" onclick={() => pick(entry.path)}>Select</button>
 					</div>
 				{/each}
 			{/if}
@@ -239,7 +261,7 @@
 
 		<div class="foot">
 			<span class="hint">Browse to a folder, then select this folder or any subfolder.</span>
-			<button class="primary" disabled={!result} onclick={() => result && onpick(result.path)}>
+			<button class="primary" disabled={!result} onclick={() => result && pick(result.path)}>
 				Select this folder
 			</button>
 		</div>
@@ -281,6 +303,40 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		color: var(--bg);
+	}
+	.agent-picker {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 0;
+		padding: 10px 18px;
+		border: 0;
+		border-bottom: 1px solid var(--rule-soft);
+	}
+	.agent-picker legend {
+		float: left;
+		margin-right: 8px;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--ink-faint);
+	}
+	.agent-picker label {
+		cursor: pointer;
+		border: 1px solid var(--ink);
+		padding: 5px 9px;
+		font-family: var(--font-mono);
+		font-size: 12px;
+	}
+	.agent-picker label.active {
+		background: var(--ink);
+		color: var(--bg);
+	}
+	.agent-picker input {
+		position: absolute;
+		opacity: 0;
+		pointer-events: none;
 	}
 	.x {
 		display: inline-flex;

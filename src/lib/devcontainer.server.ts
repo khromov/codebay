@@ -11,7 +11,7 @@ import {
 	dockerEnv
 } from './config.server.ts';
 import { spawnCapture } from './spawn.server.ts';
-import type { PortForward } from '../types.ts';
+import type { Agent, PortForward } from '../types.ts';
 
 const CODE_SERVER_FEATURE = 'ghcr.io/coder/devcontainer-features/code-server:1';
 
@@ -29,6 +29,8 @@ const CODE_SERVER_SETTINGS_FILE = 'code-server-settings.json';
 
 /** Folder (under .devcontainer/) holding the staged local tmux feature. */
 const TMUX_FEATURE_DIR = 'codebay-tmux';
+/** Folder holding Codebay's local Codex CLI feature. */
+const CODEX_FEATURE_DIR = 'codebay-codex';
 
 const TMUX_FEATURE_METADATA = {
 	id: 'codebay-tmux',
@@ -37,6 +39,20 @@ const TMUX_FEATURE_METADATA = {
 	description:
 		'Installs tmux at image build time so the Terminal task can run in a persistent session. Never fails the build.'
 };
+
+const CODEX_FEATURE_METADATA = {
+	id: 'codebay-codex',
+	version: '1.0.0',
+	name: 'Codex CLI (Codebay)',
+	description: 'Installs the OpenAI Codex CLI for a Codebay instance.',
+	installsAfter: [NODE_FEATURE]
+};
+
+const CODEX_FEATURE_INSTALL =
+	'#!/bin/sh\n' +
+	'set -e\n' +
+	'if command -v codex >/dev/null 2>&1; then exit 0; fi\n' +
+	'npm install --global @openai/codex@latest\n';
 
 /**
  * The local feature's install script. Runs at image *build* time, where network
@@ -64,6 +80,7 @@ const MANAGER_GIT_EXCLUDES = [
 	'/.devcontainer/code-server-settings.json',
 	'/.devcontainer/devcontainer-lock.json',
 	'/.devcontainer/codebay-tmux/',
+	'/.devcontainer/codebay-codex/',
 	'/.vscode/tasks.json'
 ];
 
@@ -93,19 +110,16 @@ const CODE_SERVER_SETTINGS = {
 const TMUX_SESSION = 'codebay';
 
 /**
- * Auto-launches Claude Code when the workspace folder opens in code-server, then
- * drops to an interactive login shell once Claude exits so the terminal stays usable.
- * `--dangerously-skip-permissions` matches the in-container alias (instances are
- * throwaway single-tenant sandboxes); invoked directly here since the alias only
- * loads in interactive shells and this task's command runs non-interactively.
+ * Auto-launches the selected coding agent when the workspace opens in code-server,
+ * then drops to an interactive login shell once it exits so the terminal stays usable.
  *
  * Runs inside a named tmux session (installed by the `tmux` injection) so the
  * terminal survives the browser closing: code-server reaps a detached terminal
  * PTY after its reconnect grace period, which only kills the tmux *client* —
- * Claude keeps running server-side with its scrollback, and the next folderOpen
- * reattaches (`-A` creates-or-attaches, so it doubles as the run-once gate; the
- * create command is ignored on attach). A container restart kills the tmux
- * server, so a fresh session relaunches Claude. `"$SHELL"` is expanded by
+ * the agent keeps running server-side with its scrollback, and the next folderOpen
+ * reattaches (`-A` creates-or-attaches, so it doubles as the run-once gate). A
+ * container restart kills the tmux server, so a fresh session relaunches the agent.
+ * `"$SHELL"` is expanded by
  * tmux's `sh -c` at run time (CODE_SERVER_LAUNCH guarantees it's exported) —
  * `${env:SHELL}` would be substituted by VS Code before tmux ever ran, and
  * `${SHELL:-…}` shell syntax would trip VS Code's `${…}` variable resolver.
@@ -117,17 +131,23 @@ const TMUX_SESSION = 'codebay';
  * in the container home dir, so it survives code-server reloads but resets on
  * a rebuild (fresh container).
  */
-const TERMINAL_TASK = {
-	label: 'Terminal',
-	type: 'shell',
-	command:
-		`if command -v tmux >/dev/null 2>&1; then exec tmux new-session -A -s ${TMUX_SESSION} 'claude --dangerously-skip-permissions; exec "$SHELL" -l'; fi; ` +
-		'MARK="$HOME/.codebay-terminal-launched"; [ -e "$MARK" ] && exit 0; touch "$MARK"; ' +
-		'claude --dangerously-skip-permissions; exec ${env:SHELL} -l',
-	presentation: { reveal: 'always', panel: 'shared', focus: true },
-	runOptions: { runOn: 'folderOpen' },
-	problemMatcher: []
-};
+function terminalTask(agent: Agent) {
+	const launch =
+		agent === 'codex'
+			? 'codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust'
+			: 'claude --dangerously-skip-permissions';
+	return {
+		label: 'Terminal',
+		type: 'shell',
+		command:
+			`if command -v tmux >/dev/null 2>&1; then exec tmux new-session -A -s ${TMUX_SESSION} '${launch}; exec "$SHELL" -l'; fi; ` +
+			'MARK="$HOME/.codebay-terminal-launched"; [ -e "$MARK" ] && exit 0; touch "$MARK"; ' +
+			`${launch}; exec \${env:SHELL} -l`,
+		presentation: { reveal: 'always', panel: 'shared', focus: true },
+		runOptions: { runOn: 'folderOpen' },
+		problemMatcher: []
+	};
+}
 
 /** Copy the staged settings into code-server's user-data dir before first launch. */
 const CODE_SERVER_APPLY_SETTINGS =
@@ -321,7 +341,8 @@ export async function writeOverrideConfig(
 	workspaceDir: string,
 	hostPort: number,
 	forwards: PortForward[] = [],
-	defaultImage: string = DEFAULT_IMAGE
+	defaultImage: string = DEFAULT_IMAGE,
+	agent: Agent = 'claude'
 ): Promise<{ imageSource: string }> {
 	const target = configPath(workspaceDir);
 	let config: DevcontainerConfig = {};
@@ -345,23 +366,24 @@ export async function writeOverrideConfig(
 	}
 
 	// Install code-server. When we generated the default config (no project devcontainer.json),
-	// also install Node + Claude Code + the GitHub CLI — the base image doesn't ship them, and the
-	// credentials + attention hooks injected post-up need a `claude` binary to drive (which in turn
-	// needs Node) and a `gh` binary to authorize. Projects with their own config manage their own
-	// tooling, so these are only added for the default image. The devcontainer CLI resolves install
-	// order from feature metadata.
+	// also install the selected coding agent + the GitHub CLI — the base image doesn't
+	// ship them. Projects with their own config remain responsible for their own tooling,
+	// so these are only added for the generated default config.
 	// The staged local tmux feature, referenced relative to wherever the config
 	// lives (`codebay-tmux` for the nested .devcontainer/devcontainer.json form,
 	// `.devcontainer/codebay-tmux` for a root .devcontainer.json).
 	const tmuxFeatureKey = `./${relative(dirname(target), join(workspaceDir, '.devcontainer', TMUX_FEATURE_DIR))}`;
+	const codexFeatureKey = `./${relative(dirname(target), join(workspaceDir, '.devcontainer', CODEX_FEATURE_DIR))}`;
+	const agentFeatures =
+		agent === 'codex'
+			? { [NODE_FEATURE]: {}, [codexFeatureKey]: {} }
+			: { [NODE_FEATURE]: {}, [CLAUDE_CODE_FEATURE]: {} };
 
 	config.features = {
 		...(config.features ?? {}),
 		[CODE_SERVER_FEATURE]: { host: '0.0.0.0', port: CODE_SERVER_PORT, auth: 'none' },
 		[tmuxFeatureKey]: {},
-		...(hadConfig
-			? {}
-			: { [NODE_FEATURE]: {}, [CLAUDE_CODE_FEATURE]: {}, [GITHUB_CLI_FEATURE]: {} })
+		...(hadConfig ? {} : { ...agentFeatures, [GITHUB_CLI_FEATURE]: {} })
 	};
 
 	// Publish code-server plus each forwarded port on its unique host port, bound to
@@ -373,7 +395,7 @@ export async function writeOverrideConfig(
 	];
 
 	// Ensure host.docker.internal resolves inside the container (it isn't automatic on
-	// Colima/Linux Docker) so the Claude attention hook can reach the manager.
+	// Colima/Linux Docker) so the selected agent's attention hook can reach the manager.
 	const runArgs = new Set(Array.isArray(config.runArgs) ? config.runArgs : []);
 	runArgs.add(HOST_GATEWAY_ARG);
 	config.runArgs = [...runArgs];
@@ -397,8 +419,9 @@ export async function writeOverrideConfig(
 	);
 
 	await writeTmuxFeature(workspaceDir);
+	await writeCodexFeature(workspaceDir);
 
-	await writeTerminalTask(workspaceDir);
+	await writeTerminalTask(workspaceDir, agent);
 
 	// Keep the container's `git status` clean: hide the files we just injected plus anything the
 	// host only ignores via its global excludes (the container has no global gitignore).
@@ -506,6 +529,20 @@ async function writeTmuxFeature(workspaceDir: string): Promise<void> {
 	await chmod(installPath, 0o755);
 }
 
+/** Stage the local feature that installs Codex after the Node feature. */
+async function writeCodexFeature(workspaceDir: string): Promise<void> {
+	const dir = join(workspaceDir, '.devcontainer', CODEX_FEATURE_DIR);
+	await mkdir(dir, { recursive: true }).catch(() => {});
+	await writeFile(
+		join(dir, 'devcontainer-feature.json'),
+		JSON.stringify(CODEX_FEATURE_METADATA, null, 2) + '\n',
+		'utf8'
+	);
+	const installPath = join(dir, 'install.sh');
+	await writeFile(installPath, CODEX_FEATURE_INSTALL, 'utf8');
+	await chmod(installPath, 0o755);
+}
+
 /**
  * Merge the folderOpen Terminal task into the workspace's `.vscode/tasks.json` so a usable
  * shell opens automatically in code-server. Non-destructive: preserves any existing tasks
@@ -513,7 +550,7 @@ async function writeTmuxFeature(workspaceDir: string): Promise<void> {
  * *replaced*, not skipped, so a rebuild picks up command changes instead of keeping a stale
  * copy forever. A malformed existing tasks.json is replaced rather than aborting the boot.
  */
-async function writeTerminalTask(workspaceDir: string): Promise<void> {
+async function writeTerminalTask(workspaceDir: string, agent: Agent): Promise<void> {
 	const tasksPath = join(workspaceDir, '.vscode', 'tasks.json');
 	let config: { version?: string; tasks?: unknown[] } = {};
 
@@ -531,9 +568,9 @@ async function writeTerminalTask(workspaceDir: string): Promise<void> {
 	const isManagedTask = (t: unknown) =>
 		typeof t === 'object' &&
 		t !== null &&
-		(t as Record<string, unknown>).label === TERMINAL_TASK.label &&
+		(t as Record<string, unknown>).label === 'Terminal' &&
 		((t as Record<string, { runOn?: string }>).runOptions?.runOn ?? '') === 'folderOpen';
-	config.tasks = [...tasks.filter((t) => !isManagedTask(t)), TERMINAL_TASK];
+	config.tasks = [...tasks.filter((t) => !isManagedTask(t)), terminalTask(agent)];
 
 	await mkdir(join(workspaceDir, '.vscode'), { recursive: true }).catch(() => {});
 	await writeFile(tasksPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
