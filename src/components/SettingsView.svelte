@@ -713,11 +713,11 @@
 						<div class="text">
 							<div class="name">Claude Code token</div>
 							<div class="desc">
-								Paste the OAuth <code>accessToken</code>. macOS:
-								<code>security find-generic-password -s "Claude Code-credentials" -w</code> — copy
-								the <code>accessToken</code> field. Linux:
-								<code>cat ~/.claude/.credentials.json</code> — copy the <code>accessToken</code>.
-								Leave blank and Save to clear.
+								macOS / Linux: run <code>claude setup-token</code> to mint a long-lived token and
+								paste it here. Copying a live login out of the keychain or
+								<code>~/.claude/.credentials.json</code> works too, but that credential rotates —
+								the first <code>claude</code> to refresh it signs the other one out. Leave blank and Save
+								to clear.
 							</div>
 						</div>
 					</div>
