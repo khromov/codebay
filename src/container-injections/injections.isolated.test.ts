@@ -447,7 +447,7 @@ describe('claude-code-credentials tokenCredentials', () => {
 		expect(scopes).toContain('user:inference');
 	});
 
-	test('produces a record that passes isValid and the live-credentials probe', () => {
+	test('produces a record that passes isValid', () => {
 		expect(isValid(tokenCredentials('sk-ant-oat01-abc'))).toBe(true);
 	});
 });
@@ -504,5 +504,17 @@ describe('claude-code-credentials LIVE_CREDENTIALS_TEST', () => {
 	test('reads the same either way when the file is pretty-printed', () => {
 		expect(isLive(credsFile('sk-ant-oat-abc', true))).toBe(true);
 		expect(isLive(credsFile('', true))).toBe(false);
+	});
+
+	test('is unfazed by tabs and CRLF line endings', () => {
+		const crlf = (s: string) => s.replace(/\n/g, '\r\n').replace(/ {2}/g, '\t');
+		expect(isLive(crlf(credsFile('sk-ant-oat-abc', true)))).toBe(true);
+		expect(isLive(crlf(credsFile('', true)))).toBe(false);
+	});
+
+	// Ties the two halves together: whatever `tokenCredentials` injects must be what
+	// the health check then reports as a live login, or a fresh container reads red.
+	test('accepts the record tokenCredentials injects', () => {
+		expect(isLive(tokenCredentials('sk-ant-oat01-abc'))).toBe(true);
 	});
 });

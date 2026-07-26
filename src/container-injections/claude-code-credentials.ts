@@ -65,11 +65,11 @@ export function isValid(json: string): boolean {
  * Shell test for a *live* credential file at `"$f"`. Existence isn't enough: when an
  * in-container refresh is rejected (see the shared-lineage caveat below), `claude`
  * blanks the tokens in place rather than deleting the file, leaving several hundred
- * bytes that `[ -s ]` happily reports as a healthy login. Whitespace is collapsed
+ * bytes that `[ -s ]` happily reports as a healthy login. All whitespace is stripped
  * first so this holds whether the file is written compact or pretty-printed.
  */
 export const LIVE_CREDENTIALS_TEST =
-	'[ -s "$f" ] && tr -d \' \\n\' < "$f" | grep -q \'"accessToken":"[^"]\'';
+	'[ -s "$f" ] && tr -d \'[:space:]\' < "$f" | grep -q \'"accessToken":"[^"]\'';
 
 /**
  * Locate the host's Claude Code OAuth credentials, returning both the JSON string
