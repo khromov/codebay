@@ -137,6 +137,15 @@
 	// a later probe blip never tears down a live editor; cleared on leaving `running`.
 	const everReady = new SvelteSet<string>();
 
+	// Panes the user forced open from the loader's "Open anyway", for the case where the
+	// probe never passes (a wedged monitor, a blocked probe). Kept separate from
+	// `everReady` so that stays an honest record of what the probe actually reported.
+	const forced = new SvelteSet<string>();
+	const mountable = (id: string) => everReady.has(id) || forced.has(id);
+
+	// How long a pane waits on the probe before saying so and offering the override.
+	const STALLED_AFTER_MS = 10_000;
+
 	// Keep the document title in step with the focused instance.
 	$effect(() => {
 		const inst = running.find((i) => i.id === active);
@@ -155,8 +164,8 @@
 	});
 
 	// Central live stream: drives both views and the attention chime, chiming when
-	// a non-focused tab newly raises (or changes) its signal. Only `instances`
-	// events matter here; `health` events are for the instance detail view.
+	// a non-focused tab newly raises (or changes) its signal. `instances` events
+	// drive the views; `health` events additionally gate the IDE iframes below.
 	$effect(() => {
 		// Skip the first frame after each (re)connect so the server's re-seed of
 		// the full list is treated as the baseline rather than a live change —
@@ -170,18 +179,24 @@
 					return;
 				}
 				if (msg.type === 'health') {
-					if (msg.data.health.codeServerAccessible) everReady.add(msg.data.id);
+					// Only trust a probe for an instance we currently see as running. A monitor
+					// tick already in flight when a rebuild starts probes the *old* container
+					// and reports it accessible — taking that at face value would undo the
+					// re-arm below and mount the iframe against the replacement too early.
+					const inst = instances.find((i) => i.id === msg.data.id);
+					if (msg.data.health.codeServerAccessible && inst?.status === 'running')
+						everReady.add(msg.data.id);
 					return;
 				}
 				if (msg.type !== 'instances') return;
 				const next = msg.data;
 				// Re-arm the gate: a replaced container must prove code-server is up again.
-				for (const inst of next) {
-					if (inst.status !== 'running') {
-						everReady.delete(inst.id);
-						loadedFrames.delete(inst.id);
-					}
-				}
+				// Ids that have left `running` — or vanished from the list entirely, i.e. been
+				// deleted — are dropped from both sets so nothing lingers.
+				const live = new Set(next.filter((i) => i.status === 'running').map((i) => i.id));
+				for (const id of [...everReady]) if (!live.has(id)) everReady.delete(id);
+				for (const id of [...forced]) if (!live.has(id)) forced.delete(id);
+				for (const id of [...loadedFrames]) if (!live.has(id)) loadedFrames.delete(id);
 				const nextAttention: Record<string, 'done' | 'waiting' | null> = {};
 				for (const inst of next) nextAttention[inst.id] = inst.attention;
 				if (primed) {
@@ -254,11 +269,15 @@
 		{#each running as inst (inst.id)}
 			{#if visited.has(inst.id)}
 				<div class="pane" class:active={inst.id === active}>
-					{#if everReady.has(inst.id)}
+					{#if mountable(inst.id)}
 						<iframe src={ideUrl(inst)} title={inst.name} onload={() => loadedFrames.add(inst.id)}
 						></iframe>
 					{/if}
-					{#if !everReady.has(inst.id) || !loadedFrames.has(inst.id)}
+					<!-- Two distinct waits: for the health probe (unbounded — gets the override),
+					     then for the mounted iframe's own `load` (bounded — plain loader). -->
+					{#if !mountable(inst.id)}
+						<IdeLoader stalledAfterMs={STALLED_AFTER_MS} onoverride={() => forced.add(inst.id)} />
+					{:else if !loadedFrames.has(inst.id)}
 						<IdeLoader />
 					{/if}
 				</div>
