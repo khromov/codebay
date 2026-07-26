@@ -18,7 +18,7 @@
 		instance: Instance;
 		editing: boolean;
 		editingName: string;
-		onact: (action: 'start' | 'stop' | 'delete') => void;
+		onact: (action: 'start' | 'stop' | 'delete' | 'rebuild') => void;
 		onstartrename: () => void;
 		oncommitrename: () => void;
 		oncancelrename: () => void;
@@ -70,8 +70,20 @@
 		{#if instance.status === 'running'}
 			<Button variant="primary" size="sm" href={`/ide/${instance.id}`}>Open IDE</Button>
 			<Button size="sm" onclick={() => onact('stop')}>Stop</Button>
+			<!-- Start/Stop only cycle the existing container; rebuild is the one action
+			     that recreates it, and so the only one that re-runs the injections. -->
+			<Button
+				size="sm"
+				title="Recreate the container and re-run setup (credentials, hooks, port forwards)"
+				onclick={() => onact('rebuild')}>Rebuild</Button
+			>
 		{:else if instance.status === 'stopped' || (instance.status === 'error' && instance.container_id)}
 			<Button size="sm" onclick={() => onact('start')}>Start</Button>
+			<Button
+				size="sm"
+				title="Recreate the container and re-run setup (credentials, hooks, port forwards)"
+				onclick={() => onact('rebuild')}>Rebuild</Button
+			>
 		{:else if instance.status === 'creating'}
 			<Button size="sm" href={`/instances/${instance.id}`} target="_blank" rel="noopener noreferrer"
 				>View logs</Button
