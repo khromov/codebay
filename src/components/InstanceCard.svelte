@@ -18,11 +18,20 @@
 		instance: Instance;
 		editing: boolean;
 		editingName: string;
-		onact: (action: 'start' | 'stop' | 'delete') => void;
+		onact: (action: 'start' | 'stop' | 'delete' | 'rebuild') => void;
 		onstartrename: () => void;
 		oncommitrename: () => void;
 		oncancelrename: () => void;
 	} = $props();
+
+	// Start/Stop only cycle the existing container; rebuild is what re-runs the
+	// injections (credentials, hooks, port forwards). Offered wherever there's a
+	// container to replace — never while one is already building.
+	const canRebuild = $derived(
+		instance.status === 'running' ||
+			instance.status === 'stopped' ||
+			(instance.status === 'error' && !!instance.container_id)
+	);
 </script>
 
 <li class="card panel">
@@ -75,6 +84,13 @@
 		{:else if instance.status === 'creating'}
 			<Button size="sm" href={`/instances/${instance.id}`} target="_blank" rel="noopener noreferrer"
 				>View logs</Button
+			>
+		{/if}
+		{#if canRebuild}
+			<Button
+				size="sm"
+				title="Recreate the container and re-run setup (credentials, hooks, port forwards)"
+				onclick={() => onact('rebuild')}>Rebuild</Button
 			>
 		{/if}
 		<Button

@@ -41,9 +41,15 @@
 		}
 	}
 
-	async function act(id: string, action: 'start' | 'stop' | 'delete') {
+	async function act(id: string, action: 'start' | 'stop' | 'delete' | 'rebuild') {
 		actionError = null;
 		if (action === 'delete' && !confirm('Delete this instance and its copied files?')) return;
+		// Rebuild discards the container; the workspace copy lives on the host and survives.
+		if (
+			action === 'rebuild' &&
+			!confirm('Recreate this container and re-run setup? The workspace is kept.')
+		)
+			return;
 		try {
 			await apiPost(`/api/instances/${id}/${action}`, undefined, `Failed to ${action}`);
 			// The SSE stream reflects the resulting state.
