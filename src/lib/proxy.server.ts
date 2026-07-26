@@ -78,14 +78,27 @@ async function proxyHttp(event: MochiApiEvent, port: number, rest: string): Prom
 	// break any editor feature that round-trips a cookie.
 	headers.delete('authorization');
 	const hasBody = event.method !== 'GET' && event.method !== 'HEAD';
-	const upstream = await fetch(`http://127.0.0.1:${port}${rest}${event.url.search}`, {
-		method: event.method,
-		headers,
-		body: hasBody ? event.request.body : undefined,
-		redirect: 'manual',
-		// @ts-expect-error Bun streams request bodies with duplex: 'half'.
-		duplex: 'half'
-	});
+	let upstream: Response;
+	try {
+		upstream = await fetch(`http://127.0.0.1:${port}${rest}${event.url.search}`, {
+			method: event.method,
+			headers,
+			body: hasBody ? event.request.body : undefined,
+			redirect: 'manual',
+			// @ts-expect-error Bun streams request bodies with duplex: 'half'.
+			duplex: 'half'
+		});
+	} catch {
+		// The container is up (`upstreamPort` checked that) but nothing is answering on
+		// its published port yet — code-server hasn't finished booting, or is mid-restart.
+		// That's a transient upstream state, not a manager fault: let it escape and Mochi
+		// renders a 500 with a stack trace into the IDE iframe. 503 + Retry-After says
+		// "not yet" in the terms a browser already understands.
+		return new Response('code-server is not accepting connections yet', {
+			status: 503,
+			headers: { 'retry-after': '1', 'cache-control': 'no-store' }
+		});
+	}
 
 	const resHeaders = new Headers(upstream.headers);
 	resHeaders.delete('content-encoding'); // body is already decoded by fetch
