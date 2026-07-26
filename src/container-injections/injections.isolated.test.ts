@@ -1,8 +1,11 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { injections, resolveInjections } from '../lib/injections.server.ts';
 import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings } from './attention-hooks.ts';
-import { isValid } from './claude-code-credentials.ts';
+import { isValid, LIVE_CREDENTIALS_TEST } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
 import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
 import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
@@ -425,5 +428,60 @@ describe('claude-code-credentials isValid', () => {
 	test('falls back to the access token expiry when there is no refresh-token expiry', () => {
 		expect(isValid(oauth({ expiresAt: Date.now() - 1000 }))).toBe(false);
 		expect(isValid(oauth({ expiresAt: Date.now() + 1000 }))).toBe(true);
+	});
+});
+
+describe('claude-code-credentials LIVE_CREDENTIALS_TEST', () => {
+	/** Run the injection's own shell predicate against a file, exactly as `check()` does. */
+	function isLive(content: string | null): boolean {
+		const dir = mkdtempSync(join(tmpdir(), 'codebay-creds-'));
+		const file = join(dir, '.credentials.json');
+		if (content !== null) writeFileSync(file, content);
+		try {
+			const res = Bun.spawnSync([
+				'bash',
+				'-c',
+				`f="$1"; if ${LIVE_CREDENTIALS_TEST}; then echo 1; else echo 0; fi`,
+				'bash',
+				file
+			]);
+			return res.stdout.toString().trim() === '1';
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	}
+
+	/** The shape `claude` writes; blank tokens are what a rejected refresh leaves behind. */
+	const credsFile = (accessToken: string, spaced = false) =>
+		JSON.stringify(
+			{
+				claudeAiOauth: {
+					accessToken,
+					refreshToken: accessToken ? 'refresh' : '',
+					expiresAt: accessToken ? Date.now() + 1000 : 0,
+					scopes: ['user:inference'],
+					subscriptionType: 'max'
+				}
+			},
+			null,
+			spaced ? 2 : undefined
+		);
+
+	test('accepts a file carrying a real access token', () => {
+		expect(isLive(credsFile('sk-ant-oat-abc'))).toBe(true);
+	});
+
+	test('rejects the blanked file a rejected in-container refresh leaves behind', () => {
+		expect(isLive(credsFile(''))).toBe(false);
+	});
+
+	test('rejects a missing or empty file', () => {
+		expect(isLive(null)).toBe(false);
+		expect(isLive('')).toBe(false);
+	});
+
+	test('reads the same either way when the file is pretty-printed', () => {
+		expect(isLive(credsFile('sk-ant-oat-abc', true))).toBe(true);
+		expect(isLive(credsFile('', true))).toBe(false);
 	});
 });
