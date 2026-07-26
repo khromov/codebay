@@ -11,6 +11,7 @@
 		manualTokensEnabled,
 		githubTokenSet,
 		claudeTokenSet,
+		claudeCliAvailable,
 		customEndpointEnabled,
 		customEndpointBaseUrl,
 		customEndpointTokenSet,
@@ -30,6 +31,7 @@
 		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
 		claudeTokenSet: boolean;
+		claudeCliAvailable: boolean;
 		customEndpointEnabled: boolean;
 		customEndpointBaseUrl: string;
 		customEndpointTokenSet: boolean;
@@ -52,6 +54,7 @@
 	{manualTokensEnabled}
 	{githubTokenSet}
 	{claudeTokenSet}
+	{claudeCliAvailable}
 	{customEndpointEnabled}
 	{customEndpointBaseUrl}
 	{customEndpointTokenSet}
