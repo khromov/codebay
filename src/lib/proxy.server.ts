@@ -88,9 +88,11 @@ async function proxyHttp(event: MochiApiEvent, port: number, rest: string): Prom
 			// @ts-expect-error Bun streams request bodies with duplex: 'half'.
 			duplex: 'half'
 		});
-	} catch {
+	} catch (err) {
 		// Container is up (`upstreamPort` checked) but code-server hasn't bound its port
-		// yet. Letting this escape renders a 500 stack trace inside the IDE iframe.
+		// yet. Letting this escape renders a 500 stack trace inside the IDE iframe. Logged
+		// so a genuine upstream failure stays distinguishable from "not listening yet".
+		console.warn(`[proxy] upstream 127.0.0.1:${port}${rest} unreachable:`, (err as Error).message);
 		return new Response('code-server is not accepting connections yet', {
 			status: 503,
 			headers: { 'retry-after': '1', 'cache-control': 'no-store' }
