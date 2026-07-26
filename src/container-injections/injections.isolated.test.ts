@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { injections, resolveInjections } from '../lib/injections.server.ts';
 import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings } from './attention-hooks.ts';
-import { isValid, LIVE_CREDENTIALS_TEST } from './claude-code-credentials.ts';
+import { isValid, LIVE_CREDENTIALS_TEST, tokenCredentials } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
 import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
 import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
@@ -428,6 +428,27 @@ describe('claude-code-credentials isValid', () => {
 	test('falls back to the access token expiry when there is no refresh-token expiry', () => {
 		expect(isValid(oauth({ expiresAt: Date.now() - 1000 }))).toBe(false);
 		expect(isValid(oauth({ expiresAt: Date.now() + 1000 }))).toBe(true);
+	});
+});
+
+describe('claude-code-credentials tokenCredentials', () => {
+	const parse = (json: string) =>
+		(JSON.parse(json) as { claudeAiOauth: { accessToken: string; scopes?: string[] } })
+			.claudeAiOauth;
+
+	test('carries the token through verbatim', () => {
+		expect(parse(tokenCredentials('sk-ant-oat01-abc')).accessToken).toBe('sk-ant-oat01-abc');
+	});
+
+	// Without `scopes`, `claude` reports "Not logged in" however valid the token is.
+	test('includes scopes, without which claude ignores the credentials', () => {
+		const scopes = parse(tokenCredentials('sk-ant-oat01-abc')).scopes;
+		expect(scopes).toBeDefined();
+		expect(scopes).toContain('user:inference');
+	});
+
+	test('produces a record that passes isValid and the live-credentials probe', () => {
+		expect(isValid(tokenCredentials('sk-ant-oat01-abc'))).toBe(true);
 	});
 });
 

@@ -89,11 +89,8 @@ async function proxyHttp(event: MochiApiEvent, port: number, rest: string): Prom
 			duplex: 'half'
 		});
 	} catch {
-		// The container is up (`upstreamPort` checked that) but nothing is answering on
-		// its published port yet — code-server hasn't finished booting, or is mid-restart.
-		// That's a transient upstream state, not a manager fault: let it escape and Mochi
-		// renders a 500 with a stack trace into the IDE iframe. 503 + Retry-After says
-		// "not yet" in the terms a browser already understands.
+		// Container is up (`upstreamPort` checked) but code-server hasn't bound its port
+		// yet. Letting this escape renders a 500 stack trace inside the IDE iframe.
 		return new Response('code-server is not accepting connections yet', {
 			status: 503,
 			headers: { 'retry-after': '1', 'cache-control': 'no-store' }

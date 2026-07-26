@@ -131,13 +131,10 @@
 	// loader so switching to a freshly-mounted IDE shows a readout, not blank white.
 	const loadedFrames = new SvelteSet<string>();
 
-	// Instances whose code-server has answered its health probe at least once.
-	// `status === 'running'` only means the *container* is up — code-server binds its
-	// port some seconds later, and pointing an iframe at it before then renders the
-	// proxy's "not accepting connections yet" 503 inside the pane. Sticky on purpose:
-	// once an editor is live we keep it mounted through later probe failures, so a
-	// transient blip never tears down a working session. Cleared when an instance
-	// leaves `running` (e.g. a rebuild), which re-arms the gate for the new container.
+	// Instances whose code-server has answered its health probe at least once —
+	// `status === 'running'` only means the container is up, and mounting an iframe
+	// before code-server binds its port renders the proxy's 503 in the pane. Sticky, so
+	// a later probe blip never tears down a live editor; cleared on leaving `running`.
 	const everReady = new SvelteSet<string>();
 
 	// Keep the document title in step with the focused instance.
@@ -178,9 +175,7 @@
 				}
 				if (msg.type !== 'instances') return;
 				const next = msg.data;
-				// Re-arm the IDE gate for anything that has left `running`: its container
-				// is being replaced (rebuild) or is gone, so the next one has to prove
-				// code-server is up again before we mount an iframe at its port.
+				// Re-arm the gate: a replaced container must prove code-server is up again.
 				for (const inst of next) {
 					if (inst.status !== 'running') {
 						everReady.delete(inst.id);

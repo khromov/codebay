@@ -70,8 +70,7 @@
 		{#if instance.status === 'running'}
 			<Button variant="primary" size="sm" href={`/ide/${instance.id}`}>Open IDE</Button>
 			<Button size="sm" onclick={() => onact('stop')}>Stop</Button>
-			<!-- Start/Stop only cycle the existing container; rebuild is the one action
-			     that recreates it, and so the only one that re-runs the injections. -->
+			<!-- Start/Stop only cycle the container; rebuild is what re-runs the injections. -->
 			<Button
 				size="sm"
 				title="Recreate the container and re-run setup (credentials, hooks, port forwards)"
