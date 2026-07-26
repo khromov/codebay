@@ -32,7 +32,9 @@ To share a login across containers, use a non-rotating token instead:
 export CODEBAY_CLAUDE_CODE_TOKEN=$(claude setup-token)
 ```
 
-or paste it into **Settings → set tokens manually**. Both take precedence over host discovery. Reading the host's keychain / `~/.claude/.credentials.json` still works and stays the zero-config default; just expect to re-create an instance when it drifts.
+or paste it into **Settings → set tokens manually**. Both take precedence over host discovery, and the token is written into the container as a complete credentials record — `claude` ignores a credentials file that carries only an access token, so the surrounding fields are synthesized for you. Reading the host's keychain / `~/.claude/.credentials.json` still works and stays the zero-config default; just expect to re-create an instance when it drifts.
+
+Note that credentials are applied when a container is **created**. Start/Stop only cycle the existing container — after changing a token, use **Restart container** in the IDE header to re-run the injections.
 
 ## Container injections
 

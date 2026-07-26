@@ -19,6 +19,25 @@ function manualClaudeToken(): string | null {
 }
 
 /**
+ * `claude` reports "Not logged in" for a credentials file carrying only an
+ * `accessToken`, however valid the token — `scopes` is what flips it (checked against
+ * claude 2.1.215; `expiresAt`/`subscriptionType` turn out not to matter). The real
+ * grant lives server-side, so this just mirrors what an interactive login writes.
+ */
+const TOKEN_SCOPES = [
+	'user:file_upload',
+	'user:inference',
+	'user:mcp_servers',
+	'user:profile',
+	'user:sessions:claude_code'
+];
+
+/** The credentials record to inject for a bare token supplied by the user. */
+export function tokenCredentials(accessToken: string): string {
+	return JSON.stringify({ claudeAiOauth: { accessToken, scopes: TOKEN_SCOPES } });
+}
+
+/**
  * Rejects credentials with no access token, and ones that are unrecoverably dead —
  * an unusable snapshot would otherwise get injected verbatim and leave the container
  * looking "logged in" (file present) while `claude` inside it isn't. A merely-stale
@@ -43,17 +62,14 @@ export function isValid(json: string): boolean {
 }
 
 /**
- * Shell test for a *live* credential file at `"$f"` — one that would actually sign
- * `claude` in. A mere existence check isn't enough: when an in-container refresh is
- * rejected (see the shared-lineage caveat in `apply` below), `claude` doesn't delete
- * the file, it rewrites it in place with `accessToken`/`refreshToken` blanked and
- * `expiresAt: 0`. That file is several hundred bytes, so `[ -s ]` reports it as
- * present and the health list shows a green Claude Code row for a signed-out
- * container. Collapsing whitespace first keeps this working whether the file is
- * written compact (what `claude` does today) or pretty-printed.
+ * Shell test for a *live* credential file at `"$f"`. Existence isn't enough: when an
+ * in-container refresh is rejected (see the shared-lineage caveat below), `claude`
+ * blanks the tokens in place rather than deleting the file, leaving several hundred
+ * bytes that `[ -s ]` happily reports as a healthy login. All whitespace is stripped
+ * first so this holds whether the file is written compact or pretty-printed.
  */
 export const LIVE_CREDENTIALS_TEST =
-	'[ -s "$f" ] && tr -d \' \\n\' < "$f" | grep -q \'"accessToken":"[^"]\'';
+	'[ -s "$f" ] && tr -d \'[:space:]\' < "$f" | grep -q \'"accessToken":"[^"]\'';
 
 /**
  * Locate the host's Claude Code OAuth credentials, returning both the JSON string
@@ -64,12 +80,13 @@ async function locateClaudeCredentials(): Promise<{ creds: string; source: strin
 	// A token set in Settings wins, then the env override, then host discovery.
 	const manual = manualClaudeToken();
 	if (manual) {
-		const creds = JSON.stringify({ claudeAiOauth: { accessToken: manual } });
-		return { creds, source: 'Settings — manual token' };
+		return { creds: tokenCredentials(manual), source: 'Settings — manual token' };
 	}
 	if (CLAUDE_CODE_TOKEN) {
-		const creds = JSON.stringify({ claudeAiOauth: { accessToken: CLAUDE_CODE_TOKEN } });
-		return { creds, source: 'CODEBAY_CLAUDE_CODE_TOKEN env var' };
+		return {
+			creds: tokenCredentials(CLAUDE_CODE_TOKEN),
+			source: 'CODEBAY_CLAUDE_CODE_TOKEN env var'
+		};
 	}
 
 	if (process.platform === 'darwin') {
@@ -120,14 +137,11 @@ async function injectClaudeCredentials(
  * authorized without a fresh login. Containers are throwaway, so we copy auth into
  * each one. Skipped (with a log line) when the host has no credentials.
  *
- * Shared-lineage caveat: this is a one-time snapshot taken at boot, and OAuth refresh
- * tokens rotate — each refresh mints a new one and invalidates its predecessor. So a
- * snapshot of a *live* login (the keychain / `.credentials.json` path) hands the same
- * lineage to both the host and the container, and the first one to refresh silently
- * logs the other out. It's the same story between two containers seeded from one host
- * login. A non-rotating token (`claude setup-token` → the Settings manual token or
- * `CODEBAY_CLAUDE_CODE_TOKEN`) is the only way to share one login across several
- * `claude` installs; re-injecting on failure would only reverse who loses.
+ * Shared-lineage caveat: this snapshot is taken once at boot, and OAuth refresh tokens
+ * rotate — each refresh invalidates its predecessor. Snapshotting a *live* login hands
+ * one lineage to two `claude` installs, and whichever refreshes first logs the other
+ * out. Only a non-rotating `claude setup-token` fixes that; re-injecting on failure
+ * would just reverse who loses.
  */
 export const claudeCodeCredentials: Injection = {
 	id: 'claude-code-credentials',
