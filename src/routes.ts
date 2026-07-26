@@ -50,6 +50,12 @@ import { wsUpgradeAllowed } from './lib/auth.server.ts';
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
+import {
+	cancelSetupToken,
+	claudeCliPath,
+	startSetupToken,
+	submitSetupCode
+} from './lib/claude-setup-token.server.ts';
 
 async function preflight() {
 	const [docker, cli, auth] = await Promise.all([
@@ -190,6 +196,9 @@ export const routes: Record<string, MochiRouteValue> = {
 				manualTokensEnabled: getOption('manual_tokens_enabled') === '1',
 				githubTokenSet: !!getOption('manual_github_token'),
 				claudeTokenSet: !!getOption('manual_claude_code_token'),
+				// Gates the "sign in with your browser" button: without the host CLI there
+				// is nothing to drive, so only the paste-a-token field is offered.
+				claudeCliAvailable: !!claudeCliPath(),
 				// Custom endpoint (LiteLLM / Bedrock): toggle state, base URL (non-secret),
 				// whether the token is set (never the secret value), and model IDs prefilled
 				// from the module defaults when not yet customised.
@@ -243,6 +252,37 @@ export const routes: Record<string, MochiRouteValue> = {
 				const value = str(formData, 'claudeToken');
 				setOption('manual_claude_code_token', value);
 				return success({ set: value.length > 0 });
+			},
+
+			// Browser sign-in for the Claude token: drives the host's `claude setup-token`
+			// under a PTY so the user doesn't have to leave the UI for a terminal. Two
+			// steps, because the CLI's OAuth redirect lands on platform.claude.com rather
+			// than a loopback callback and it ends by asking for the code to be pasted
+			// back — `start` opens the browser and returns the sign-in link, `finish`
+			// types the code in and stores the minted token like any manual one.
+			claudeSetupStart: async () => {
+				try {
+					const { authorizeUrl, token } = await startSetupToken();
+					// A CLI that ever completes without prompting: take the token and stop.
+					if (token) setOption('manual_claude_code_token', token);
+					return success({ authorizeUrl, set: !!token });
+				} catch (err) {
+					return fail(400, { error: (err as Error).message });
+				}
+			},
+			claudeSetupFinish: async ({ formData }) => {
+				const code = str(formData, 'code');
+				if (!code) return fail(400, { error: 'Paste the code from the browser page first.' });
+				try {
+					setOption('manual_claude_code_token', await submitSetupCode(code));
+					return success({ set: true });
+				} catch (err) {
+					return fail(400, { error: (err as Error).message });
+				}
+			},
+			claudeSetupCancel: () => {
+				cancelSetupToken();
+				return success({});
 			},
 
 			// Custom LiteLLM / Bedrock endpoint: toggle + individual field saves. The token

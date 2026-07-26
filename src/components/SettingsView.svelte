@@ -34,6 +34,7 @@
 		manualTokensEnabled,
 		githubTokenSet,
 		claudeTokenSet,
+		claudeCliAvailable,
 		customEndpointEnabled,
 		customEndpointBaseUrl,
 		customEndpointTokenSet,
@@ -53,6 +54,7 @@
 		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
 		claudeTokenSet: boolean;
+		claudeCliAvailable: boolean;
 		customEndpointEnabled: boolean;
 		customEndpointBaseUrl: string;
 		customEndpointTokenSet: boolean;
@@ -263,6 +265,63 @@
 			claudeSaved = data?.set ?? false;
 			claudeToken = '';
 			claudeMsg = claudeSaved ? 'Saved.' : 'Cleared.';
+		}
+	});
+
+	// Browser sign-in — runs `claude setup-token` on the host. The CLI opens a
+	// browser and then waits for the code from the redirect page to be typed back,
+	// so this is a two-step flow with a live child process on the server between
+	// the steps: "start" (browser opens, CLI parked at its prompt) then "finish"
+	// (code typed in, token minted). `authorizeUrl` is the CLI's own "browser
+	// didn't open?" link, worth surfacing when the host's browser isn't the one in
+	// front of the user.
+	let setupPhase = $state<'idle' | 'awaiting-code'>('idle');
+	let setupAuthorizeUrl = $state<string | null>(null);
+	let setupCode = $state('');
+	let startingSetup = $state(false);
+	let finishingSetup = $state(false);
+	let setupMsg = $state<string | null>(null);
+	let setupError = $state<string | null>(null);
+
+	const setupStartOpts = saveOpts<{ authorizeUrl: string | null; set: boolean }>({
+		setSaving: (v) => (startingSetup = v),
+		setError: (v) => (setupError = v),
+		setMsg: (v) => (setupMsg = v),
+		onSuccess: (data) => {
+			// A CLI build that finishes without prompting has already been saved.
+			if (data?.set) {
+				claudeSaved = true;
+				setupMsg = 'Signed in — token saved.';
+				return;
+			}
+			setupAuthorizeUrl = data?.authorizeUrl ?? null;
+			setupPhase = 'awaiting-code';
+			setupMsg = 'Approve the sign-in in the browser, then paste the code it shows.';
+		}
+	});
+
+	const setupFinishOpts = saveOpts<{ set: boolean }>({
+		setSaving: (v) => (finishingSetup = v),
+		setError: (v) => (setupError = v),
+		setMsg: (v) => (setupMsg = v),
+		onSuccess: () => {
+			claudeSaved = true;
+			claudeToken = '';
+			setupCode = '';
+			setupAuthorizeUrl = null;
+			setupPhase = 'idle';
+			setupMsg = 'Signed in — token saved.';
+		}
+	});
+
+	const setupCancelOpts = saveOpts({
+		setSaving: () => {},
+		setError: (v) => (setupError = v),
+		setMsg: (v) => (setupMsg = v),
+		onSuccess: () => {
+			setupPhase = 'idle';
+			setupCode = '';
+			setupAuthorizeUrl = null;
 		}
 	});
 
@@ -741,6 +800,70 @@
 						<div class="msg ok">{claudeMsg}</div>
 					{/if}
 				</form>
+
+				{#if claudeCliAvailable}
+					<!-- Not one <form>: start / finish / cancel post to three different
+					     actions, so each control carries its own. -->
+					<div class="row divided token-row">
+						<div class="label">
+							<div class="text">
+								<div class="name">Or sign in with your browser</div>
+								<div class="desc">
+									Runs <code>claude setup-token</code> on the machine hosting Codebay and saves the token
+									it mints. The browser opens on that machine — if it isn't this one, use the link that
+									appears.
+								</div>
+							</div>
+						</div>
+						<div class="image-controls setup-controls">
+							{#if setupPhase === 'awaiting-code'}
+								<form
+									class="grow"
+									method="POST"
+									action="?/claudeSetupFinish"
+									{@attach enhance(setupFinishOpts)}
+								>
+									<input
+										type="text"
+										name="code"
+										class="image-input"
+										bind:value={setupCode}
+										spellcheck="false"
+										autocapitalize="off"
+										autocorrect="off"
+										autocomplete="off"
+										placeholder="Paste the code from the browser"
+									/>
+									<Button type="submit" variant="primary" disabled={finishingSetup}>
+										{finishingSetup ? 'Finishing…' : 'Finish'}
+									</Button>
+								</form>
+								<form method="POST" action="?/claudeSetupCancel" {@attach enhance(setupCancelOpts)}>
+									<Button type="submit">Cancel</Button>
+								</form>
+							{:else}
+								<form method="POST" action="?/claudeSetupStart" {@attach enhance(setupStartOpts)}>
+									<Button type="submit" disabled={startingSetup}>
+										{startingSetup ? 'Opening browser…' : 'Run claude setup-token'}
+									</Button>
+								</form>
+							{/if}
+						</div>
+						{#if setupError}
+							<div class="msg error">{setupError}</div>
+						{:else if setupMsg}
+							<div class="msg ok">{setupMsg}</div>
+						{/if}
+						{#if setupPhase === 'awaiting-code' && setupAuthorizeUrl}
+							<div class="msg ok">
+								Browser didn't open?
+								<a href={setupAuthorizeUrl} target="_blank" rel="noopener noreferrer">
+									Open the sign-in page
+								</a>
+							</div>
+						{/if}
+					</div>
+				{/if}
 			{/if}
 		</section>
 
@@ -1261,6 +1384,20 @@
 	/* Default-image editor: input + Save, stacked under the label on narrow widths. */
 	.image-row {
 		flex-wrap: wrap;
+	}
+	/* Browser sign-in row: its controls live in their own <form>s (three actions),
+	   so each form has to lay out like the plain input+button rows around it. */
+	.setup-controls form {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.setup-controls form.grow {
+		flex: 1;
+		min-width: 0;
+	}
+	.msg a {
+		color: inherit;
 	}
 	/* Manual-token rows: same input+Save layout, allowed to wrap so the help text and
 	   the "Saved." message drop below the field on narrow widths. */
