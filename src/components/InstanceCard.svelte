@@ -23,6 +23,15 @@
 		oncommitrename: () => void;
 		oncancelrename: () => void;
 	} = $props();
+
+	// Start/Stop only cycle the existing container; rebuild is what re-runs the
+	// injections (credentials, hooks, port forwards). Offered wherever there's a
+	// container to replace — never while one is already building.
+	const canRebuild = $derived(
+		instance.status === 'running' ||
+			instance.status === 'stopped' ||
+			(instance.status === 'error' && !!instance.container_id)
+	);
 </script>
 
 <li class="card panel">
@@ -70,23 +79,18 @@
 		{#if instance.status === 'running'}
 			<Button variant="primary" size="sm" href={`/ide/${instance.id}`}>Open IDE</Button>
 			<Button size="sm" onclick={() => onact('stop')}>Stop</Button>
-			<!-- Start/Stop only cycle the existing container; rebuild is the one action
-			     that recreates it, and so the only one that re-runs the injections. -->
-			<Button
-				size="sm"
-				title="Recreate the container and re-run setup (credentials, hooks, port forwards)"
-				onclick={() => onact('rebuild')}>Rebuild</Button
-			>
 		{:else if instance.status === 'stopped' || (instance.status === 'error' && instance.container_id)}
 			<Button size="sm" onclick={() => onact('start')}>Start</Button>
-			<Button
-				size="sm"
-				title="Recreate the container and re-run setup (credentials, hooks, port forwards)"
-				onclick={() => onact('rebuild')}>Rebuild</Button
-			>
 		{:else if instance.status === 'creating'}
 			<Button size="sm" href={`/instances/${instance.id}`} target="_blank" rel="noopener noreferrer"
 				>View logs</Button
+			>
+		{/if}
+		{#if canRebuild}
+			<Button
+				size="sm"
+				title="Recreate the container and re-run setup (credentials, hooks, port forwards)"
+				onclick={() => onact('rebuild')}>Rebuild</Button
 			>
 		{/if}
 		<Button
