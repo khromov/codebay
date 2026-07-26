@@ -131,6 +131,15 @@
 	// loader so switching to a freshly-mounted IDE shows a readout, not blank white.
 	const loadedFrames = new SvelteSet<string>();
 
+	// Instances whose code-server has answered its health probe at least once.
+	// `status === 'running'` only means the *container* is up — code-server binds its
+	// port some seconds later, and pointing an iframe at it before then renders the
+	// proxy's "not accepting connections yet" 503 inside the pane. Sticky on purpose:
+	// once an editor is live we keep it mounted through later probe failures, so a
+	// transient blip never tears down a working session. Cleared when an instance
+	// leaves `running` (e.g. a rebuild), which re-arms the gate for the new container.
+	const everReady = new SvelteSet<string>();
+
 	// Keep the document title in step with the focused instance.
 	$effect(() => {
 		const inst = running.find((i) => i.id === active);
@@ -163,8 +172,21 @@
 					livePreflight = { ...livePreflight, docker: msg.data.docker, cli: msg.data.cli };
 					return;
 				}
+				if (msg.type === 'health') {
+					if (msg.data.health.codeServerAccessible) everReady.add(msg.data.id);
+					return;
+				}
 				if (msg.type !== 'instances') return;
 				const next = msg.data;
+				// Re-arm the IDE gate for anything that has left `running`: its container
+				// is being replaced (rebuild) or is gone, so the next one has to prove
+				// code-server is up again before we mount an iframe at its port.
+				for (const inst of next) {
+					if (inst.status !== 'running') {
+						everReady.delete(inst.id);
+						loadedFrames.delete(inst.id);
+					}
+				}
 				const nextAttention: Record<string, 'done' | 'waiting' | null> = {};
 				for (const inst of next) nextAttention[inst.id] = inst.attention;
 				if (primed) {
@@ -237,9 +259,11 @@
 		{#each running as inst (inst.id)}
 			{#if visited.has(inst.id)}
 				<div class="pane" class:active={inst.id === active}>
-					<iframe src={ideUrl(inst)} title={inst.name} onload={() => loadedFrames.add(inst.id)}
-					></iframe>
-					{#if !loadedFrames.has(inst.id)}
+					{#if everReady.has(inst.id)}
+						<iframe src={ideUrl(inst)} title={inst.name} onload={() => loadedFrames.add(inst.id)}
+						></iframe>
+					{/if}
+					{#if !everReady.has(inst.id) || !loadedFrames.has(inst.id)}
 						<IdeLoader />
 					{/if}
 				</div>
