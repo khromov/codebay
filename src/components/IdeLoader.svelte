@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Button from './Button.svelte';
+
 	// Dot-matrix "data streaming" loader shown while a code-server iframe boots.
 	// Each tick flips a fixed number of randomly-chosen bits so the readout looks
 	// like flowing data on the LCD-style panel — a steady amount of change every
@@ -7,7 +9,23 @@
 	// `speed` is a multiplier on the readout's pace: 1 is the default calm cadence,
 	// 2 runs twice as fast, 0.5 half as fast. It scales the tick interval only —
 	// the per-tick churn stays fixed so the cadence reads as even at any speed.
-	let { speed = 1 }: { speed?: number } = $props();
+	//
+	// `stalledAfterMs`/`onoverride` are for a wait that could in principle never end:
+	// the IDE panes hold this loader until a health probe says code-server is
+	// answering, so after that long we say what we're waiting for and offer a way
+	// past it. Omitted (the default) means the wait is bounded and needs neither.
+	let {
+		speed = 1,
+		stalledAfterMs,
+		onoverride
+	}: { speed?: number; stalledAfterMs?: number; onoverride?: () => void } = $props();
+
+	let stalled = $state(false);
+	$effect(() => {
+		if (stalledAfterMs === undefined) return;
+		const timer = setTimeout(() => (stalled = true), stalledAfterMs);
+		return () => clearTimeout(timer);
+	});
 
 	const ROWS = 3;
 	const COLS = 22;
@@ -46,6 +64,14 @@
 	<div class="label">
 		Loading editor<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
 	</div>
+	{#if stalled}
+		<div class="stalled">
+			<p>Waiting for code-server to answer inside the container.</p>
+			{#if onoverride}
+				<Button size="sm" onclick={onoverride}>Open anyway</Button>
+			{/if}
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -76,6 +102,23 @@
 		text-transform: uppercase;
 		letter-spacing: 0.18em;
 		color: var(--ink-soft);
+	}
+	/* Only shown once the wait has run long enough to look wedged, so it reads as an
+	   explanation rather than part of the normal boot chrome. */
+	.stalled {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 12px;
+		max-width: 34ch;
+		text-align: center;
+	}
+	.stalled p {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: 13px;
+		line-height: 1.5;
+		color: var(--ink-faint);
 	}
 	.dot {
 		animation: blink 1.2s ease-in-out infinite;
