@@ -90,6 +90,9 @@
 
 	// --- IdeLoader controls ---
 	let loaderSpeed = $state(1);
+	// The stalled state normally needs a 10s wait on a wedged health probe to appear;
+	// `stalledAfterMs: 0` renders it straight away so it's inspectable here.
+	let loaderStalled = $state(false);
 
 	// --- CredMenu controls ---
 	// Seed from the server's real preflight so the menu mirrors `/`; the presets
@@ -282,12 +285,22 @@
 
 		<ComponentDemo title="IdeLoader">
 			<div class="loader-stage">
-				<IdeLoader speed={loaderSpeed} />
+				{#key loaderStalled}
+					<IdeLoader
+						speed={loaderSpeed}
+						stalledAfterMs={loaderStalled ? 0 : undefined}
+						onoverride={loaderStalled ? () => {} : undefined}
+					/>
+				{/key}
 			</div>
 			{#snippet controls()}
 				<label>
 					<span>speed ({loaderSpeed.toFixed(2)}×)</span>
 					<input type="range" min="0.25" max="3" step="0.25" bind:value={loaderSpeed} />
+				</label>
+				<label>
+					<input type="checkbox" bind:checked={loaderStalled} />
+					<span>stalled (probe never answered)</span>
 				</label>
 			{/snippet}
 		</ComponentDemo>
