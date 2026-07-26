@@ -43,6 +43,19 @@ export function isValid(json: string): boolean {
 }
 
 /**
+ * Shell test for a *live* credential file at `"$f"` — one that would actually sign
+ * `claude` in. A mere existence check isn't enough: when an in-container refresh is
+ * rejected (see the shared-lineage caveat in `apply` below), `claude` doesn't delete
+ * the file, it rewrites it in place with `accessToken`/`refreshToken` blanked and
+ * `expiresAt: 0`. That file is several hundred bytes, so `[ -s ]` reports it as
+ * present and the health list shows a green Claude Code row for a signed-out
+ * container. Collapsing whitespace first keeps this working whether the file is
+ * written compact (what `claude` does today) or pretty-printed.
+ */
+export const LIVE_CREDENTIALS_TEST =
+	'[ -s "$f" ] && tr -d \' \\n\' < "$f" | grep -q \'"accessToken":"[^"]\'';
+
+/**
  * Locate the host's Claude Code OAuth credentials, returning both the JSON string
  * and a human-readable description of where it came from, or null if absent.
  * macOS keeps them in the login Keychain; Linux/others use ~/.claude/.credentials.json.
@@ -106,6 +119,15 @@ async function injectClaudeCredentials(
  * Inject the host's Claude Code OAuth credentials so the in-container `claude` is
  * authorized without a fresh login. Containers are throwaway, so we copy auth into
  * each one. Skipped (with a log line) when the host has no credentials.
+ *
+ * Shared-lineage caveat: this is a one-time snapshot taken at boot, and OAuth refresh
+ * tokens rotate — each refresh mints a new one and invalidates its predecessor. So a
+ * snapshot of a *live* login (the keychain / `.credentials.json` path) hands the same
+ * lineage to both the host and the container, and the first one to refresh silently
+ * logs the other out. It's the same story between two containers seeded from one host
+ * login. A non-rotating token (`claude setup-token` → the Settings manual token or
+ * `CODEBAY_CLAUDE_CODE_TOKEN`) is the only way to share one login across several
+ * `claude` installs; re-injecting on failure would only reverse who loses.
  */
 export const claudeCodeCredentials: Injection = {
 	id: 'claude-code-credentials',
@@ -137,8 +159,8 @@ export const claudeCodeCredentials: Injection = {
 	async check(target) {
 		return checkPresence(
 			target,
-			'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
-				'[ -s "$d/.credentials.json" ] && echo 1 || echo 0'
+			'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; f="$d/.credentials.json"; ' +
+				`if ${LIVE_CREDENTIALS_TEST}; then echo 1; else echo 0; fi`
 		);
 	}
 };

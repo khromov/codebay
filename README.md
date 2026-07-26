@@ -22,6 +22,18 @@ The app copies your Claude Code credentials and installs the attention hooks int
 
   (The feature installs Node.js if it isn't already present.) Alternatively, install it yourself in your Dockerfile, e.g. `npm install -g @anthropic-ai/claude-code`.
 
+### Sharing one Claude login
+
+Credentials are copied into each container **once, at boot**. That's fine for a token that doesn't change, but OAuth refresh tokens rotate: every refresh mints a new one and invalidates its predecessor. Copying a live login therefore hands the same credential to two `claude` installs, and the first one to refresh silently logs the other out — the container's `claude` blanks its own credentials file and asks you to sign in again, while your host stays signed in (or vice versa). The same applies to two containers seeded from one host login.
+
+To share a login across containers, use a non-rotating token instead:
+
+```sh
+export CODEBAY_CLAUDE_CODE_TOKEN=$(claude setup-token)
+```
+
+or paste it into **Settings → set tokens manually**. Both take precedence over host discovery. Reading the host's keychain / `~/.claude/.credentials.json` still works and stays the zero-config default; just expect to re-create an instance when it drifts.
+
 ## Container injections
 
 After `devcontainer up`, the app installs a few things into each container. Each is a self-contained module under `src/container-injections/` (add or remove one by editing that directory's registry):
@@ -133,6 +145,7 @@ host paths, so put `CODEBAY_DATA_DIR` **under `$HOME`** (e.g. `$HOME/.codebay`);
 - `DOCKER_HOST` — Docker daemon socket/URL to connect to (e.g. `unix://$HOME/.colima/default/docker.sock` or `tcp://1.2.3.4:2375`); defaults to your active Docker context
 - `BASIC_AUTH_PASSWORD` — enables HTTP Basic Auth over the whole UI (disabled when unset)
 - `MOCHI_KEY` — base64url-encoded 32-byte secret; set it for persistent deployments so signed image URLs and island props survive restarts (a random key is generated when unset)
-- `CODEBAY_CLAUDE_CODE_TOKEN` — inject this Claude Code OAuth token into every container instead of discovering the host's credentials (e.g. from `claude setup-token`)
+- `CODEBAY_CLAUDE_CODE_TOKEN` — inject this Claude Code OAuth token into every container instead of discovering the host's credentials (e.g. from `claude setup-token`); recommended, see [Sharing one Claude login](#sharing-one-claude-login)
+- `CODEBAY_CLAUDE_KEYCHAIN_SERVICE` — macOS Keychain service to read Claude Code credentials from (default `Claude Code-credentials`). Set this if your `claude` runs under a custom `CLAUDE_CONFIG_DIR`, which gives its keychain entry a suffix (e.g. `Claude Code-credentials-c5a249db`)
 - `CODEBAY_GITHUB_TOKEN` — inject this GitHub token into every container instead of reading `gh auth token` from the host
 - `DISABLE_OPEN_BROWSER=1` — skip opening the browser on startup
