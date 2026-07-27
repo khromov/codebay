@@ -60,6 +60,14 @@ describe('injection registry', () => {
 		expect(aliases!.auth).toBeUndefined();
 	});
 
+	test('claude-no-coauthor is registered with a health check', () => {
+		const noCoauthor = injections.find((i) => i.id === 'claude-no-coauthor');
+		expect(noCoauthor).toBeDefined();
+		expect(typeof noCoauthor!.check).toBe('function');
+		// No host dependency, so no auth chip — this is a Codebay-wide default.
+		expect(noCoauthor!.auth).toBeUndefined();
+	});
+
 	test('claude-statusline is registered with an auth chip and a health check', () => {
 		const statusline = injections.find((i) => i.id === 'claude-statusline');
 		expect(statusline).toBeDefined();
