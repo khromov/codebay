@@ -33,12 +33,17 @@ const HOOK_LOG = '${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.bridge-hook.log';
  * status on a 4xx (e.g. a 403 token mismatch) rather than curl bailing early;
  * `curl_exit` distinguishes "couldn't reach the server" (non-zero) from "reached
  * it, got an HTTP status" (zero, read `http`).
+ *
+ * The explicit `Content-Type: application/json` isn't for the route (it never
+ * parses a body) — it keeps Mochi's CSRF guard from treating this header-less
+ * POST as a non-preflighted form submission, which is how a request with no
+ * `Content-Type` at all reads to that check.
  */
 function hookFor(id: string, state: 'done' | 'waiting' | 'busy') {
 	const url = `${bridgeUrl()}?id=${encodeURIComponent(id)}&state=${state}`;
 	const command =
 		`log="${HOOK_LOG}"; ` +
-		`http=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' -X POST -H @"${HEADER_FILE}" '${url}' 2>>"$log"); ` +
+		`http=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H @"${HEADER_FILE}" '${url}' 2>>"$log"); ` +
 		`rc=$?; ` +
 		`printf '[%s] state=${state} http=%s curl_exit=%s\\n' "$(date -Is 2>/dev/null || date)" "$http" "$rc" >> "$log" 2>/dev/null; ` +
 		// Keep the log bounded without a race window that could lose the file.

@@ -48,6 +48,9 @@ await Mochi.serve({
 		// authenticates by a per-instance bearer token (see auth.server.ts / routes.ts),
 		// not by ambient browser credentials, so classic CSRF doesn't apply. Returning
 		// null bypasses the block; anything else delegates to Mochi's default decision.
+		// Belt-and-suspenders: the curl already sends `Content-Type: application/json`
+		// (attention-hooks.ts) so Mochi's check exits before it would ever log/block —
+		// this filter only matters if a future bridge caller sends a form content type.
 		'csrf:check': (decision, { url }) =>
 			url.pathname.startsWith('/api/bridge/') ? null : decision,
 		'consoleLogger:line': (line, ctx) => {
