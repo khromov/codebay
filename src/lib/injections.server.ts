@@ -11,6 +11,7 @@ import { attentionHooks } from '../container-injections/attention-hooks.ts';
 import { claudeStatusline } from '../container-injections/claude-statusline.ts';
 import { claudeSkipPermissions } from '../container-injections/claude-skip-permissions.ts';
 import { claudeAliases } from '../container-injections/claude-aliases.ts';
+import { claudeNoCoauthor } from '../container-injections/claude-no-coauthor.ts';
 import { hostEnvVars } from '../container-injections/host-env-vars.ts';
 
 /**
@@ -76,6 +77,7 @@ const BASE_INJECTIONS_TAIL: Injection[] = [
 	claudeStatusline,
 	claudeSkipPermissions,
 	claudeAliases,
+	claudeNoCoauthor,
 	hostEnvVars
 ];
 
