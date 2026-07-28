@@ -7,6 +7,7 @@
 	import SunMoon from '@lucide/svelte/icons/sun-moon';
 	import ThemePicker from './ThemePicker.svelte';
 	import Layers from '@lucide/svelte/icons/layers';
+	import FolderMinus from '@lucide/svelte/icons/folder-minus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Hammer from '@lucide/svelte/icons/hammer';
 	import KeyRound from '@lucide/svelte/icons/key-round';
@@ -30,6 +31,8 @@
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
+		copyIgnorePatterns,
+		builtinCopyIgnore,
 		dockerArch,
 		manualTokensEnabled,
 		githubTokenSet,
@@ -49,6 +52,8 @@
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
+		copyIgnorePatterns: string;
+		builtinCopyIgnore: string;
 		dockerArch: string | null;
 		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
@@ -165,6 +170,31 @@
 		// reads the input's value via FormData — otherwise it would submit the stale value.
 		flushSync(() => (image = builtinImage));
 		imageFormEl?.requestSubmit();
+	}
+
+	// Copy-ignore patterns — same one-form-two-actions shape as the default image: an
+	// empty value is valid and means "copy everything" (unlike the image field, which
+	// requires non-empty), so it's saved as typed rather than validated.
+	// svelte-ignore state_referenced_locally
+	let copyIgnore = $state(copyIgnorePatterns);
+	let savingCopyIgnore = $state(false);
+	let copyIgnoreError = $state<string | null>(null);
+	let copyIgnoreSaved = $state(false);
+	let copyIgnoreFormEl: HTMLFormElement | undefined;
+
+	const copyIgnoreOpts = saveOpts<{ patterns: string }>({
+		setSaving: (v) => (savingCopyIgnore = v),
+		setError: (v) => (copyIgnoreError = v),
+		setMsg: (v) => (copyIgnoreSaved = !!v),
+		onSuccess: (data) => {
+			copyIgnore = data?.patterns ?? copyIgnore;
+			copyIgnoreSaved = true;
+		}
+	});
+
+	function resetCopyIgnore() {
+		flushSync(() => (copyIgnore = builtinCopyIgnore));
+		copyIgnoreFormEl?.requestSubmit();
 	}
 
 	// Build cache — the DB-backed "disable cache" flag is the source of truth (unlike
@@ -522,6 +552,54 @@
 				{#if imageError}
 					<div class="msg error">{imageError}</div>
 				{:else if imageSaved}
+					<div class="msg ok">Saved.</div>
+				{/if}
+			</form>
+		</section>
+
+		<section class="card">
+			<form
+				class="row image-row"
+				method="POST"
+				action="?/copyIgnorePatterns"
+				bind:this={copyIgnoreFormEl}
+				{@attach enhance(copyIgnoreOpts)}
+			>
+				<div class="label">
+					<FolderMinus size={18} />
+					<div class="text">
+						<div class="name">Skip when copying a local folder</div>
+						<div class="desc">
+							Comma-separated folder/file names excluded when copying a local source folder into a
+							new instance's workspace. Leave blank to copy everything. Only applies to local
+							folders — cloning a Git repo URL is unaffected.
+						</div>
+					</div>
+				</div>
+				<div class="image-controls">
+					<input
+						type="text"
+						name="patterns"
+						class="image-input"
+						bind:value={copyIgnore}
+						spellcheck="false"
+						autocapitalize="off"
+						autocorrect="off"
+						placeholder="node_modules, .venv, dist"
+					/>
+					<Button type="submit" disabled={savingCopyIgnore}>Save</Button>
+					<Button
+						type="button"
+						icon={RotateCcw}
+						disabled={savingCopyIgnore}
+						onclick={resetCopyIgnore}
+						title="Reset to default ({builtinCopyIgnore})"
+						aria-label="Reset to default copy-ignore patterns"
+					/>
+				</div>
+				{#if copyIgnoreError}
+					<div class="msg error">{copyIgnoreError}</div>
+				{:else if copyIgnoreSaved}
 					<div class="msg ok">Saved.</div>
 				{/if}
 			</form>

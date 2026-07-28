@@ -7,6 +7,8 @@
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
+		copyIgnorePatterns,
+		builtinCopyIgnore,
 		dockerArch,
 		manualTokensEnabled,
 		githubTokenSet,
@@ -26,6 +28,8 @@
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
+		copyIgnorePatterns: string;
+		builtinCopyIgnore: string;
 		dockerArch: string | null;
 		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
@@ -48,6 +52,8 @@
 	{defaultImage}
 	{builtinImage}
 	{disableBuildCache}
+	{copyIgnorePatterns}
+	{builtinCopyIgnore}
 	{dockerArch}
 	{manualTokensEnabled}
 	{githubTokenSet}

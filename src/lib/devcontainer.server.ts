@@ -3,13 +3,7 @@ import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT as TMUX_INSTALL_SCRIPT } from '../container-injections/tmux.ts';
-import {
-	CODE_SERVER_PORT,
-	COPY_IGNORE,
-	DEFAULT_IMAGE,
-	devcontainerBin,
-	dockerEnv
-} from './config.server.ts';
+import { CODE_SERVER_PORT, DEFAULT_IMAGE, devcontainerBin, dockerEnv } from './config.server.ts';
 import { spawnCapture } from './spawn.server.ts';
 import type { PortForward } from '../types.ts';
 
@@ -76,6 +70,8 @@ const CODE_SERVER_SETTINGS = {
 	'workbench.colorTheme': 'Default Dark Modern',
 	'workbench.secondarySideBar.defaultVisibility': 'hidden',
 	'chat.commandCenter.enabled': false,
+	// Instances are throwaway sandboxes — never nag to install recommended extensions.
+	'extensions.ignoreRecommendations': true,
 	// Run the folderOpen Terminal task (below) without prompting on first open.
 	'task.allowAutomaticTasks': 'on',
 	// Defeat restricted mode (Workspace Trust) so the folderOpen task can run — automatic
@@ -150,13 +146,17 @@ export async function devcontainerCliAvailable(): Promise<boolean> {
 	return (await spawnCapture([devcontainerBin(), '--version'])) !== null;
 }
 
-/** Recursively copy a source folder into the instance workspace, skipping COPY_IGNORE dirs. */
-export async function copyWorkspace(source: string, dest: string): Promise<void> {
+/** Recursively copy a source folder into the instance workspace, skipping basenames in `ignore`. */
+export async function copyWorkspace(
+	source: string,
+	dest: string,
+	ignore: Set<string>
+): Promise<void> {
 	await mkdir(dest, { recursive: true });
 	await cp(source, dest, {
 		recursive: true,
 		dereference: false,
-		filter: (src) => !COPY_IGNORE.has(basename(src))
+		filter: (src) => !ignore.has(basename(src))
 	});
 }
 

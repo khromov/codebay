@@ -43,6 +43,7 @@
 				class="name-edit"
 				bind:value={editingName}
 				autofocus
+				onfocus={(e) => (e.currentTarget as HTMLInputElement).select()}
 				onblur={oncommitrename}
 				onkeydown={(e) => {
 					if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();

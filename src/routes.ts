@@ -45,7 +45,7 @@ import {
 	listFolderHistory,
 	setOption
 } from './lib/db.server.ts';
-import { DEFAULT_IMAGE } from './lib/config.server.ts';
+import { DEFAULT_COPY_IGNORE, DEFAULT_IMAGE } from './lib/config.server.ts';
 import { wsUpgradeAllowed } from './lib/auth.server.ts';
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
@@ -184,6 +184,11 @@ export const routes: Record<string, MochiRouteValue> = {
 				defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
 				builtinImage: DEFAULT_IMAGE,
 				disableBuildCache: getOption('disable_build_cache') === '1',
+				// Comma-separated basenames skipped when copying a local source folder into an
+				// instance workspace. Unset falls back to the built-in default; an explicit empty
+				// string (as opposed to unset) means "copy everything".
+				copyIgnorePatterns: getOption('copy_ignore_patterns') ?? DEFAULT_COPY_IGNORE,
+				builtinCopyIgnore: DEFAULT_COPY_IGNORE,
 				dockerArch: await dockerArch(),
 				// Manual token overrides: send only whether each is set (never the secret
 				// value itself) plus the toggle state, so the page can render placeholders.
@@ -223,6 +228,15 @@ export const routes: Record<string, MochiRouteValue> = {
 				const enabled = onChecked(formData, 'enabled');
 				setOption('disable_build_cache', enabled ? '1' : '0');
 				return success({ enabled });
+			},
+
+			// Comma-separated basenames to skip when copying a local source folder into an
+			// instance workspace. Unlike defaultImage, an empty value is valid and explicitly
+			// means "copy everything" — so it's saved as-is rather than rejected.
+			copyIgnorePatterns: ({ formData }) => {
+				const patterns = str(formData, 'patterns');
+				setOption('copy_ignore_patterns', patterns);
+				return success({ patterns });
 			},
 
 			// Manual credential toggle + individual token saves. Overrides host credential

@@ -89,11 +89,23 @@ export const CLAUDE_KEYCHAIN_SERVICE =
 	process.env.CODEBAY_CLAUDE_KEYCHAIN_SERVICE?.trim() || 'Claude Code-credentials';
 
 /**
- * Directories skipped when copying a source folder into an instance workspace.
- * `.git` is intentionally kept so each instance retains its history/remote and
- * `git pull`/`push` work (authenticated by the injected gh credentials).
+ * Default value of the "copy ignore patterns" setting: directories skipped when
+ * copying a source folder into an instance workspace. `.git` is intentionally never
+ * included so each instance retains its history/remote and `git pull`/`push` work
+ * (authenticated by the injected gh credentials). Configurable in Settings; an
+ * explicit empty string (as opposed to unset) means "copy everything".
  */
-export const COPY_IGNORE = new Set(['node_modules']);
+export const DEFAULT_COPY_IGNORE = 'node_modules';
+
+/** Parse a comma-separated basename list into the set `copyWorkspace`'s filter matches against. */
+export function parseCopyIgnore(raw: string): Set<string> {
+	return new Set(
+		raw
+			.split(',')
+			.map((p) => p.trim())
+			.filter(Boolean)
+	);
+}
 
 /**
  * Docker daemon to connect to, e.g. `unix:///var/run/docker.sock`,

@@ -1,6 +1,13 @@
 import { rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { CODE_SERVER_PORT, DATA_DIR, DEFAULT_IMAGE, INSTANCES_DIR } from './config.server.ts';
+import {
+	CODE_SERVER_PORT,
+	DATA_DIR,
+	DEFAULT_COPY_IGNORE,
+	DEFAULT_IMAGE,
+	INSTANCES_DIR,
+	parseCopyIgnore
+} from './config.server.ts';
 import {
 	allForwards,
 	allInstances,
@@ -297,7 +304,8 @@ async function boot(row: InstanceRow, opts: { branch?: string } = {}): Promise<v
 			});
 		} else {
 			appendLog(row.id, `Copying ${row.source_path} → ${row.workspace_path}\n`);
-			await copyWorkspace(row.source_path, row.workspace_path);
+			const ignore = parseCopyIgnore(getOption('copy_ignore_patterns') ?? DEFAULT_COPY_IGNORE);
+			await copyWorkspace(row.source_path, row.workspace_path, ignore);
 		}
 		await seedDeclaredPorts(row);
 	} catch (err) {
