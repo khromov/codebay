@@ -4,8 +4,7 @@
 	import type { InstanceHealth } from '../types.ts';
 	import Skeleton from './Skeleton.svelte';
 
-	// The two checks intrinsic to every instance, independent of any injection.
-	// Shown live, as the inactive fallback, and counted toward the skeleton rows.
+	// Intrinsic to every instance, independent of any injection.
 	const FIXED_CHECKS = ['Container running', 'Code-server reachable'] as const;
 
 	let {
@@ -18,36 +17,29 @@
 		health?: InstanceHealth | null;
 		/** Epoch ms of the last successful health fetch, for the "updated Ns ago" readout. */
 		lastFetchedAt?: number | null;
-		/** Whether the container is running. When false, the panel is grayed out
-		 *  rather than showing a skeleton loader (no health checks are coming). */
+		/** When false, no checks are coming — the panel grays out rather than showing a loader. */
 		active?: boolean;
-		/** How many injection-backed health checks to expect (registry-derived,
-		 *  passed from the server) so the skeleton renders one row per real check
-		 *  before the first snapshot arrives. */
+		/** Registry-derived, so the skeleton renders one row per real check. */
 		injectionChecks?: number;
 	} = $props();
 
-	// One row per check: a pass/fail flag plus a uniform value word — "OK" when
-	// passing, "—" otherwise (the tick/cross icon already conveys pass vs fail).
+	// The value word stays uniform because the tick/cross icon already conveys pass vs fail.
 	const checks = $derived.by((): { label: string; ok: boolean; value: string }[] => {
 		if (!health) return [];
 		const v = (ok: boolean) => ({ ok, value: ok ? 'OK' : '—' });
 		return [
 			{ label: FIXED_CHECKS[0], ...v(health.containerRunning) },
 			{ label: FIXED_CHECKS[1], ...v(health.codeServerAccessible) },
-			// One row per injection that reports health (e.g. Claude Code, GitHub CLI, Claude hooks).
 			...health.injections.map((i) => ({ label: i.label, ...v(i.ok) }))
 		];
 	});
 
-	// Total health rows: the two fixed checks plus one per injection that reports
-	// health. Once a snapshot lands we know the exact count; before then we fall
-	// back to the registry-derived expected count so the skeleton matches.
+	// Before the first snapshot lands, the registry-derived count keeps the skeleton honest.
 	function getNumberOfChecks(): number {
 		return health ? checks.length : FIXED_CHECKS.length + injectionChecks;
 	}
 
-	// Tick a local clock so the "updated Ns ago" readout counts up between polls.
+	// A local clock, so the "updated Ns ago" readout counts up between polls.
 	let now = $state(Date.now());
 	$effect(() => {
 		const timer = setInterval(() => (now = Date.now()), 1000);

@@ -17,8 +17,7 @@
 
 	let { onclose }: { onclose: () => void } = $props();
 
-	// Example one-word prompts for the name field; picked randomly so the
-	// hint varies each time the editor opens.
+	// Picked randomly so the hint varies each time the editor opens.
 	const NAME_PROMPTS = [
 		'dragon',
 		'unicorn',
@@ -45,7 +44,7 @@
 	];
 	const namePlaceholder = NAME_PROMPTS[Math.floor(Math.random() * NAME_PROMPTS.length)];
 
-	// The drawing: 64 row-major on/off cells, same shape `decode()` produces.
+	// Same shape `decode()` produces, so the two round-trip.
 	let cells = $state<number[]>(Array(ROWS * COLS).fill(OFF));
 	let avatarName = $state('');
 
@@ -54,16 +53,12 @@
 	// Contributing needs a name and at least one lit pixel — a blank sprite is no sprite.
 	const canContribute = $derived(slug.length > 0 && cells.some((c) => c === ON));
 
-	// Drag-to-paint: capture the pointer on the grid and derive the cell from
-	// coordinates (same rect math as Avatar's press gag), so one stroke paints
-	// every cell it crosses — with the value that flips the first cell pressed.
+	// Capturing the pointer on the grid is what lets one stroke paint every cell it crosses.
 	let gridEl = $state<HTMLDivElement | null>(null);
 	let painting = false;
 	let paintValue: number = ON;
 
-	// The non-editable bezel ring around the 8×8 paint grid — same 1-cell frame
-	// Avatar.svelte always renders around the art, shown here so users can see
-	// how their drawing will actually be framed while they're still drawing it.
+	// Mirrors Avatar.svelte's bezel so the user sees the real framing while drawing.
 	const RING_CELLS = Array.from({ length: 100 }, (_, i) => ({
 		r: Math.floor(i / 10),
 		c: i % 10
@@ -263,9 +258,6 @@
 		gap: 18px;
 		padding: 18px;
 	}
-	/* The frame: a 10×10 panel matching Avatar.svelte's bezel — a grayed-out,
-	   non-editable 1-cell border ring around the 8×8 paint grid, so users can see
-	   how the extra bezel will frame their art while they're still drawing it. */
 	.grid-frame {
 		display: grid;
 		grid-template-columns: repeat(10, 32px);
@@ -283,8 +275,7 @@
 		background-color: var(--rule-soft);
 		opacity: 0.4; /* more muted than the paintable off cells — not part of the art */
 	}
-	/* The canvas: an 8×8 board of fat LCD cells, same palette as Avatar's panel.
-	   A stroke paints by pointer position, so cells need no individual handlers. */
+	/* A stroke paints by pointer position, so cells need no individual handlers. */
 	.grid {
 		display: grid;
 		grid-template-columns: repeat(8, 1fr);

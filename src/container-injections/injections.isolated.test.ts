@@ -48,7 +48,6 @@ describe('injection registry', () => {
 		const alias = injections.find((i) => i.id === 'claude-skip-permissions');
 		expect(alias).toBeDefined();
 		expect(typeof alias!.check).toBe('function');
-		// No host dependency, so no auth chip.
 		expect(alias!.auth).toBeUndefined();
 	});
 
@@ -56,7 +55,6 @@ describe('injection registry', () => {
 		const aliases = injections.find((i) => i.id === 'claude-aliases');
 		expect(aliases).toBeDefined();
 		expect(typeof aliases!.check).toBe('function');
-		// No host dependency, so no auth chip.
 		expect(aliases!.auth).toBeUndefined();
 	});
 
@@ -64,7 +62,6 @@ describe('injection registry', () => {
 		const noCoauthor = injections.find((i) => i.id === 'claude-no-coauthor');
 		expect(noCoauthor).toBeDefined();
 		expect(typeof noCoauthor!.check).toBe('function');
-		// No host dependency, so no auth chip — this is a Codebay-wide default.
 		expect(noCoauthor!.auth).toBeUndefined();
 	});
 
@@ -88,7 +85,6 @@ describe('injection registry', () => {
 		const t = injections.find((i) => i.id === 'tmux');
 		expect(t).toBeDefined();
 		expect(typeof t!.check).toBe('function');
-		// No host dependency, so no auth chip.
 		expect(t!.auth).toBeUndefined();
 	});
 

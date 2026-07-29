@@ -6,20 +6,13 @@ import { getOption, setOption } from './db.server';
 import { findDevcontainerConfig } from './devcontainer.server.ts';
 import type { BrowseResult, DirEntry } from '../types.ts';
 
-/** Options key under which the last browsed folder is persisted. */
 const LAST_VIEWED_FOLDER = 'last_viewed_folder';
 
 function hasDevcontainer(dir: string): boolean {
 	return findDevcontainerConfig(dir) !== null;
 }
 
-/**
- * List the subdirectories of `path` so the web UI can browse to and pick a project
- * folder. Only directories are returned — all we need from the selection is the
- * absolute path. When no `path` is given the picker resumes at the last browsed
- * folder (persisted across sessions), falling back to the user's home directory.
- * The viewed folder is continuously persisted so the next visit reopens there.
- */
+/** Persists every folder it lists, so an argument-less call resumes where the user left off. */
 export async function browse(path?: string): Promise<BrowseResult> {
 	let target: string;
 	if (path && path.trim()) {

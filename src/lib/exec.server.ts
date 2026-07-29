@@ -1,13 +1,11 @@
 import { Writable } from 'node:stream';
 import { getDocker } from './docker-client.server.ts';
 
-/** A running container to exec into, as its remote user (defaults to `root`). */
 export interface ExecTarget {
 	containerId: string;
 	remoteUser?: string | null;
 }
 
-/** A node:stream sink that accumulates everything written into a string. */
 function collector(): { stream: Writable; text: () => string } {
 	const chunks: Buffer[] = [];
 	return {
@@ -21,37 +19,21 @@ function collector(): { stream: Writable; text: () => string } {
 	};
 }
 
-/** Env var the exec carries the stdin secret in (see `wrapWithStdin`). */
 const STDIN_ENV = '__CODEBAY_EXEC_STDIN';
-/** Non-exported shell var the wrapped script reads the secret from. */
 const STDIN_VAR = 'CODEBAY_STDIN';
 
 /**
- * Expose `stdin` to the script as a scrubbed shell variable rather than the exec's
- * stdin stream.
- *
- * Real stdin streaming to a container exec is unusable on Bun: dockerode's hijack path
- * needs an HTTP `upgrade` event Bun never emits, and the non-hijack `openStdin` path
- * needs full-duplex client HTTP (writing the request body while reading the response),
- * which Bun's client also lacks. So the secret travels in the exec's `Env` (not argv —
- * it never shows up in `ps`); we copy it into a plain, non-exported shell variable
- * (`$CODEBAY_STDIN`) and `unset` the exported carrier, so the script's child processes never
- * inherit the secret either. Scripts read `"$CODEBAY_STDIN"` instead of stdin.
+ * Real exec stdin is unusable on Bun — dockerode's hijack path needs an `upgrade` event
+ * Bun never emits, and `openStdin` needs full-duplex client HTTP Bun also lacks.
  */
 function wrapWithStdin(script: string): string {
+	// The carrier is an env var (never argv, so never in `ps`) and is unset so children don't inherit it.
 	return `${STDIN_VAR}="$${STDIN_ENV}"; unset ${STDIN_ENV}\n${script}`;
 }
 
 /**
- * Run a bash script inside a container as its remote user (defaulting to `root`).
- * This is the one place the `bash -lc <script>` container-exec pattern lives — every
- * container injection's `apply()`/`check()` goes through it. Runs over the Docker
- * Engine API (dockerode), no `docker exec` shell-out.
- *
- * Secrets are passed via `stdin` and read from the scrubbed `$CODEBAY_STDIN` shell var in
- * the script, never on argv. Extra `args` are appended after the script and appear as `$0`, `$1`, …
- * inside it (used to pass non-secret context). Set `capture` to read stdout back;
- * stderr is always captured for error reporting.
+ * The one place the `bash -lc` container-exec pattern lives; every injection goes through it.
+ * `stdin` reaches the script as `$CODEBAY_STDIN`, and `args` as `$0`, `$1`, ….
  */
 export async function execInContainer(
 	target: ExecTarget,
@@ -71,7 +53,7 @@ export async function execInContainer(
 			Env: hasStdin ? [`${STDIN_ENV}=${opts.stdin}`] : undefined,
 			AttachStdout: true,
 			AttachStderr: true,
-			Tty: false // keep stdout/stderr separate (multiplexed) → demux below
+			Tty: false // multiplexes stdout/stderr so the demux below can separate them
 		});
 		const stream = await exec.start({});
 
@@ -93,13 +75,7 @@ export async function execInContainer(
 	}
 }
 
-/**
- * Run a presence-check script and resolve to whether it printed exactly `1`.
- * Every injection's `check()` follows the same shape — a script that echoes `1`
- * or `0` (e.g. via `[ -s "$f" ] && echo 1 || echo 0`), then
- * `res.ok && res.stdout === '1'` — so this collapses both into one call. `args`
- * are forwarded the same way as `execInContainer` (available as `$0`, `$1`, …).
- */
+/** The shape every injection's `check()` uses: a script that echoes `1` or `0`. */
 export async function checkPresence(
 	target: ExecTarget,
 	script: string,
@@ -109,15 +85,7 @@ export async function checkPresence(
 	return res.ok && res.stdout === '1';
 }
 
-/**
- * Shell snippet that ensures `dirExpr` exists and writes the scrubbed
- * `$CODEBAY_STDIN` secret to `dirExpr/filename`, then chmods it. Shared by
- * injections that stage a single secret-only file (e.g. Claude Code's
- * `.credentials.json`) — must be run via `execInContainer` with `stdin` set.
- * Injections that combine the secret with non-secret content in one file
- * (e.g. GitHub CLI's `hosts.yml`, which is a header plus the token) build
- * their own write line instead, since there's nothing generic left to share.
- */
+/** Only for secret-only files; injections mixing secret and non-secret content roll their own. */
 export function writeSecretFileScript(dirExpr: string, filename: string, mode = '600'): string {
 	const path = `${dirExpr}/${filename}`;
 	return `mkdir -p "${dirExpr}"; printf '%s' "$CODEBAY_STDIN" > "${path}"; chmod ${mode} "${path}";`;

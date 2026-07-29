@@ -24,9 +24,7 @@
 		oncancelrename: () => void;
 	} = $props();
 
-	// Start/Stop only cycle the existing container; rebuild is what re-runs the
-	// injections (credentials, hooks, port forwards). Offered wherever there's a
-	// container to replace — never while one is already building.
+	// Start/Stop only cycle the container; rebuild is what re-runs the injections.
 	const canRebuild = $derived(
 		instance.status === 'running' ||
 			instance.status === 'stopped' ||
@@ -122,8 +120,6 @@
 		align-items: center;
 		gap: 11px;
 	}
-	/* Attention pulse raised by the in-container Claude hook, mirroring the IDE tabs:
-     'done' pulses green, 'waiting' pulses amber. */
 	.attn {
 		flex: none;
 		width: 14px;

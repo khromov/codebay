@@ -2,21 +2,14 @@ import { getOption } from '../lib/db.server.ts';
 import { checkPresence, execInContainer } from '../lib/exec.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
-/** Absolute path of the env file written inside the container. */
 const ENV_FILE = '~/.codebay-host-env';
 
-/** A host env var the user asked to forward, resolved against this process's env. */
 interface ResolvedVar {
 	name: string;
 	value: string;
 }
 
-/**
- * Parse the JSON-encoded name list stored under `host_env_var_names`, tolerating a
- * missing/malformed value (returns `[]`). Shared by the injection itself and the
- * `/settings` serverProps, which needs the same list to compute host presence
- * without duplicating the parsing logic.
- */
+/** Exported so `/settings` computes host presence from the same parse the injection uses. */
 export function parseHostEnvVarNames(raw: string | null): string[] {
 	try {
 		const parsed = JSON.parse(raw ?? '[]');
@@ -26,25 +19,14 @@ export function parseHostEnvVarNames(raw: string | null): string[] {
 	}
 }
 
-/**
- * Whether each name currently has a non-empty value on this process's env. Shared
- * by the `/settings` serverProps (initial render) and the settings mutation route
- * (so the client can refresh presence after adding/removing a name without a full
- * page reload).
- */
+/** Reports presence only — a value must never cross to the client. */
 export function hostEnvVarPresence(names: string[]): Record<string, boolean> {
 	return Object.fromEntries(
 		names.map((name) => [name, Bun.env[name] !== undefined && Bun.env[name] !== ''])
 	);
 }
 
-/**
- * Read the host-env-vars configuration from the options store. Returns null when
- * the feature is disabled or when no configured name has a value on this process's
- * env — both are skip conditions for the injection. `resolved` holds only the names
- * that actually have a non-empty value on the host; the rest are reported back via
- * `missing` so `apply()` can log them without ever logging a value.
- */
+/** Null means "skip the injection"; `missing` lets `apply()` log names without logging values. */
 export function hostEnvVarsConfig(): {
 	names: string[];
 	resolved: ResolvedVar[];
@@ -64,25 +46,12 @@ export function hostEnvVarsConfig(): {
 	return { names, resolved, missing };
 }
 
-/**
- * Write the host-env-vars file and source it from both ~/.bashrc and ~/.zshrc,
- * guarded so re-apply never duplicates the source line — same shape as
- * `claude-code-custom.ts`'s endpoint env file.
- *
- * Secret handling: every resolved `NAME=VALUE` line is newline-joined into a single
- * payload and sent as `stdin` (scrubbed `$CODEBAY_STDIN`, never argv) — values never
- * appear in `docker inspect`, the process arg list, or the options DB (only names
- * are persisted there). The env file itself is `chmod 600`.
- */
+/** Values ride `stdin` as one payload, so they reach neither argv nor `docker inspect`. */
 async function injectHostEnvVars(
 	target: ContainerTarget,
 	resolved: ResolvedVar[]
 ): Promise<{ ok: boolean; error?: string }> {
-	// Single-quote each value so arbitrary host values (spaces, `$`, backticks,
-	// newlines) source as literal data instead of being re-parsed as shell — the
-	// file is sourced by every interactive shell. Names are already validated to
-	// `[A-Za-z_][A-Za-z0-9_]*` so they need no quoting. `'` inside a value is
-	// closed, escaped as `\'`, and reopened (the standard `'\''` dance).
+	// Every interactive shell sources this file, so values must be single-quoted to stay literal.
 	const payload = resolved
 		.map(({ name, value }) => `export ${name}='${value.replaceAll("'", "'\\''")}'`)
 		.join('\n');
@@ -90,10 +59,8 @@ async function injectHostEnvVars(
 		'set -e; f=$(eval echo "' +
 		ENV_FILE +
 		'"); ' +
-		// Write the env file verbatim from $CODEBAY_STDIN — it already holds
-		// fully-formed `export NAME=VALUE` lines.
 		'printf \'%s\\n\' "$CODEBAY_STDIN" > "$f"; chmod 600 "$f"; ' +
-		// Source the file from both rc files, guarded against duplicates.
+		// The grep guard keeps a re-apply from stacking duplicate source lines.
 		'h=$(eval echo ~$(id -un)); src="[ -f \\"$f\\" ] && . \\"$f\\""; ' +
 		'for rc in "$h/.bashrc" "$h/.zshrc"; do ' +
 		'grep -qF "$src" "$rc" 2>/dev/null || printf \'%s\\n\' "$src" >> "$rc"; ' +
@@ -108,16 +75,8 @@ async function injectHostEnvVars(
 }
 
 /**
- * Forward a user-chosen set of host environment variables into the container's
- * interactive shells. The user configures variable *names* only (in Settings);
- * values are read fresh from this process's environment at apply time and never
- * stored in the options DB. Skipped (with a log line) when the feature is disabled,
- * unconfigured, or none of the configured names resolve on the host.
- *
- * No `auth` block: unlike git identity or GitHub/Claude credentials, this isn't a
- * host credential the manager discovers — it's an opt-in feature that's off by
- * default, so it shouldn't make the global credentials chip (which flags missing
- * *required* auth) look broken. Its status lives entirely in the Settings card.
+ * Only names are persisted — values are read fresh from this process's env at apply time.
+ * No `auth` block on purpose: this is opt-in, so it must not flag the required-auth chip.
  */
 export const hostEnvVars: Injection = {
 	id: 'host-env-vars',

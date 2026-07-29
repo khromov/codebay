@@ -14,8 +14,7 @@
 <span class="status {status}">{label[status]}</span>
 
 <style>
-	/* Monochrome theme: running/creating/stopped read via fill + animation, not
-     hue; error is the one true alarm state, so it gets danger red. */
+	/* Error is the one true alarm state, so it alone gets hue; the rest read via fill. */
 	.status {
 		font-family: var(--font-mono);
 		font-weight: 600;

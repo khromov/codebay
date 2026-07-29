@@ -1,5 +1,3 @@
-// Registry of all hand-crafted 8×8 avatar sprites + the deterministic picker
-// that maps a dev-container id to one of them.
 import type { AvatarArt } from './types.ts';
 
 import anchor from './anchor.ts';
@@ -55,8 +53,7 @@ import whale from './whale.ts';
 import wheat from './wheat.ts';
 import yinyan from './yinyan.ts';
 
-// Order is stable: a given id always resolves to the same index, so the artwork
-// for a container never changes between renders or restarts.
+// Order must stay stable, or every container's artwork changes on the next restart.
 export const avatars: AvatarArt[] = [
 	anchor,
 	bear,
@@ -112,8 +109,7 @@ export const avatars: AvatarArt[] = [
 	yinyan
 ];
 
-// FNV-1a (32-bit) — a fast, well-distributed hash. Pure function of the input
-// string, so the mapping is identical on every invocation, in any process.
+// FNV-1a, chosen because it's pure and cheap — the mapping must hold across processes.
 function fnv1a(s: string): number {
 	let h = 2166136261;
 	for (let i = 0; i < s.length; i++) {
@@ -123,11 +119,8 @@ function fnv1a(s: string): number {
 	return h >>> 0;
 }
 
-// Deterministically pick an artwork for a dev-container id. Duplicates across
-// many instances are possible but rare — the hash spreads ids evenly across the
-// whole catalog rather than clustering.
+// Duplicates are possible but rare, since the hash spreads ids evenly across the catalog.
 export function pickAvatar(id: string): AvatarArt {
-	// `avatars` is non-empty and the modulo keeps the index in range.
 	return avatars[fnv1a(id) % avatars.length]!;
 }
 

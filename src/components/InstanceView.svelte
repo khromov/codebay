@@ -17,15 +17,13 @@
 	let lastFetchedAt = $state<number | null>(null);
 	let logs = $state('');
 
-	// Auto-scroll the log box to the bottom whenever new output is appended.
-	// Runs after the DOM updates, so scrollHeight is fresh (no tick() needed).
+	// Runs after the DOM updates, so scrollHeight is fresh without a tick().
 	function autoscroll(node: HTMLDivElement) {
-		void logs; // re-run whenever new log output is appended
+		void logs; // the dependency this effect exists for
 		node.scrollTop = node.scrollHeight;
 	}
 
-	// Stream the boot/build log over its dedicated WebSocket. Reset on (re)connect
-	// so the server's buffer replay doesn't duplicate output after a reconnect.
+	// Reset on every connect, because the server replays its whole buffer each time.
 	$effect(() =>
 		liveSocket(
 			`/api/instances/${id}/logs`,
@@ -34,7 +32,6 @@
 		)
 	);
 
-	// Track this instance's status and health from the central live stream.
 	$effect(() =>
 		liveStream((msg) => {
 			if (msg.type === 'instances') {
@@ -49,7 +46,6 @@
 
 	const url = $derived(instance ? ideUrl(instance) : '#');
 
-	// --- Forwarded ports ------------------------------------------------------
 	let newPort = $state('');
 	let portError = $state<string | null>(null);
 	// Set when the forward set changes this session; cleared once a rebuild applies it.
@@ -93,10 +89,8 @@
 		if (ok) pendingRebuild = false;
 	}
 
-	// --- Restart container (header button) -------------------------------------
 	let restartError = $state<string | null>(null);
-	// In-flight from the click until the rebuild kicks the instance to `creating`
-	// (at which point `building` takes over the disabled/label state).
+	// Covers the click until the instance reaches `creating`, where `building` takes over.
 	let restarting = $state(false);
 
 	const restartOpts: MochiEnhanceOptions<Record<string, never>, { error: string }> = {
@@ -113,7 +107,6 @@
 		}
 	};
 
-	// --- Copy logs --------------------------------------------------------------
 	let copied = $state(false);
 	let copyTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -526,7 +519,6 @@
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
-	/* The one "screen": a black LCD panel with faint scanlines. */
 	.logs {
 		position: relative;
 		background:
@@ -546,11 +538,8 @@
 		white-space: pre-wrap;
 		word-break: break-word;
 	}
-	/* Blinking block cursor — the live-terminal tell. Defined locally rather than
-     relying on StatusBadge's same-named keyframes: Svelte scopes `@keyframes`
-     per component (renaming both the block and any same-file `animation`
-     reference), so a keyframe defined in another component never actually
-     resolves here. */
+	/* Duplicated from StatusBadge because Svelte scopes `@keyframes` per component,
+	   so a keyframe defined elsewhere never resolves here. */
 	@keyframes lcd-blink {
 		50% {
 			background: transparent;

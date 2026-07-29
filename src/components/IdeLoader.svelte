@@ -1,21 +1,11 @@
 <script lang="ts">
 	import Button from './Button.svelte';
 
-	// Dot-matrix "data streaming" loader shown while a code-server iframe boots.
-	// Each tick flips a fixed number of randomly-chosen bits so the readout looks
-	// like flowing data on the LCD-style panel — a steady amount of change every
-	// tick (rather than a per-bit probability, which makes some frames churn and
-	// others barely move) keeps the cadence visually even.
-	// `speed` is a multiplier on the readout's pace: 1 is the default calm cadence,
-	// 2 runs twice as fast, 0.5 half as fast. It scales the tick interval only —
-	// the per-tick churn stays fixed so the cadence reads as even at any speed.
-	//
-	// `stalledAfterMs`/`onoverride` are for a wait that could in principle never end:
-	// the IDE panes hold this loader until a health probe says code-server is
-	// answering, so after that long we say what we're waiting for and offer a way
-	// past it. Omitted (the default) means the wait is bounded and needs neither.
+	// A fixed flip count per tick, rather than a per-bit probability, is what keeps
+	// the cadence visually even; `speed` scales only the interval, never the churn.
 	let {
 		speed = 1,
+		// Omit both unless the wait could in principle never end.
 		stalledAfterMs,
 		onoverride
 	}: { speed?: number; stalledAfterMs?: number; onoverride?: () => void } = $props();
@@ -40,7 +30,7 @@
 	let grid = $state(seed());
 
 	$effect(() => {
-		// Honor reduced-motion: leave a static readout, skip the flicker interval.
+		// Reduced-motion gets a static readout rather than no loader at all.
 		if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
 		const timer = setInterval(() => {
 			const next = grid.map((row) => row.slice());
@@ -103,8 +93,7 @@
 		letter-spacing: 0.18em;
 		color: var(--ink-soft);
 	}
-	/* Only shown once the wait has run long enough to look wedged, so it reads as an
-	   explanation rather than part of the normal boot chrome. */
+	/* Held back until the wait looks wedged, so it reads as an explanation, not boot chrome. */
 	.stalled {
 		display: flex;
 		flex-direction: column;

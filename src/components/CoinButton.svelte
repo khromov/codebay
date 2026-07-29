@@ -1,8 +1,5 @@
 <script lang="ts">
-	// The easter-egg trigger: a little arcade "NEW!" coin idly flipping between
-	// two decorative pixel rules. The coin is itself a dot-matrix sprite — drawn
-	// in the same medium the editor it opens lets you draw in. (The theme bans
-	// border-radius globally, so "round" here means round in pixels.)
+	// The theme bans border-radius globally, so "round" here means round in pixels.
 	import type { AvatarArt } from '../avatars/types.ts';
 	import Avatar from './Avatar.svelte';
 
@@ -74,8 +71,7 @@
 		box-shadow: 2px 2px 0 var(--ink);
 		animation: coin-spin 2.6s ease-in-out infinite;
 	}
-	/* Hovering "catches" the coin: the spin stops (it would otherwise override
-	   the transform) and it presses into its shadow. */
+	/* The spin has to stop, or it would override the press transform. */
 	.coin-btn:hover .coin {
 		animation: none;
 		transform: translate(1px, 1px);
@@ -85,8 +81,7 @@
 		outline: 2px solid var(--ink);
 		outline-offset: 2px;
 	}
-	/* One edge-on flip per cycle, holding face-out most of the time. The sprite
-	   is symmetric, so the mirrored "back" reads as the same coin. */
+	/* The sprite is symmetric, so the mirrored "back" reads as the same coin. */
 	@keyframes coin-spin {
 		0%,
 		55% {

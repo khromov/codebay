@@ -4,9 +4,6 @@
 	import Monitor from '@lucide/svelte/icons/monitor';
 	import { getTheme, setTheme, applyTheme, type Theme } from '../theme.ts';
 
-	// Segmented Light / Auto / Dark picker for the settings page. Client-only,
-	// like the attention-sound toggle: the choice lives in the theme cookie and
-	// takes effect immediately via the data-theme attribute.
 	let theme: Theme = $state(getTheme());
 
 	const options: { value: Theme; label: string; icon: typeof Sun }[] = [

@@ -7,8 +7,7 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import { apiPost } from '../api.ts';
 
-	// Instances and their load state come from the persistent AppShell (single SSE
-	// subscription shared with the IDE view); this component is presentational.
+	// Presentational: AppShell owns the single live subscription both views share.
 	let {
 		preflight,
 		instances,
@@ -33,7 +32,7 @@
 				{ sourcePath, branch: opts?.branch },
 				'Failed to create instance'
 			);
-			// The SSE stream delivers the new instance; no manual insert needed.
+			// The live stream delivers the new instance.
 		} catch (err) {
 			actionError = (err as Error).message;
 		} finally {
@@ -52,7 +51,7 @@
 			return;
 		try {
 			await apiPost(`/api/instances/${id}/${action}`, undefined, `Failed to ${action}`);
-			// The SSE stream reflects the resulting state.
+			// The live stream reflects the resulting state.
 		} catch (err) {
 			actionError = (err as Error).message;
 		}
@@ -80,7 +79,7 @@
 		actionError = null;
 		try {
 			await apiPost(`/api/instances/${id}/rename`, { name }, 'Failed to rename');
-			// The SSE stream reflects the new name.
+			// The live stream reflects the new name.
 		} catch (err) {
 			actionError = (err as Error).message;
 		}
@@ -91,7 +90,7 @@
 		if (!confirm(`Delete all ${instances.length} instances and their copied files?`)) return;
 		try {
 			await apiPost('/api/instances/delete-all', undefined, 'Failed to delete all');
-			// The SSE stream reflects the resulting empty state.
+			// The live stream reflects the resulting empty state.
 		} catch (err) {
 			actionError = (err as Error).message;
 		}

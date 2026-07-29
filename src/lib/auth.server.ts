@@ -4,20 +4,11 @@ import { timingSafeEqualStr } from './crypto.server.ts';
 
 const REALM = 'Codebay';
 
-/** Methods that mutate state — the ones the CSRF guard below applies to. */
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /**
- * Custom header every same-origin mutation from this app's own frontend sends
- * (see `apiFetch` in src/api.ts). Plain HTML form submissions can't set custom
- * headers at all, and a cross-origin `fetch` can't attach one without
- * triggering a CORS preflight — which this server never answers with
- * permissive CORS headers, so the browser blocks the request before it's even
- * sent. Either way, requiring this header on mutating API calls blocks the
- * classic "victim has a logged-in browser, a malicious page silently POSTs to
- * our API" CSRF pattern, which Basic Auth alone (unlike cookies + SameSite)
- * doesn't defend against — the browser auto-attaches cached credentials to
- * same-realm requests regardless of which page triggered them.
+ * A cross-origin page can't set this without a CORS preflight this server never answers.
+ * Basic Auth alone wouldn't stop CSRF — browsers auto-attach cached credentials.
  */
 const CSRF_HEADER = 'x-codebay-request';
 
@@ -33,13 +24,8 @@ function csrfRejected(): Response {
 }
 
 /**
- * Cross-site WebSocket hijacking (CSWSH) guard. WS handshakes are plain GETs, so
- * they slip past the mutating-method CSRF check above, and browsers attach cached
- * Basic Auth credentials to *cross-origin* WS connections without a preflight — so
- * a malicious page could otherwise open `/api/stream` (harvest instance ids/paths)
- * or a proxied code-server socket and drive a terminal inside a credentialed
- * container. Require the `Origin` to match the request `Host`. A missing `Origin`
- * (non-browser client) is allowed — Basic Auth still applies to it.
+ * WS handshakes are GETs that slip past the CSRF check, and browsers attach cached
+ * credentials cross-origin without a preflight. A missing Origin means a non-browser client.
  */
 function wsOriginOk(request: Request): boolean {
 	const origin = request.headers.get('origin');
@@ -51,22 +37,13 @@ function wsOriginOk(request: Request): boolean {
 	}
 }
 
-/**
- * Whether a WebSocket upgrade may proceed: same-origin (CSWSH guard) *and*
- * authenticated when a password is configured. Called from the `Mochi.ws` route
- * `upgrade` callbacks (`/api/stream`, `/api/instances/:id/logs`) — those routes
- * are dispatched by Bun directly and DON'T pass through the `basicAuth` handle, so
- * they'd otherwise be wide open (an unauthenticated cross-origin upgrade succeeds).
- * The browser attaches the page's cached Basic Auth to same-origin WS handshakes,
- * so a legitimate client from the authenticated UI passes.
- */
+/** `Mochi.ws` routes are dispatched by Bun directly and never reach `basicAuth`. */
 export function wsUpgradeAllowed(request: Request): boolean {
 	if (!wsOriginOk(request)) return false;
 	if (!BASIC_AUTH_PASSWORD) return true;
 	return credentialsOk(request.headers.get('Authorization'));
 }
 
-/** Validate an `Authorization: Basic <base64>` header against the configured creds. */
 function credentialsOk(header: string | null): boolean {
 	if (!header?.startsWith('Basic ')) return false;
 	let decoded: string;
@@ -79,39 +56,23 @@ function credentialsOk(header: string | null): boolean {
 	if (sep === -1) return false;
 	const user = decoded.slice(0, sep);
 	const pass = decoded.slice(sep + 1);
-	// Constant-time compares so a wrong username/password can't be distinguished by
-	// response timing. Both halves always run — no `&&` short-circuit on the first.
+	// Both halves must always run — an `&&` short-circuit would leak which one failed by timing.
 	const userOk = timingSafeEqualStr(user, BASIC_AUTH_USERNAME);
 	const passOk = timingSafeEqualStr(pass, BASIC_AUTH_PASSWORD);
 	return userOk && passOk;
 }
 
 /**
- * Global Basic Auth gate, plus a lightweight CSRF guard for the JSON API. Runs
- * on every routed request *and* the proxy fallback (Mochi's `handle` wraps
- * both), so one password protects the UI, the APIs, and every proxied
- * code-server — including WebSocket upgrades, which browsers send with the
- * cached `Authorization` header.
- *
- * The CSRF guard applies even when `BASIC_AUTH_PASSWORD` is unset: with no
- * password configured there's no auth barrier at all, which makes a drive-by
- * cross-site request to a destructive endpoint (delete-all, shutdown) the
- * *only* thing standing between a malicious page and this server while it's
- * running on localhost — so it stays on regardless of the auth/password state.
+ * The CSRF guard runs even with no password set: on an unauthenticated localhost
+ * server it's the only thing between a malicious page and the destructive endpoints.
  */
 export const basicAuth: Handle = async ({ event, resolve }) => {
 	const path = new URL(event.request.url).pathname;
 
-	// The container→manager bridge can't carry the app password or our custom
-	// CSRF header; it authenticates with a per-instance token validated by the
-	// route itself, so it's exempt from both checks here.
+	// Containers can carry neither the app password nor the CSRF header; the route checks a token.
 	if (path.startsWith('/api/bridge/')) return resolve(event);
 
-	// CSWSH guard — reject cross-origin WebSocket upgrades before auth. This handle
-	// only wraps page/api routes, so here it covers the `/p/:id/*` proxy relay (an
-	// api route). The `Mochi.ws` routes (/api/stream, /api/instances/:id/logs)
-	// bypass this handle entirely and enforce `wsUpgradeAllowed` in their own
-	// `upgrade` callbacks instead.
+	// Covers the `/p/:id/*` proxy relay only; `Mochi.ws` routes call `wsUpgradeAllowed` themselves.
 	if (
 		event.request.headers.get('upgrade')?.toLowerCase() === 'websocket' &&
 		!wsOriginOk(event.request)
@@ -119,8 +80,7 @@ export const basicAuth: Handle = async ({ event, resolve }) => {
 		return csrfRejected();
 	}
 
-	// CSRF guard — scoped to /api/ so it never touches the code-server proxy
-	// (/p/:id/*), which has its own request shapes the editor itself generates.
+	// Scoped to /api/ so it never touches the request shapes code-server itself generates.
 	if (
 		path.startsWith('/api/') &&
 		MUTATING_METHODS.has(event.request.method) &&

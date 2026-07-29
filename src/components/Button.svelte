@@ -84,7 +84,6 @@
 		pointer-events: none;
 	}
 
-	/* Sizes */
 	.btn.sm {
 		padding: 7px 12px;
 		font-size: 12px;
@@ -98,13 +97,11 @@
 		font-size: 15px;
 	}
 
-	/* Default (outline) variant */
 	.btn.default:hover:not(:disabled) {
 		background: var(--ink);
 		color: var(--bg);
 	}
 
-	/* Primary (filled) variant */
 	.btn.primary {
 		font-weight: 700;
 		background: var(--ink);
@@ -115,7 +112,6 @@
 		color: var(--ink);
 	}
 
-	/* Ghost: dashed outline that fills in on hover (secondary links like "Details"). */
 	.btn.ghost {
 		background: transparent;
 		border-style: dashed;
@@ -126,7 +122,6 @@
 		border-style: solid;
 	}
 
-	/* Danger variant */
 	.btn.danger {
 		color: var(--danger);
 		border-color: var(--danger);

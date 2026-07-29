@@ -9,34 +9,27 @@
 	import { apiPost } from '../api.ts';
 	import toast, { Toaster } from 'svelte-french-toast';
 
-	// `initialPath` is the URL the document was served for; `snapshot` is the
-	// reconciled instance list at render time, used to seed the live state so both
-	// the dashboard grid and the IDE iframe render without a loading flash.
+	// `snapshot` seeds the live state so neither view renders a loading flash first.
 	let {
 		preflight,
 		initialPath,
 		snapshot
 	}: { preflight: Preflight; initialPath: string; snapshot: Instance[] } = $props();
 
-	// --- Shared live state (single SSE subscription, used by both views) ----------
 	// Seeding from the SSR snapshot is intentional — the live stream overwrites it.
 	// svelte-ignore state_referenced_locally
 	let instances = $state<Instance[]>(snapshot);
-	// Live preflight: seeded from the SSR prop, then kept current by 'preflight'
-	// stream events (docker + CLI). Auth is preserved — it's only probed at SSR.
+	// Auth is preserved across stream updates because it's only ever probed at SSR.
 	// svelte-ignore state_referenced_locally
 	let livePreflight = $state<Preflight>(preflight);
 	// svelte-ignore state_referenced_locally
 	let loaded = $state(snapshot.length > 0);
 	const running = $derived(instances.filter((i) => i.status === 'running'));
 
-	// Live attention signal per instance, raised by the in-container Claude hook:
-	// 'done' (task finished) pulses green, 'waiting' (needs input) pulses amber.
 	let attention = $state<Record<string, 'done' | 'waiting' | null>>(
 		Object.fromEntries(snapshot.map((i) => [i.id, i.attention]))
 	);
 
-	// Inline rename for the IDE tab bar — same pattern as DashboardView/InstanceCard.
 	let editingId = $state<string | null>(null);
 	let editingName = $state('');
 
@@ -61,22 +54,18 @@
 		cancelRename();
 		try {
 			await apiPost(`/api/instances/${id}/rename`, { name }, 'Failed to rename');
-			// The SSE stream reflects the new name.
+			// The live stream reflects the new name.
 		} catch (err) {
 			toast.error((err as Error).message);
 		}
 	}
 
-	// --- Client-side router (Dashboard ⇄ IDE only) --------------------------------
-	// Mochi has no client router; we keep a reactive path and intercept the handful
-	// of in-app links so navigating between `/` and `/ide/:id` never reloads the
-	// document — keeping the code-server iframes mounted across the transition.
+	// Mochi has no client router, and a document reload would tear down the code-server iframes.
 	// svelte-ignore state_referenced_locally
 	let path = $state(initialPath);
 	const onIde = $derived(path.startsWith('/ide'));
 	const requestedId = $derived(path.startsWith('/ide/') ? path.slice('/ide/'.length) : '');
-	// Default to the requested instance when running, else the first running one
-	// (e.g. arriving for an instance that has since stopped). Empty on the dashboard.
+	// Falls back to the first running instance, for arriving at one that has since stopped.
 	const active = $derived(
 		onIde ? (running.some((i) => i.id === requestedId) ? requestedId : (running[0]?.id ?? '')) : ''
 	);
@@ -87,9 +76,7 @@
 		path = to;
 	}
 
-	// Intercept plain left-clicks on in-app links to `/` and `/ide/*`. Modifier
-	// clicks, new-tab targets, downloads, and other routes (Settings, Details) fall
-	// through to a normal full navigation.
+	// Modifier clicks, new-tab targets, and other routes must fall through to a full navigation.
 	$effect(() => {
 		function onClick(e: MouseEvent) {
 			if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
@@ -109,7 +96,6 @@
 		return () => document.removeEventListener('click', onClick);
 	});
 
-	// Reflect browser Back/Forward into the reactive path.
 	$effect(() => {
 		function onPop() {
 			path = location.pathname;
@@ -118,42 +104,31 @@
 		return () => window.removeEventListener('popstate', onPop);
 	});
 
-	// --- IDE iframe lifecycle -----------------------------------------------------
-	// Instances whose iframe has been mounted at least once. We mount an IDE lazily
-	// on first activation, then keep it mounted (hidden via CSS) so its
-	// editor/connection survive tab switches and trips back to the dashboard.
+	// Mounted lazily, then kept mounted (hidden via CSS) so the editor survives tab switches.
 	const visited = new SvelteSet<string>();
 	$effect(() => {
 		if (active) visited.add(active);
 	});
 
-	// Instances whose iframe has fired its `load` event. Until then we overlay a
-	// loader so switching to a freshly-mounted IDE shows a readout, not blank white.
+	// Until `load` fires, a loader overlays the pane so a fresh IDE isn't blank white.
 	const loadedFrames = new SvelteSet<string>();
 
-	// Instances whose code-server has answered its health probe at least once —
-	// `status === 'running'` only means the container is up, and mounting an iframe
-	// before code-server binds its port renders the proxy's 503 in the pane. Sticky, so
-	// a later probe blip never tears down a live editor; cleared on leaving `running`.
+	// `running` only means the container is up; mounting before code-server binds its
+	// port renders the proxy's 503. Sticky, so a later probe blip can't tear down a live editor.
 	const everReady = new SvelteSet<string>();
 
-	// Panes the user forced open from the loader's "Open anyway", for the case where the
-	// probe never passes (a wedged monitor, a blocked probe). Kept separate from
-	// `everReady` so that stays an honest record of what the probe actually reported.
+	// Kept separate from `everReady` so that stays an honest record of what the probe reported.
 	const forced = new SvelteSet<string>();
 	const mountable = (id: string) => everReady.has(id) || forced.has(id);
 
-	// How long a pane waits on the probe before saying so and offering the override.
 	const STALLED_AFTER_MS = 10_000;
 
-	// Keep the document title in step with the focused instance.
 	$effect(() => {
 		const inst = running.find((i) => i.id === active);
 		document.title = onIde && inst ? `${inst.name} — Codebay` : 'Codebay';
 	});
 
-	// Unlock/resume the chime's audio context on the first interaction with the page
-	// (browsers block audio until the page has been interacted with).
+	// Browsers block audio until the page has been interacted with.
 	$effect(() => {
 		window.addEventListener('pointerdown', unlockAudio);
 		window.addEventListener('keydown', unlockAudio);
@@ -163,14 +138,8 @@
 		};
 	});
 
-	// Central live stream: drives both views and the attention chime, chiming when
-	// a non-focused tab newly raises (or changes) its signal. `instances` events
-	// drive the views; `health` events additionally gate the IDE iframes below.
 	$effect(() => {
-		// Skip the first frame after each (re)connect so the server's re-seed of
-		// the full list is treated as the baseline rather than a live change —
-		// otherwise a reconnect would replay chimes for anything that shifted while
-		// we were disconnected.
+		// The re-seed after a reconnect is a baseline, not a change — otherwise it replays chimes.
 		let primed = false;
 		return liveStream(
 			(msg) => {
@@ -179,10 +148,8 @@
 					return;
 				}
 				if (msg.type === 'health') {
-					// Only trust a probe for an instance we currently see as running. A monitor
-					// tick already in flight when a rebuild starts probes the *old* container
-					// and reports it accessible — taking that at face value would undo the
-					// re-arm below and mount the iframe against the replacement too early.
+					// A tick in flight when a rebuild starts probes the *old* container and
+					// reports it accessible, which would mount the iframe against the replacement too early.
 					const inst = instances.find((i) => i.id === msg.data.id);
 					if (msg.data.health.codeServerAccessible && inst?.status === 'running')
 						everReady.add(msg.data.id);
@@ -191,8 +158,6 @@
 				if (msg.type !== 'instances') return;
 				const next = msg.data;
 				// Re-arm the gate: a replaced container must prove code-server is up again.
-				// Ids that have left `running` — or vanished from the list entirely, i.e. been
-				// deleted — are dropped from both sets so nothing lingers.
 				const live = new Set(next.filter((i) => i.status === 'running').map((i) => i.id));
 				for (const id of [...everReady]) if (!live.has(id)) everReady.delete(id);
 				for (const id of [...forced]) if (!live.has(id)) forced.delete(id);
@@ -227,10 +192,8 @@
 		);
 	});
 
-	// The focused tab shouldn't pulse: dismiss its signal server-side (for all
-	// viewers) once the user is actually *looking* at it. Gated on document
-	// visibility so an IDE tab sitting in a background browser tab doesn't wipe the
-	// signal out from under the dashboard card. Re-checks when the tab regains focus.
+	// Gated on document visibility, or a background browser tab would wipe the
+	// signal out from under the dashboard card.
 	$effect(() => {
 		if (!active || !attention[active]) return;
 		const dismiss = () => {
@@ -263,8 +226,7 @@
 		<DashboardView preflight={livePreflight} {instances} {loaded} />
 	{/if}
 
-	<!-- Persistent panes: always mounted so iframes survive navigation; hidden on
-       the dashboard. Empty-state message only shows on the IDE route. -->
+	<!-- Always mounted, only hidden, so the iframes survive navigation. -->
 	<div class="panes" class:hidden={!onIde}>
 		{#each running as inst (inst.id)}
 			{#if visited.has(inst.id)}
@@ -273,8 +235,8 @@
 						<iframe src={ideUrl(inst)} title={inst.name} onload={() => loadedFrames.add(inst.id)}
 						></iframe>
 					{/if}
-					<!-- Two distinct waits: for the health probe (unbounded — gets the override),
-					     then for the mounted iframe's own `load` (bounded — plain loader). -->
+					<!-- Two distinct waits: the health probe is unbounded and gets the override,
+					     the iframe's own `load` is bounded and gets a plain loader. -->
 					{#if !mountable(inst.id)}
 						<IdeLoader stalledAfterMs={STALLED_AFTER_MS} onoverride={() => forced.add(inst.id)} />
 					{:else if !loadedFrames.has(inst.id)}
@@ -289,9 +251,7 @@
 	</div>
 </div>
 
-<!-- Hoisted here (rather than DashboardView) so it stays mounted across both
-     routes — toasts raised from the IDE tab bar (e.g. a failed rename) need
-     somewhere to render too. -->
+<!-- Hoisted out of DashboardView so IDE-route toasts have somewhere to render too. -->
 <Toaster
 	toastOptions={{
 		style:
@@ -300,8 +260,7 @@
 />
 
 <style>
-	/* On the IDE route the app is a fixed-height column (bar + panes fill the
-     viewport); on the dashboard it's normal document flow that scrolls. */
+	/* The IDE route fills the viewport; the dashboard stays in normal scrolling flow. */
 	.app.ide {
 		display: flex;
 		flex-direction: column;

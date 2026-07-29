@@ -8,9 +8,7 @@
 	import CredMenu from './CredMenu.svelte';
 	import Button from './Button.svelte';
 
-	// The app's top bar: branding plus the credentials/settings/actions cluster.
-	// Action state is injected so the bar stays presentational (and reusable on
-	// the dev /debug showcase).
+	// Action state is injected so the bar stays presentational and reusable on /debug.
 	let {
 		auth,
 		canDelete = false,

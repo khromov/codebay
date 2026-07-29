@@ -1,12 +1,8 @@
 import type { StreamEvent } from './lib/instances.server.ts';
 
 /**
- * Reconnecting WebSocket helper for the live streams. WebSockets (unlike
- * EventSource) don't auto-reconnect, so we reopen with a short backoff whenever
- * the socket closes. Browser-only — call it from inside an `$effect`.
- *
- * Returns a cleanup function that suppresses further reconnects and closes the
- * current socket.
+ * WebSockets don't auto-reconnect the way EventSource does, hence the backoff loop.
+ * Browser-only — call it from inside an `$effect`.
  */
 export function liveSocket(
 	path: string,
@@ -36,11 +32,7 @@ export function liveSocket(
 	};
 }
 
-/**
- * Subscribe to the central `/api/stream` socket and receive parsed, typed
- * `StreamEvent`s — malformed frames are silently dropped. Wraps `liveSocket` so
- * each caller no longer repeats the JSON.parse + try/catch + type guard.
- */
+/** Malformed frames are dropped silently rather than surfaced to the caller. */
 export function liveStream(onEvent: (event: StreamEvent) => void, onOpen?: () => void): () => void {
 	return liveSocket(
 		'/api/stream',

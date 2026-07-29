@@ -3,13 +3,7 @@ import { join } from 'node:path';
 import { readGhToken } from '../container-injections/github-credentials.ts';
 import { parseRepoUrl } from './repo-url.ts';
 
-/**
- * Read the branch currently checked out in an instance's workspace by parsing
- * `.git/HEAD`. The workspace copy is bind-mounted into the container, so the host
- * file tracks the live branch inside the running container — reading it here is a
- * cheap poll that needs no `docker exec`. Returns the branch name, a short SHA when
- * HEAD is detached, or null when there is no readable git repo.
- */
+/** Reads the bind-mounted host copy, so polling the container's branch costs no `docker exec`. */
 export async function readGitBranch(workspacePath: string): Promise<string | null> {
 	try {
 		const head = (await readFile(join(workspacePath, '.git', 'HEAD'), 'utf8')).trim();
@@ -23,13 +17,8 @@ export async function readGitBranch(workspacePath: string): Promise<string | nul
 }
 
 /**
- * Clone a Git repository into `dest`, streaming git's progress (written to stderr)
- * to `onLog`. GitHub clones are authenticated with the host's `gh` token, injected
- * as an HTTP auth header via git's env-scoped config (`GIT_CONFIG_*`) so the secret
- * never lands in argv nor in the cloned repo's persisted `.git/config` — the stored
- * remote stays the clean https URL, which the in-container gh credential injection
- * then reuses for push/pull. `GIT_TERMINAL_PROMPT=0` makes a missing/invalid token
- * fail fast instead of blocking on an interactive prompt. Throws on a non-zero exit.
+ * The token goes in env-scoped git config, so it lands in neither argv nor the clone's
+ * persisted `.git/config`; `GIT_TERMINAL_PROMPT=0` fails fast instead of blocking on a prompt.
  */
 export async function cloneRepo(
 	source: string,
@@ -45,8 +34,7 @@ export async function cloneRepo(
 		GIT_TERMINAL_PROMPT: '0'
 	};
 
-	// Authenticate for whichever GitHub host the URL points at — github.com or a
-	// GitHub Enterprise Server host `gh auth login` has set up — not just github.com.
+	// Keyed by host so GitHub Enterprise Server clones authenticate too, not just github.com.
 	const found = await readGhToken(parsed.host);
 	if (found) {
 		const basic = Buffer.from(`x-access-token:${found.token}`).toString('base64');

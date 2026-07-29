@@ -1,8 +1,8 @@
-/** Client-side UI preferences, persisted in localStorage (SSR-safe no-ops on the server). */
+// SSR-safe: every function no-ops when localStorage is absent.
 
 const SOUND_KEY = 'codebay.sound';
 
-/** Whether the attention chime is enabled. Defaults to on unless explicitly turned off. */
+/** Defaults to on — only an explicit 'off' disables it. */
 export function soundEnabled(): boolean {
 	if (typeof localStorage === 'undefined') return true;
 	return localStorage.getItem(SOUND_KEY) !== 'off';

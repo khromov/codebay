@@ -1,30 +1,17 @@
-/**
- * Parsing for Git repository URLs, shared by the server (clone logic) and the
- * client (folder-picker icon selection). Pure string logic — no server imports —
- * so it is safe to include in the hydrated client bundle.
- */
+// Pure string logic with no server imports, because the client bundle uses it too.
 
 export interface ParsedRepo {
-	/** Hostname, e.g. `github.com`. */
 	host: string;
 	owner: string;
-	/** Repository name, `.git` suffix stripped. */
+	/** `.git` suffix stripped. */
 	repo: string;
-	/** Normalized https clone URL: `https://<host>/<owner>/<repo>.git`. */
+	/** Normalized to `https://<host>/<owner>/<repo>.git` regardless of the input form. */
 	cloneUrl: string;
 }
 
 const SEGMENT = /^[A-Za-z0-9._-]+$/;
 
-/**
- * Parse a Git repository URL into its parts, or return null when the input is not
- * a recognizable repo URL. Accepts:
- *   - `https://github.com/owner/repo(.git)` (and `http://`)
- *   - `ssh://git@github.com/owner/repo(.git)`
- *   - `git@github.com:owner/repo(.git)` (scp-like)
- *   - `github.com/owner/repo(.git)` (schemeless, requires a dotted host)
- * Absolute local paths (`/Users/…`) have no dotted host prefix and so never match.
- */
+/** Null for anything unrecognized, which is how a local folder path is told apart from a URL. */
 export function parseRepoUrl(input: string): ParsedRepo | null {
 	const raw = input.trim();
 	if (!raw) return null;
@@ -68,7 +55,6 @@ export function parseRepoUrl(input: string): ParsedRepo | null {
 	return { host, owner, repo, cloneUrl: `https://${host}/${owner}/${repo}.git` };
 }
 
-/** True when the input looks like a Git repository URL (vs. a local folder path). */
 export function isRepoUrl(input: string): boolean {
 	return parseRepoUrl(input) !== null;
 }

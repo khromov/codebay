@@ -2,10 +2,8 @@ import { execInContainer } from '../lib/exec.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
 
 /**
- * Mark the workspace as a safe git directory for the container user. The
- * workspace is copied from the host, so its `.git` is owned by a different UID
- * than the container user — without this, git aborts every command with
- * "dubious ownership". Uses `*` since instances are throwaway and single-tenant.
+ * The copied `.git` is owned by a different UID than the container user, so without this
+ * git aborts every command with "dubious ownership". `*` is safe in a single-tenant sandbox.
  */
 export const gitSafeDirectory: Injection = {
 	id: 'git-safe-directory',

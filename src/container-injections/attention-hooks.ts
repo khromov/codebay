@@ -2,47 +2,25 @@ import { PORT } from '../lib/config.server.ts';
 import { checkPresence, execInContainer } from '../lib/exec.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
-/** Bridge URL a container reaches the manager on (Colima/Docker host-gateway). */
 function bridgeUrl(): string {
 	return `http://host.docker.internal:${PORT}/api/bridge/attention`;
 }
 
-/** Where each container keeps its bridge-auth header, resolved at hook runtime. */
+/** Read by curl as `-H @<file>` so the token never reaches argv, where `ps` would show it. */
 const HEADER_FILE = '${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.bridge-header';
 
-/** Debug log every hook appends its outcome to, inside the container's Claude
- * config dir. Tail it from a terminal in the container to see whether each
- * notification actually left and how the bridge answered:
- *   tail -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.bridge-hook.log"
- * Slowly-growing (one line per Stop/Notification/UserPromptSubmit); the hook
- * trims it back to the last 500 lines on each write. */
+/** Claude discards hook stdout/stderr, so a silently-failing ping would leave no other trace. */
 const HOOK_LOG = '${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.bridge-hook.log';
 
 /**
- * One `type: command` hook firing curl at the bridge with the given state. The
- * token rides in a header (`X-Bridge-Token`), not the query string, so it doesn't
- * end up in server request logs — and the header is read from a mode-600 file
- * (`curl -H @<file>`) rather than interpolated onto curl's argv, so it isn't
- * visible via `ps` inside the container. `id`/`state` aren't secret, so they stay
- * in the query string.
- *
- * The curl outcome is recorded to `HOOK_LOG` for debugging: the hook's own
- * stdout/stderr is otherwise discarded by Claude, so a silently-failing
- * notification (DNS, timeout, wrong port, rejected token) leaves no other trace.
- * `-f` is dropped versus a bare fire-and-forget so we still capture the HTTP
- * status on a 4xx (e.g. a 403 token mismatch) rather than curl bailing early;
- * `curl_exit` distinguishes "couldn't reach the server" (non-zero) from "reached
- * it, got an HTTP status" (zero, read `http`).
- *
- * The explicit `Content-Type: application/json` isn't for the route (it never
- * parses a body) — it keeps Mochi's CSRF guard from treating this header-less
- * POST as a non-preflighted form submission, which is how a request with no
- * `Content-Type` at all reads to that check.
+ * `-f` is deliberately absent so a 4xx still yields an HTTP status to log rather than
+ * curl bailing early; `curl_exit` then separates "unreachable" from "answered with a status".
  */
 function hookFor(id: string, state: 'done' | 'waiting' | 'busy') {
 	const url = `${bridgeUrl()}?id=${encodeURIComponent(id)}&state=${state}`;
 	const command =
 		`log="${HOOK_LOG}"; ` +
+		// The Content-Type is for Mochi's CSRF guard, which reads a bodiless POST as a form submit.
 		`http=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H @"${HEADER_FILE}" '${url}' 2>>"$log"); ` +
 		`rc=$?; ` +
 		`printf '[%s] state=${state} http=%s curl_exit=%s\\n' "$(date -Is 2>/dev/null || date)" "$http" "$rc" >> "$log" 2>/dev/null; ` +
@@ -61,13 +39,7 @@ function hookFor(id: string, state: 'done' | 'waiting' | 'busy') {
 	];
 }
 
-/**
- * The Claude `settings.json` (as a JSON string) injected into a container so its
- * Claude reports task completion / waiting back to the manager. `Stop` → green,
- * `Notification` (needs input/permission) → amber, `UserPromptSubmit` (resumed) → clear.
- * The bridge token is NOT in here — it lives in a separate mode-600 header file the
- * hooks read at runtime (see `writeBridgeHeader`).
- */
+/** Carries no token — that lives in the mode-600 header file `writeBridgeHeader` stages. */
 export function attentionHookSettings(id: string): string {
 	const settings = {
 		hooks: {
@@ -79,11 +51,7 @@ export function attentionHookSettings(id: string): string {
 	return JSON.stringify(settings, null, 2);
 }
 
-/**
- * Stage the per-instance bridge token into a mode-600 `.bridge-header` file (as a
- * full `X-Bridge-Token: <token>` header line) inside the container's Claude config
- * dir. The token travels via the scrubbed `$CODEBAY_STDIN` exec var, never on argv.
- */
+/** Stored as a whole header line so curl can consume the file directly with `-H @`. */
 async function writeBridgeHeader(
 	target: ContainerTarget,
 	token: string
@@ -95,17 +63,7 @@ async function writeBridgeHeader(
 	return res.ok ? { ok: true } : { ok: false, error: res.error };
 }
 
-/**
- * Shell snippet that deep-merges the JSON in `$CODEBAY_STDIN` into any existing
- * `$CLAUDE_CONFIG_DIR/settings.json` (default ~/.claude/settings.json) with `jq`, so
- * keys the file already has — hooks another injection wrote, a `statusLine`, or
- * whatever the base image ships — survive; the incoming JSON wins only on key
- * conflicts. Falls back to writing the incoming JSON outright when there's no
- * existing file, no `jq`, or the existing file isn't valid JSON. Shared by every
- * injection that touches `settings.json` (attention hooks, statusLine) so they
- * compose regardless of apply order. Must run via `execInContainer` with `stdin`
- * set to the JSON to merge in.
- */
+/** Merging rather than overwriting is what lets the settings.json injections compose in any order. */
 export function mergeClaudeSettingsScript(): string {
 	return (
 		'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; mkdir -p "$d"; ' +
@@ -117,11 +75,6 @@ export function mergeClaudeSettingsScript(): string {
 	);
 }
 
-/**
- * Merge the attention hooks into a running container's Claude config dir. Passes the
- * JSON via a scrubbed shell variable (never argv); see `mergeClaudeSettingsScript`
- * for the merge behavior.
- */
 async function injectClaudeHooks(
 	target: ContainerTarget,
 	settingsJson: string
@@ -133,11 +86,6 @@ async function injectClaudeHooks(
 	return res.ok ? { ok: true } : { ok: false, error: res.error };
 }
 
-/**
- * Install the Claude attention hooks so the in-container Claude pings the manager
- * when it finishes a task or needs input, pulsing this instance's IDE tab. Always
- * applied — it has no host dependency, only the instance id + bridge token.
- */
 export const attentionHooks: Injection = {
 	id: 'attention-hooks',
 	label: 'Claude hooks',
@@ -159,7 +107,6 @@ export const attentionHooks: Injection = {
 	},
 
 	async check(target) {
-		// Hooks are present when settings.json exists and mentions this instance id.
 		return checkPresence(
 			target,
 			'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +

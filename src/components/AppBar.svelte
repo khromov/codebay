@@ -2,9 +2,6 @@
 	import type { Snippet } from 'svelte';
 	import House from '@lucide/svelte/icons/house';
 
-	// The shared 44px top bar: a bordered home-icon cell on the left, then whatever
-	// the caller renders (IDE tabs + cog, or a settings title). Keeps the two bars
-	// visually in lockstep — see IdeBar.svelte and SettingsView.svelte.
 	let { children }: { children?: Snippet } = $props();
 </script>
 

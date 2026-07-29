@@ -52,19 +52,14 @@ import type { ServerWebSocket } from 'bun';
 import type { Instance, InstanceHealth } from '../types.ts';
 
 /**
- * Client-safe instance shape: every field except `bridge_token`, a
- * container-only secret (it authenticates the no-Basic-Auth `/api/bridge/`
- * endpoint) that must never reach the browser. Every server function that
- * hands an instance row back to a route must pass it through this first —
- * `listInstances()` below does, and `routes.ts` does the same for every
- * mutator (rename, start/stop, ports, rebuild, create) that returns a row.
+ * `bridge_token` authenticates the no-Basic-Auth `/api/bridge/` endpoint, so it
+ * must never reach the browser — every row handed to a route goes through here.
  */
 export function sanitizeInstance(row: InstanceRow): Omit<InstanceRow, 'bridge_token'> {
 	const { bridge_token: _token, ...rest } = row;
 	return rest;
 }
 
-/** Live, in-memory boot state for an instance (logs + SSE subscribers). */
 interface LiveState {
 	logs: string[];
 	subscribers: Set<(chunk: string) => void>;
@@ -98,8 +93,7 @@ function appendLog(id: string, chunk: string): void {
 
 /** Replay buffered logs and stream future ones; returns an unsubscribe fn. */
 export function subscribeLogs(id: string, onChunk: (chunk: string) => void): () => void {
-	// Never materialize a registry entry for an id that was never booted and isn't
-	// a known instance — otherwise an unknown id could grow the registry unbounded.
+	// Materializing an entry for an unknown id would let callers grow the registry unbounded.
 	if (!registry.has(id) && !getInstance(id)) return () => {};
 	const state = live(id);
 	for (const line of state.logs) onChunk(line);
@@ -107,14 +101,6 @@ export function subscribeLogs(id: string, onChunk: (chunk: string) => void): () 
 	return () => state.subscribers.delete(onChunk);
 }
 
-// --- Central live stream (WebSocket) ---------------------------------------
-// One hub broadcasts typed events to every connected `/api/stream` socket: the
-// full reconciled instance list (`instances`) and continuous per-instance
-// `health`. It reconciles on a periodic tick to pick up external Docker state
-// changes and immediately on any mutation. A fresh socket is seeded with the
-// current list plus the latest health snapshots.
-
-/** A message pushed to clients on the central stream; clients filter by `type`. */
 export type StreamEvent =
 	| { type: 'instances'; data: Instance[] }
 	| { type: 'health'; data: { id: string; health: InstanceHealth } }
@@ -135,13 +121,12 @@ const hub: StreamHub = (globalForHub.__codebayHub ??= {
 	lastPreflightJson: ''
 });
 
-/** Background preflight subset — docker + CLI only; auth stays SSR-only. */
+/** Docker + CLI only; auth stays SSR-only. */
 async function backgroundPreflight(): Promise<{ docker: boolean; cli: boolean }> {
 	const [docker, cli] = await Promise.all([dockerAvailable(), devcontainerCliAvailable()]);
 	return { docker, cli };
 }
 
-/** Serialize an event once and fan it out, dropping sockets that have closed. */
 function broadcast(event: StreamEvent): void {
 	const frame = JSON.stringify(event);
 	for (const ws of [...hub.sockets]) {
@@ -161,12 +146,10 @@ function sendTo(ws: ServerWebSocket<unknown>, event: StreamEvent): void {
 	}
 }
 
-/** Push a fresh health snapshot for one instance to all stream clients. */
 export function broadcastHealth(id: string, health: InstanceHealth): void {
 	broadcast({ type: 'health', data: { id, health } });
 }
 
-/** Refresh the instance list and, if it changed (or `force`), broadcast it. */
 async function reconcileInstances(force = false): Promise<void> {
 	const list = await listInstances();
 	const listJson = JSON.stringify(list);
@@ -176,12 +159,7 @@ async function reconcileInstances(force = false): Promise<void> {
 	}
 }
 
-/**
- * Refresh docker/CLI preflight and, if it changed, broadcast it. Spawns a
- * process (`devcontainer --version`, see `devcontainerCliAvailable`), so this
- * is only ever called from the periodic tick below — never from
- * `triggerReconcile`, which fires on every attention-bridge ping.
- */
+/** Spawns a process, so only the periodic tick calls this — never `triggerReconcile`. */
 async function reconcilePreflight(): Promise<void> {
 	const pf = await backgroundPreflight();
 	const pfJson = JSON.stringify(pf);
@@ -191,39 +169,28 @@ async function reconcilePreflight(): Promise<void> {
 	}
 }
 
-/** Periodic tick (every 5s, see `streamOpen`): refresh both the instance list and preflight. */
 async function reconcileAndBroadcast(): Promise<void> {
 	await reconcileInstances();
 	await reconcilePreflight();
 }
 
 /**
- * Notify all clients that the instance list changed (immediate push). Refreshes
- * only the instance list, not the docker/CLI preflight: `triggerReconcile` is
- * called from high-frequency paths too — every mutation, but also every
- * attention-bridge ping, i.e. every Claude `Stop`/`Notification`/
- * `UserPromptSubmit` hook event across every running instance. Re-probing the
- * CLI on each of those would mean spawning a `devcontainer --version` process
- * on essentially every Claude tool-call boundary; the periodic tick above
- * keeps preflight fresh (every 5s) without that cost.
+ * Deliberately skips preflight: this fires on every attention-bridge ping, so
+ * re-probing the CLI here would spawn a process per Claude tool-call boundary.
  */
 export function triggerReconcile(): void {
 	void reconcileInstances(true);
 }
 
-/** A new `/api/stream` socket connected: register it, seed it, and ensure the tick runs. */
 export function streamOpen(ws: ServerWebSocket<unknown>): void {
 	hub.sockets.add(ws);
 	if (!hub.timer) hub.timer = setInterval(() => void reconcileAndBroadcast(), 5000);
-	// Seed the freshly-connected client: full list now, plus whatever health we
-	// already have. Newly-running instances fill in on the next monitor tick.
+	// Seed everything up front so a fresh or reconnected client is correct without waiting a tick.
 	void listInstances().then((list) => sendTo(ws, { type: 'instances', data: list }));
 	for (const snap of currentHealthSnapshots()) sendTo(ws, { type: 'health', data: snap });
-	// Seed current preflight so a fresh/reconnected client is correct without waiting a tick.
 	void backgroundPreflight().then((pf) => sendTo(ws, { type: 'preflight', data: pf }));
 }
 
-/** A `/api/stream` socket closed: unregister it and stop the tick when idle. */
 export function streamClose(ws: ServerWebSocket<unknown>): void {
 	hub.sockets.delete(ws);
 	if (hub.sockets.size === 0 && hub.timer) {
@@ -232,41 +199,18 @@ export function streamClose(ws: ServerWebSocket<unknown>): void {
 	}
 }
 
-// --- Host-port allocation --------------------------------------------------
-// `usedPorts()` reads the DB, but a port isn't in the DB until its row/forward is
-// inserted — and inserts can lag the allocation (e.g. the seed loop computes a
-// port, then inserts; `createInstance` allocates host_port well before its row is
-// written). Two concurrent allocations could therefore both pick the same "free"
-// port. We additionally hold a short-lived in-memory reservation set, pinned to
-// globalThis (survives dev hot-reload), and union it with the DB ports so each
-// allocation sees the ones still in flight. Reservations that have since landed
-// in the DB are pruned on every call, so the set never grows unbounded.
-//
-// Each reservation also carries the time it was made. A reservation only needs to
-// bridge the gap until its row/forward is inserted (milliseconds, and always the
-// very next statement in every caller); if that insert never happens — e.g. boot
-// fails before persisting a seeded forward — the reservation would otherwise stay
-// forever and permanently shrink the range. So we also drop any reservation older
-// than the TTL: far longer than any real allocate→insert gap, but a hard backstop
-// against leaking the range on a failed insert.
-//
-// The DB is *not* the ground truth for what's actually bound on the host, though —
-// a container can outlive its DB row (e.g. codebay restarted with a DB that lost
-// track of it, or the container was started outside codebay) and keep holding its
-// port indefinitely. So we also union in `hostPortsInUse()`, which asks Docker
-// directly what's currently published; that's the set that can actually make
-// `docker run -p` fail, independent of whatever codebay's own bookkeeping thinks.
+// Bridges the gap between allocating a port and persisting it, so two concurrent
+// allocations can't pick the same DB-free port; the TTL stops a failed insert from
+// leaking that port out of the range forever.
 const RESERVATION_TTL_MS = 60_000;
 const globalForPorts = globalThis as unknown as { __codebayReservedPorts?: Map<number, number> };
 const reservedPorts: Map<number, number> = (globalForPorts.__codebayReservedPorts ??= new Map());
 
 async function allocatePort(): Promise<number> {
 	const dbPorts = new Set(usedPorts());
+	// A container can outlive its DB row, so ask Docker what's actually published too.
 	const dockerPorts = new Set(await hostPortsInUse());
 	const now = Date.now();
-	// Drop reservations that have already been persisted (now covered by the DB set)
-	// or that have aged past the TTL (their insert never landed) — either way keeping
-	// them reserved would only leak the range.
 	for (const [port, reservedAt] of reservedPorts) {
 		if (dbPorts.has(port) || now - reservedAt > RESERVATION_TTL_MS) reservedPorts.delete(port);
 	}
@@ -275,7 +219,6 @@ async function allocatePort(): Promise<number> {
 	return port;
 }
 
-/** Validate that a path exists and is a directory. */
 async function assertDir(path: string): Promise<void> {
 	let info;
 	try {
@@ -286,7 +229,6 @@ async function assertDir(path: string): Promise<void> {
 	if (!info.isDirectory()) throw new Error(`Not a folder: ${path}`);
 }
 
-/** Mark an instance failed: persist the error, log it, and re-broadcast the list. */
 function failInstance(id: string, err: unknown): void {
 	const message = (err as Error).message;
 	updateInstance(id, { status: 'error', error: message });
@@ -294,7 +236,6 @@ function failInstance(id: string, err: unknown): void {
 	triggerReconcile();
 }
 
-/** Drive the first boot: fetch the workspace → seed declared ports → provision the container. */
 async function boot(row: InstanceRow, opts: { branch?: string } = {}): Promise<void> {
 	try {
 		if (isRepoUrl(row.source_path)) {
@@ -315,12 +256,7 @@ async function boot(row: InstanceRow, opts: { branch?: string } = {}): Promise<v
 	await provision(row);
 }
 
-/**
- * Allocate a unique host port for every container port the project declares
- * (`forwardPorts`/`appPort`) and persist it as a forward. Runs on first boot after the copy,
- * before config injection, so it reads the pristine config. Idempotent — skips ports already
- * forwarded, so it's a no-op on rebuild.
- */
+/** Must run before config injection, while the copied `devcontainer.json` is still pristine. */
 async function seedDeclaredPorts(row: InstanceRow): Promise<void> {
 	const existing = new Set(listForwards(row.id).map((f) => f.container_port));
 	for (const containerPort of await readDeclaredContainerPorts(row.workspace_path)) {
@@ -337,11 +273,7 @@ async function seedDeclaredPorts(row: InstanceRow): Promise<void> {
 	}
 }
 
-/**
- * (Re-)inject config and run `devcontainer up`, then provision auth/hooks. Shared by the first
- * boot and by `rebuildInstance` — it never re-copies the workspace, so in-container edits survive
- * a rebuild. `--remove-existing-container` recreates the container with the current published ports.
- */
+/** Never re-copies the workspace, so in-container edits survive a rebuild. */
 async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Promise<void> {
 	try {
 		const forwards = listForwards(row.id).map((f) => ({
@@ -358,8 +290,6 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		);
 		updateInstance(row.id, { image_source: imageSource });
 
-		// Build without cache when explicitly requested (e.g. "rebuild all without cache")
-		// or when the global "disable build cache" setting is on — so it covers first boot too.
 		const noCache = opts.noCache || getOption('disable_build_cache') === '1';
 		if (noCache) appendLog(row.id, `Building without cache (--build-no-cache)\n`);
 
@@ -382,14 +312,12 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			error: null
 		});
 
-		// Run every injection (git safe.directory, credentials, attention hooks, …)
-		// in registry order. Each logs its own progress; a thrown error is non-fatal
-		// so one failed injection never aborts the rest of provisioning.
 		const target = {
 			containerId: result.containerId,
 			remoteUser: result.remoteUser,
 			instance: row
 		};
+		// Swallow per-injection failures so one bad injection can't abort the rest of provisioning.
 		for (const injection of resolveInjections()) {
 			try {
 				await injection.apply(target, (msg) => appendLog(row.id, msg));
@@ -405,10 +333,7 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 	}
 }
 
-/**
- * Make `desired` unique against existing instance names by appending a
- * `#2`, `#3`, … suffix. The first instance keeps the bare name.
- */
+/** The first instance keeps the bare name; later collisions get a `#2`, `#3`, … suffix. */
 function uniqueName(desired: string, excludeId?: string): string {
 	const taken = new Set(
 		allInstances()
@@ -422,11 +347,7 @@ function uniqueName(desired: string, excludeId?: string): string {
 	}
 }
 
-/**
- * Create an instance row and kick off its boot in the background. `source` is
- * either a local folder path (copied) or a Git repository URL (cloned — see
- * `cloneRepo`); `opts.branch` selects a non-default branch for a repo source.
- */
+/** `source` is either a local folder (copied) or a Git URL (cloned); boot runs in the background. */
 export async function createInstance(
 	source: string,
 	name?: string,
@@ -468,7 +389,7 @@ export async function createInstance(
 /** List instances, reconciling persisted status against the live Docker state. */
 export async function listInstances(): Promise<Instance[]> {
 	const rows = allInstances();
-	// Branch is polled per reconcile (not persisted) — it changes inside the container.
+	// Polled rather than persisted, because the branch changes inside the container.
 	const branches = new Map<string, string | null>();
 	await Promise.all(
 		rows.map(async (row) => {
@@ -479,21 +400,17 @@ export async function listInstances(): Promise<Instance[]> {
 				updateInstance(row.id, { status: next });
 				row.status = next;
 			}
-			// The workspace is bind-mounted, so the host copy's .git/HEAD tracks the
-			// branch checked out inside the container.
+			// The workspace is bind-mounted, so the host copy's .git/HEAD tracks the container.
 			branches.set(row.id, await readGitBranch(row.workspace_path));
 		})
 	);
-	// Keep a background health monitor running for each live container (and retire
-	// monitors for the rest) — reconcile is where we know the current running set.
+	// Reconcile is the only place that knows the current running set.
 	syncHealthMonitors(rows);
-	// Ports the live container actually publishes, polled by the health monitor — used
-	// to flag each configured forward as open vs not-yet-published (e.g. pending rebuild).
+	// Distinguishes a forward that's live from one still pending a rebuild.
 	const openPorts = new Map<string, Set<number>>();
 	for (const { id, health } of currentHealthSnapshots()) {
 		openPorts.set(id, new Set(health.openPorts));
 	}
-	// Group forwarded ports per instance in a single query (mirrors the branches map).
 	const forwards = new Map<
 		string,
 		{ container_port: number; host_port: number; open: boolean }[]
@@ -507,7 +424,6 @@ export async function listInstances(): Promise<Instance[]> {
 		});
 		forwards.set(f.instance_id, list);
 	}
-	// Strip bridge_token — it's a container-only secret and must not reach the client.
 	return rows.map((row) => ({
 		...sanitizeInstance(row),
 		git_branch: branches.get(row.id) ?? null,
@@ -527,7 +443,7 @@ export function renameInstance(id: string, name: string): InstanceRow {
 	return getInstance(id)!;
 }
 
-/** Allocate a host port for a new container port and persist it. Apply via `rebuildInstance`. */
+/** Only persists the mapping — `rebuildInstance` is what actually publishes it. */
 export async function addForwardedPort(id: string, containerPort: number): Promise<InstanceRow> {
 	const row = getInstance(id);
 	if (!row) throw new Error('Instance not found');
@@ -550,7 +466,7 @@ export async function addForwardedPort(id: string, containerPort: number): Promi
 	return getInstance(id)!;
 }
 
-/** Drop a forwarded port. Frees its host port; apply via `rebuildInstance`. */
+/** Only persists the removal — `rebuildInstance` is what actually unpublishes it. */
 export function removeForwardedPort(id: string, containerPort: number): InstanceRow {
 	const row = getInstance(id);
 	if (!row) throw new Error('Instance not found');
@@ -559,10 +475,7 @@ export function removeForwardedPort(id: string, containerPort: number): Instance
 	return getInstance(id)!;
 }
 
-/**
- * Re-run `devcontainer up` to apply the current forwarded-port set, recreating the container
- * (in-container edits survive — the workspace isn't re-copied). No-op if already (re)building.
- */
+/** Recreates the container, but not the workspace copy, so in-container edits survive. */
 export function rebuildInstance(id: string, opts: { noCache?: boolean } = {}): InstanceRow {
 	const row = getInstance(id);
 	if (!row) throw new Error('Instance not found');
@@ -578,11 +491,7 @@ export function rebuildInstance(id: string, opts: { noCache?: boolean } = {}): I
 	return fresh;
 }
 
-/**
- * Rebuild every currently-running instance from scratch (no build cache). Stopped,
- * errored, and still-creating instances are left untouched. Each rebuild runs in the
- * background via `rebuildInstance`; returns how many were kicked off.
- */
+/** Returns how many rebuilds were kicked off; each runs in the background. */
 export function rebuildRunningInstancesNoCache(): number {
 	const running = allInstances().filter((r) => r.status === 'running' && r.container_id);
 	for (const row of running) rebuildInstance(row.id, { noCache: true });
@@ -634,11 +543,7 @@ export async function deleteAllInstances(): Promise<void> {
 	}
 }
 
-/**
- * Full reset: tear down every instance (containers + workspace copies + DB rows),
- * close and delete the SQLite database, then exit the process. The process exit is
- * deferred briefly so the HTTP response can flush before the server dies.
- */
+/** The exit is deferred so the HTTP response can flush before the server dies. */
 export async function deleteDatabaseAndShutdown(): Promise<void> {
 	await deleteAllInstances();
 	closeDb();

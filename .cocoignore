@@ -1,4 +1,5 @@
 .codebay
 .mochi
+.test-data
 scripts
 src/__fixtures__/*

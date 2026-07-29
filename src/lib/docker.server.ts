@@ -1,31 +1,21 @@
 import { getDocker, resetDocker } from './docker-client.server.ts';
 
-/** The HTTP status code dockerode attaches to a rejected request, if any. */
 function statusOf(err: unknown): number | undefined {
 	return (err as { statusCode?: number })?.statusCode;
 }
 
-/** True if the Docker daemon is reachable. */
 export async function dockerAvailable(): Promise<boolean> {
 	try {
 		await (await getDocker()).ping();
 		return true;
 	} catch {
-		// The daemon may have started/stopped/switched context since we resolved the
-		// client. Drop the cached client so the next probe re-resolves the live socket
-		// and can recover without a server restart. This runs every few seconds via the
-		// background preflight tick, so recovery is automatic.
+		// Re-resolve on the next probe, in case the daemon moved or switched context.
 		resetDocker();
 		return false;
 	}
 }
 
-/**
- * The Docker *daemon's* CPU architecture (e.g. `arm64`, `amd64`) — Go's `runtime.GOARCH`,
- * which is what images are pulled for. This is the arch that matters when picking a base
- * image, not the host CLI's, since the daemon may be a remote/VM context (Colima, etc.).
- * Returns null when the daemon is unreachable.
- */
+/** The daemon's arch, not the host's — images are pulled for the daemon, which may be a VM. */
 export async function dockerArch(): Promise<string | null> {
 	try {
 		const arch = (await (await getDocker()).version()).Arch;
@@ -35,10 +25,6 @@ export async function dockerArch(): Promise<string | null> {
 	}
 }
 
-/**
- * Whether a container exists and is currently running. Resolves the active Docker
- * context (Docker Desktop, Colima, OrbStack, remote) via the shared dockerode client.
- */
 export async function isRunning(containerId: string): Promise<boolean> {
 	try {
 		const info = await (await getDocker()).getContainer(containerId).inspect();
@@ -48,13 +34,7 @@ export async function isRunning(containerId: string): Promise<boolean> {
 	}
 }
 
-/**
- * Container ports currently published to the host, per `docker inspect` (the same
- * mappings `docker ps` shows in its PORTS column). Reads the live binding table
- * rather than execing inside the container, so it reflects what Docker actually
- * exposes. Returns the deduped set of container port numbers that have a host
- * binding; `[]` on any failure.
- */
+/** Reads Docker's live binding table, so it reflects what's actually exposed. */
 export async function publishedContainerPorts(containerId: string): Promise<number[]> {
 	let ports: Record<string, { HostPort?: string }[] | null>;
 	try {
@@ -73,14 +53,8 @@ export async function publishedContainerPorts(containerId: string): Promise<numb
 }
 
 /**
- * Every host port currently published by any *running* container on the daemon,
- * regardless of whether codebay's DB has a row for it. `allocatePort` unions this
- * with the DB-derived set so a container the daemon still has bound — e.g. one
- * orphaned by an app restart that lost its DB row, or started outside codebay
- * entirely — can never be handed out to a new instance. Stopped containers don't
- * hold their bind, so `listContainers()`'s running-only default is exactly what's
- * needed here. Returns `[]` on any failure (daemon unreachable) rather than
- * throwing — allocation still works from the DB view alone in that case.
+ * Covers containers codebay has no DB row for, which would otherwise get their port
+ * handed out twice. Stopped containers don't hold a bind, hence the running-only default.
  */
 export async function hostPortsInUse(): Promise<number[]> {
 	try {
@@ -97,12 +71,7 @@ export async function hostPortsInUse(): Promise<number[]> {
 	}
 }
 
-/**
- * Purge BuildKit's build cache (the layer cache `devcontainer up` reuses), so the
- * next build runs uncached. Hits `POST /build/prune?all=true` via the raw modem —
- * dockerode has no dedicated helper for it. Returns the bytes reclaimed. Does not
- * touch pulled images, so other instances' base images stay put.
- */
+/** Goes through the raw modem because dockerode has no helper for `/build/prune`. */
 export async function pruneBuildCache(): Promise<{ spaceReclaimed: number }> {
 	const docker = await getDocker();
 	const data = await new Promise<{ SpaceReclaimed?: number } | undefined>((resolve, reject) =>
@@ -137,16 +106,7 @@ export async function stopContainer(containerId: string): Promise<boolean> {
 	}
 }
 
-/**
- * Force-remove a container *and* the volumes attached to it; treats an
- * already-absent container as success. We inspect the container first to
- * discover its `volume` mounts (bind mounts like the workspace copy are
- * skipped), then remove the container with `v: true` — which drops the
- * container's *anonymous* volumes — and finally remove any *named* volumes
- * explicitly, since the engine never auto-removes those. Volume removal is
- * best-effort: a 404 (already gone, e.g. an anonymous volume dropped by
- * `v: true`) or 409 (still in use) must not make the delete fail.
- */
+/** Named volumes must be listed before removal and dropped by hand — the engine never reaps them. */
 export async function removeContainer(containerId: string): Promise<boolean> {
 	const docker = await getDocker();
 	const container = docker.getContainer(containerId);
@@ -172,8 +132,7 @@ export async function removeContainer(containerId: string): Promise<boolean> {
 		try {
 			await docker.getVolume(name).remove({ force: true });
 		} catch {
-			// best-effort: anonymous volume already dropped by `v: true` (404),
-			// or a shared volume still in use (409) — leave it be.
+			// Already dropped by `v: true` (404) or still shared with another container (409).
 		}
 	}
 	return true;

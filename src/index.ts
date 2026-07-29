@@ -21,7 +21,7 @@ if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !BASIC_AUTH_PASSWORD) {
 	);
 }
 
-// Seed MOCHI_KEY from (or into) DATA_DIR before Mochi reads it.
+// Must precede Mochi.serve(), which is where MOCHI_KEY is read.
 ensureMochiKey();
 
 await Mochi.serve({
@@ -29,16 +29,8 @@ await Mochi.serve({
 	hostname: HOST,
 	development: process.env.MODE === 'development',
 	htmlShell: './src/shell.html',
-	// Trailing-slash normalization is disabled entirely: the proxy's `/p/:id`
-	// route does its own bare-`/p/<id>` → `/p/<id>/` redirect (code-server needs
-	// the slash), and we don't want Mochi's global policy touching proxy paths.
-	// Gate the whole app (UI, APIs, proxy) behind one Basic Auth password, then
-	// stamp the visitor's theme cookie onto the SSR'd <html> tag.
 	handle: sequence(basicAuth, themeHandle),
-	// The app is served same-origin (no reverse proxy by default). Pin the public
-	// origin so Mochi's CSRF origin check accepts our own form POSTs in production
-	// mode — without this it refuses every form mutation and warns about a missing
-	// proxy.origin. Override PUBLIC_ORIGIN / TRUSTED_ORIGINS when fronted by a proxy.
+	// Without a pinned origin, Mochi's CSRF check refuses every form POST in production.
 	proxy: {
 		origin: PUBLIC_ORIGIN
 	},
@@ -46,15 +38,8 @@ await Mochi.serve({
 		trustedOrigins: TRUSTED_ORIGINS
 	},
 	filters: {
-		// Exempt the bridge from Mochi's framework-level CSRF origin check. Containers
-		// POST here from a plain `curl` with no Origin header, so the origin check would
-		// 403 every attention ping before it reaches the handler. This is safe: the route
-		// authenticates by a per-instance bearer token (see auth.server.ts / routes.ts),
-		// not by ambient browser credentials, so classic CSRF doesn't apply. Returning
-		// null bypasses the block; anything else delegates to Mochi's default decision.
-		// Belt-and-suspenders: the curl already sends `Content-Type: application/json`
-		// (attention-hooks.ts) so Mochi's check exits before it would ever log/block —
-		// this filter only matters if a future bridge caller sends a form content type.
+		// Containers curl the bridge with no Origin header, which the check would 403;
+		// safe because the route authenticates by token, not ambient browser credentials.
 		'csrf:check': (decision, { url }) =>
 			url.pathname.startsWith('/api/bridge/') ? null : decision,
 		'consoleLogger:line': (line, ctx) => {
@@ -65,18 +50,13 @@ await Mochi.serve({
 			if (ctx.source.name === 'ws:message' && ctx.path.startsWith(PROXY_PREFIX + '/')) {
 				return null;
 			}
-			// The bridge fires on every Claude hook event (Stop/Notification/
-			// UserPromptSubmit) — far more often than any human action — and these
-			// requests carry the per-instance bridge token. Keep them out of the log
-			// entirely rather than relying on remembering not to log secrets elsewhere.
+			// These fire on every Claude hook event and carry the bridge token.
 			if (ctx.path.startsWith('/api/bridge/')) {
 				return null;
 			}
 			return kept;
 		},
-		// Belt-and-suspenders: trailingSlash is off above, so this never fires
-		// today. It stays as a guard — if the policy is ever re-enabled, proxy
-		// paths under /p/ remain exempt so code-server's subpath isn't broken.
+		// Dormant while trailingSlash is off, but keeps code-server's subpath safe if it returns.
 		'trailingSlash:redirect': (computed, { url }) =>
 			url.pathname.startsWith(PROXY_PREFIX + '/') ? null : computed
 	},
@@ -86,8 +66,6 @@ await Mochi.serve({
 const url = 'http://localhost:' + PORT;
 console.log(`Server running at ${url} (bound to ${HOST})`);
 
-// Open the web UI in the user's default browser on startup.
-// Set DISABLE_OPEN_BROWSER=1 to skip (e.g. headless or Claude Code runs).
 if (process.env.DISABLE_OPEN_BROWSER !== '1') {
 	const openCmd =
 		process.platform === 'darwin'
@@ -98,6 +76,6 @@ if (process.env.DISABLE_OPEN_BROWSER !== '1') {
 	try {
 		Bun.spawn(openCmd, { stdout: 'ignore', stderr: 'ignore' });
 	} catch {
-		// Browser launch is best-effort; ignore failures (e.g. headless environments).
+		// Best-effort — a headless host has nothing to open.
 	}
 }

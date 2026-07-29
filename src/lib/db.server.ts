@@ -8,10 +8,8 @@ import type { FolderHistoryEntry } from '../types.ts';
 // db.server.ts lives in src/lib, so ../../migrations resolves to the repo root.
 const MIGRATIONS_DIR = join(import.meta.dir, '../../migrations');
 
-/** Possible lifecycle states for an instance row. */
 export type InstanceStatus = 'creating' | 'running' | 'stopped' | 'error';
 
-/** Durable record of one devcontainer instance. */
 export interface InstanceRow {
 	id: string;
 	name: string;
@@ -27,15 +25,10 @@ export interface InstanceRow {
 	bridge_token: string;
 	/** Container user the workspace runs as; needed to exec health checks in its home dir. */
 	remote_user: string | null;
-	/**
-	 * Which image this instance was created with: the literal `'local'` when the source
-	 * folder shipped its own devcontainer.json, or the default image reference that was
-	 * injected when it had none. Null on rows created before this was recorded.
-	 */
+	/** `'local'` when the folder shipped its own config, else the injected image; null pre-dates this. */
 	image_source: string | null;
 }
 
-/** One published container→host port mapping for an instance (besides code-server). */
 export interface PortForwardRow {
 	instance_id: string;
 	container_port: number;
@@ -56,7 +49,6 @@ function open(): Database {
 
 export const db: Database = (globalForDb.__codebayDb ??= open());
 
-/** Close the pinned SQLite connection (flushing WAL) and drop the global handle. */
 export function closeDb(): void {
 	globalForDb.__codebayDb?.close();
 	globalForDb.__codebayDb = undefined;
@@ -93,8 +85,7 @@ export function allInstances(): InstanceRow[] {
 }
 
 export function usedPorts(): number[] {
-	// Union code-server's host ports with every forwarded host port so allocation
-	// never hands out one that's already published by either table.
+	// Both tables publish host ports, so allocation has to see the union of them.
 	const rows = db
 		.query('SELECT host_port FROM instances UNION SELECT host_port FROM port_forwards')
 		.all() as { host_port: number }[];
@@ -134,7 +125,7 @@ export function deleteForwards(instanceId: string): void {
 	db.query('DELETE FROM port_forwards WHERE instance_id = $id').run({ $id: instanceId });
 }
 
-/** Columns `updateInstance` may patch, paired with their bind-parameter names. */
+/** The allowlist that keeps `updateInstance` from interpolating arbitrary column names. */
 const UPDATABLE_COLUMNS = [
 	'name',
 	'container_id',
@@ -167,7 +158,6 @@ export function deleteInstanceRow(id: string): void {
 	db.query('DELETE FROM instances WHERE id = $id').run({ $id: id });
 }
 
-/** Record (or refresh) a source folder in the re-creation history. */
 export function recordFolder(source_path: string, name: string): void {
 	db.query(
 		`INSERT INTO folder_history (source_path, name, last_used_at)
@@ -190,7 +180,6 @@ export function deleteFolderHistory(source_path: string): void {
 	});
 }
 
-/** Read a key/value app option, or null when unset. */
 export function getOption(key: string): string | null {
 	const row = db.query('SELECT value FROM options WHERE key = $key').get({ $key: key }) as {
 		value: string;
@@ -198,7 +187,6 @@ export function getOption(key: string): string | null {
 	return row?.value ?? null;
 }
 
-/** Set (or overwrite) a key/value app option. */
 export function setOption(key: string, value: string): void {
 	db.query(
 		`INSERT INTO options (key, value)

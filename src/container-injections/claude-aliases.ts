@@ -1,23 +1,13 @@
 import { checkPresence, execInContainer } from '../lib/exec.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
 
-/**
- * The alias lines appended to the container user's shell rc files — mirrors the
- * host's `c200`/`cs` shortcuts. `c200` disables Claude Code's 1M context window
- * (standard 200k), `cs` runs Claude on Sonnet. Both resolve `claude`, which the
- * `claude-skip-permissions` injection also aliases, so interactive shells compose
- * the two naturally.
- */
+/** Both resolve `claude`, which `claude-skip-permissions` also aliases, so the two compose. */
 const ALIAS_LINES = [
 	"alias c200='CLAUDE_CODE_DISABLE_1M_CONTEXT=1 claude'",
 	"alias cs='claude --model sonnet'"
 ];
 
-/**
- * Append each alias to both `~/.bashrc` and `~/.zshrc`, guarded with `grep -qF`
- * so a re-apply never duplicates a line; `>>` creates the file if absent. The
- * lines are passed as `$@` so no alias text is interpolated into the loop body.
- */
+/** Lines arrive as `$@` so no alias text is interpolated into the loop body. */
 const APPLY_SCRIPT =
 	'h=$(eval echo ~$(id -un)); ' +
 	'for line in "$@"; do ' +
@@ -26,7 +16,6 @@ const APPLY_SCRIPT =
 	'done; ' +
 	'done';
 
-/** True only when every alias line is present in either rc file. */
 const CHECK_SCRIPT =
 	'h=$(eval echo ~$(id -un)); ' +
 	'for line in "$@"; do ' +
@@ -35,13 +24,6 @@ const CHECK_SCRIPT =
 	'done; ' +
 	'echo 1';
 
-/**
- * Install the host's `c200` / `cs` Claude shortcuts into the container's shell so
- * interactive terminals opened in code-server have them ready. Always applied; it
- * has no host dependency. Only affects interactive shells (which is what code-server
- * opens). The alias lines are forwarded as script args (`$1`, `$2`, …) so they are
- * never interpolated into the script text.
- */
 export const claudeAliases: Injection = {
 	id: 'claude-aliases',
 	label: 'claude aliases',

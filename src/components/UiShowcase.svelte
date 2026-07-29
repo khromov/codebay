@@ -19,12 +19,8 @@
 	import ComponentDemo from './ui-showcase/ComponentDemo.svelte';
 	import type { Instance } from '../types.ts';
 
-	// --- Design tokens (mirrors :root in src/shell.html) ---
-	// `token` drives the swatch fill via var(--token) so it auto-syncs with the
-	// real value (including the dark-theme override — toggle it with the theme
-	// button in the top bar); `hex` is a text label only and reflects the
-	// light-theme value regardless of the active theme. `border` flags pale
-	// chips that need an outline to read against the panel.
+	// The swatch fill reads var(--token) so it auto-syncs with shell.html; `hex` is
+	// only a label and always shows the light-theme value.
 	const palette: { group: string; swatches: { token: string; hex: string; border?: boolean }[] }[] =
 		[
 			{
@@ -73,7 +69,6 @@
 			}
 		];
 
-	// --- Avatar controls ---
 	let avatarScale = $state(8);
 	let avatarName = $state('demo-instance');
 	let avatarId = $state('alpha');
@@ -81,20 +76,17 @@
 	let avatarArtName = $state('');
 	const avatarArt = $derived(avatars.find((a) => a.name === avatarArtName));
 
-	// --- Button controls ---
 	let btnVariant = $state<'default' | 'primary' | 'danger'>('primary');
 	let btnSize = $state<'sm' | 'md' | 'lg'>('md');
 	let btnDisabled = $state(false);
 	let btnIcon = $state(true);
 	let btnLabel = $state('New Instance');
 
-	// --- IdeLoader controls ---
 	let loaderSpeed = $state(1);
 	// The stalled state normally needs a 10s wait on a wedged health probe to appear;
 	// `stalledAfterMs: 0` renders it straight away so it's inspectable here.
 	let loaderStalled = $state(false);
 
-	// --- CredMenu controls ---
 	// Seed from the server's real preflight so the menu mirrors `/`; the presets
 	// and checkboxes below then let you exercise the other aggregate states.
 	// svelte-ignore state_referenced_locally
@@ -106,7 +98,6 @@
 		});
 	}
 
-	// --- HealthBox controls ---
 	let healthLoading = $state(false);
 	let healthChecks = $state({
 		containerRunning: true,
@@ -133,7 +124,6 @@
 				}
 	);
 
-	// --- PortsBox controls ---
 	// `openCount` of the `portCount` ports render as published (filled dot); the rest
 	// show hollow. Count 0 exercises the empty state (renders nothing).
 	let portCount = $state(3);
@@ -146,10 +136,8 @@
 		}))
 	);
 
-	// --- BranchBox controls ---
 	let branchName = $state('main');
 
-	// --- StatusBadge controls ---
 	const statuses: Instance['status'][] = ['creating', 'running', 'stopped', 'error'];
 	let badgeStatus = $state<Instance['status']>('error');
 </script>
@@ -440,8 +428,7 @@
 		gap: 24px;
 	}
 
-	/* Shared control styling — minimal monochrome to match the LCD look.
-     `.fields` lives in the child ComponentDemo, so target it globally. */
+	/* `.fields` lives in the child ComponentDemo, hence the global selector. */
 	.showcase :global(.fields label) {
 		display: flex;
 		flex-direction: column;
@@ -505,7 +492,6 @@
 		color: var(--bg);
 	}
 
-	/* Color palette — collapsible card, matches the demo card chrome. */
 	.palette-card {
 		background: var(--bg-card);
 	}

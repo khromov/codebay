@@ -2,21 +2,14 @@ import { getOption } from '../lib/db.server.ts';
 import { checkPresence, execInContainer } from '../lib/exec.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
-/**
- * Default model IDs — mirrors the values in the reference launcher script
- * (claude-code.sh). Users can override each in Settings → Custom endpoint.
- */
+/** Mirrors the reference launcher script (claude-code.sh); each is overridable in Settings. */
 export const DEFAULT_OPUS_MODEL = 'eu.anthropic.claude-opus-4-8';
 export const DEFAULT_SONNET_MODEL = 'eu.anthropic.claude-sonnet-4-6';
 export const DEFAULT_HAIKU_MODEL = 'eu.anthropic.claude-haiku-4-5-20251001-v1:0';
 export const DEFAULT_SMALL_FAST_MODEL = 'eu.anthropic.claude-haiku-4-5-20251001-v1:0';
 export const DEFAULT_MODEL = 'opusplan';
 
-/**
- * Read the custom-endpoint configuration from the options store. Returns null
- * when the feature is disabled or when the required base URL / token is blank —
- * both are skip conditions for the injection.
- */
+/** Null means "skip the injection" — disabled, or a blank base URL or token. */
 export function customEndpointConfig(): {
 	baseUrl: string;
 	token: string;
@@ -42,30 +35,20 @@ export function customEndpointConfig(): {
 	};
 }
 
-/** Absolute path of the env file written inside the container. */
 const ENV_FILE = '~/.codebay-claude-env';
 
 /**
- * Write the custom-endpoint env file and source it from both ~/.bashrc and
- * ~/.zshrc, guarded so re-apply never duplicates the source line.
- *
- * Secret handling: the token travels in `stdin` (scrubbed $CODEBAY_STDIN, never
- * on argv). Non-secret values (URL, model IDs) travel as `args` ($1-$7), so no
- * manual shell-quoting / injection risk. The env file mixes secret + non-secret
- * content, so the write line is built by hand (not `writeSecretFileScript`).
+ * Non-secret values ride `args`, so nothing needs hand-quoting; only the token uses `stdin`.
+ * The file mixes secret and non-secret content, hence no `writeSecretFileScript`.
  */
 async function injectCustomEndpoint(
 	target: ContainerTarget,
 	config: NonNullable<ReturnType<typeof customEndpointConfig>>
 ): Promise<{ ok: boolean; error?: string }> {
-	// $1 = baseUrl, $2 = opusModel, $3 = sonnetModel, $4 = haikuModel,
-	// $5 = smallFastModel, $6 = defaultModel
-	// $CODEBAY_STDIN = token (scrubbed, never argv)
 	const script =
 		'set -e; f=$(eval echo "' +
 		ENV_FILE +
 		'"); ' +
-		// Write the env file with all variables; token comes from $CODEBAY_STDIN.
 		'{ ' +
 		"printf '%s\\n' " +
 		"'export DISABLE_AUTOUPDATER=1' " +
@@ -79,12 +62,12 @@ async function injectCustomEndpoint(
 		'printf \'export ANTHROPIC_SMALL_FAST_MODEL=%s\\n\' "$5"; ' +
 		'printf \'export ANTHROPIC_MODEL=%s\\n\' "$6"; ' +
 		'} > "$f"; chmod 600 "$f"; ' +
-		// Source the file from both rc files, guarded against duplicates.
+		// The grep guard keeps a re-apply from stacking duplicate source lines.
 		'h=$(eval echo ~$(id -un)); src="[ -f \\"$f\\" ] && . \\"$f\\""; ' +
 		'for rc in "$h/.bashrc" "$h/.zshrc"; do ' +
 		'grep -qF "$src" "$rc" 2>/dev/null || printf \'%s\\n\' "$src" >> "$rc"; ' +
 		'done; ' +
-		// Write .claude.json to suppress the first-run wizard (honoring CLAUDE_CONFIG_DIR).
+		// `hasCompletedOnboarding` is what suppresses `claude`'s first-run wizard.
 		'h=$(eval echo ~$(id -un)); ' +
 		'cfg="${CLAUDE_CONFIG_DIR:+$CLAUDE_CONFIG_DIR/.claude.json}"; cfg="${cfg:-$h/.claude.json}"; ' +
 		'printf \'%s\' \'{"hasCompletedOnboarding":true}\' > "$cfg"; chmod 644 "$cfg"';
@@ -105,12 +88,7 @@ async function injectCustomEndpoint(
 	return res.ok ? { ok: true } : { ok: false, error: res.error };
 }
 
-/**
- * Inject a custom LiteLLM / Bedrock endpoint into the container so the
- * in-container `claude` routes through the configured gateway instead of
- * Anthropic's default API. Skipped (with a log line) when the feature is
- * disabled or when the base URL / token fields are blank.
- */
+/** Replaces `claude-code-credentials` in the registry when the custom-endpoint setting is on. */
 export const claudeCodeCustom: Injection = {
 	id: 'claude-code-custom',
 	label: 'LiteLLM + Bedrock',

@@ -71,18 +71,12 @@
 		hostEnvVarPresence: Record<string, boolean>;
 	} = $props();
 
-	// Initialize from localStorage on the client; defaults to on during SSR.
+	// Defaults to on during SSR, where localStorage doesn't exist.
 	let sound = $state(soundEnabled());
 
 	let shuttingDown = $state(false);
 
-	/**
-	 * `enhance` options for a "save this form" control: `onPending` drives the
-	 * saving flag, the submit callback clears any previous error/message (an
-	 * optional confirm() gate can `cancel()` before that), and the result
-	 * callback routes to `onSuccess` / a generic error message. Reused by every
-	 * plain save/action form below — only the per-control state setters differ.
-	 */
+	/** Reused by every plain save form below; only the per-control state setters differ. */
 	function saveOpts<Success extends Record<string, unknown> = Record<string, unknown>>(handlers: {
 		setSaving: (v: boolean) => void;
 		setError: (v: string | null) => void;
@@ -113,11 +107,8 @@
 	}
 
 	/**
-	 * `enhance` options for a checkbox toggle form. The checkbox's own `onchange`
-	 * flips the bound state and calls `form.requestSubmit()` — by the time the
-	 * submit fires, the DOM (and thus `formData`) already reflects the new
-	 * "checked" value, so that optimistic flip is free. On failure/error, revert
-	 * to the opposite of what was submitted.
+	 * The optimistic flip is free: `onchange` fires before submit, so `formData`
+	 * already carries the new value. Failure reverts to the opposite of what was sent.
 	 */
 	function toggleOpts<Success extends Record<string, unknown> = Record<string, unknown>>(handlers: {
 		set: (v: boolean) => void;
@@ -163,8 +154,7 @@
 		}
 	});
 
-	// Restore the built-in default image and persist it — same form, same action;
-	// setting the bound value then resubmitting keeps this a one-form control.
+	// Setting the bound value then resubmitting keeps this a one-form control.
 	function resetImage() {
 		// flushSync forces the bind:value DOM update to happen before requestSubmit
 		// reads the input's value via FormData — otherwise it would submit the stale value.
@@ -172,9 +162,7 @@
 		imageFormEl?.requestSubmit();
 	}
 
-	// Copy-ignore patterns — same one-form-two-actions shape as the default image: an
-	// empty value is valid and means "copy everything" (unlike the image field, which
-	// requires non-empty), so it's saved as typed rather than validated.
+	// Unlike the image field, an empty value is valid here — it means "copy everything".
 	// svelte-ignore state_referenced_locally
 	let copyIgnore = $state(copyIgnorePatterns);
 	let savingCopyIgnore = $state(false);
@@ -197,8 +185,7 @@
 		copyIgnoreFormEl?.requestSubmit();
 	}
 
-	// Build cache — the DB-backed "disable cache" flag is the source of truth (unlike
-	// the localStorage sound toggle), so initialize from the prop and persist on change.
+	// DB-backed rather than localStorage, so it initializes from the prop.
 	// svelte-ignore state_referenced_locally
 	let noCache = $state(disableBuildCache);
 	let savingCache = $state(false);
@@ -246,9 +233,7 @@
 		}
 	});
 
-	// Manual credential tokens. The DB is the source of truth; initialize the toggle
-	// from the prop. Token values are never sent to the client — we only know whether
-	// each is already set (to show a "saved" placeholder) and never render the secret.
+	// Token values never reach the client; only whether each is set, for the placeholder.
 	// svelte-ignore state_referenced_locally
 	let manualTokens = $state(manualTokensEnabled);
 	let savingManualToggle = $state(false);
@@ -296,9 +281,7 @@
 		}
 	});
 
-	// Custom endpoint (LiteLLM / Bedrock). Like manual tokens: the toggle persists
-	// to the DB; each field saves individually via its own form. The token value
-	// is never returned to the client — we only know whether it was set.
+	// As with manual tokens, the token value never comes back from the server.
 	// svelte-ignore state_referenced_locally
 	let customEndpoint = $state(customEndpointEnabled);
 	let savingCustomToggle = $state(false);
@@ -366,12 +349,8 @@
 		}
 	});
 
-	// Host env vars forwarded into containers. Only *names* round-trip with the
-	// server — values are never sent to or stored by the client; `hostEnvPresence`
-	// (name -> whether this process's env currently has a value) drives the
-	// per-row "set on host" / "missing" hint. Seeded from the server-rendered prop,
-	// then refreshed from each save response so a newly-added name doesn't read as
-	// "missing" until the next full page load.
+	// Only names round-trip; `hostEnvPresence` is refreshed from each save response so a
+	// newly-added name doesn't read as "missing" until the next full page load.
 	// svelte-ignore state_referenced_locally
 	let hostEnvVars = $state(hostEnvVarsEnabled);
 	let savingHostEnvToggle = $state(false);
@@ -463,8 +442,7 @@
 		if (on) playChime('done');
 	}
 
-	// Easter egg: the coin in the corner opens a pixel editor for drawing (and
-	// contributing) a new avatar sprite.
+	// Easter egg: the corner coin opens a pixel editor for contributing an avatar sprite.
 	let avatarEditorOpen = $state(false);
 
 	function openAvatarEditor() {
@@ -473,8 +451,7 @@
 		avatarEditorOpen = true;
 	}
 
-	// The server exits ~150ms after the action resolves, so the fetch may complete
-	// normally or the connection may drop mid-flight — both mean "shutting down".
+	// The server exits mid-flight, so a dropped connection means success here too.
 	const shutdownOpts: MochiEnhanceOptions<Record<string, never>, ActionFailure> = {
 		submit: ({ cancel }) => {
 			if (
@@ -1204,8 +1181,7 @@
 	{/if}
 </div>
 
-<!-- The Settings page renders outside AppShell (which hosts the app-wide
-     Toaster), so the avatar editor's copy toast needs its own mount. -->
+<!-- Settings renders outside AppShell, which hosts the app-wide Toaster. -->
 <Toaster
 	toastOptions={{
 		style:
@@ -1247,7 +1223,6 @@
 	.danger-card {
 		border-color: var(--danger);
 	}
-	/* Muted appearance for a card whose controls are locked by another setting. */
 	.disabled-card {
 		opacity: 0.55;
 		pointer-events: none;
@@ -1273,7 +1248,6 @@
 		gap: 16px;
 		padding: 18px 18px;
 	}
-	/* Secondary rows stacked inside one card, separated by a hairline rule. */
 	.row.divided {
 		border-top: 1px solid var(--rule);
 		align-items: flex-start;
@@ -1282,7 +1256,6 @@
 		flex: none;
 		white-space: nowrap;
 	}
-	/* Inline message tucked under a row (e.g. a toggle's error), matching row padding. */
 	.sub {
 		padding: 0 18px 14px;
 	}
@@ -1336,7 +1309,6 @@
 		color: var(--ink-faint);
 		line-height: 1.4;
 	}
-	/* Default-image editor: input + Save, stacked under the label on narrow widths. */
 	.image-row {
 		flex-wrap: wrap;
 	}
@@ -1383,7 +1355,6 @@
 	.msg.ok {
 		color: var(--ink-soft);
 	}
-	/* Switch */
 	.switch {
 		position: relative;
 		flex: none;
@@ -1427,7 +1398,6 @@
 		outline: 2px solid var(--ink);
 		outline-offset: 2px;
 	}
-	/* Model-ID fields: a stacked list of label + input pairs with a Save button below. */
 	.model-fields {
 		display: flex;
 		flex-direction: column;
@@ -1456,7 +1426,6 @@
 		justify-content: flex-end;
 		margin-top: 4px;
 	}
-	/* Host env var list: a stacked list of name/status/remove rows, plus an add form. */
 	.var-row {
 		flex-direction: column;
 		align-items: stretch;

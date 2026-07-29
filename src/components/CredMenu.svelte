@@ -9,9 +9,6 @@
 
 	let credOpen = $state(false);
 
-	// Aggregate auth status: green when every provider is authorized, red when none
-	// are, amber when some (but not all) are — e.g. Claude Code is signed in but no
-	// GitHub token was found, or git identity isn't configured yet.
 	const authedCount = $derived(auth.filter((a) => a.available).length);
 	const credState = $derived(
 		authedCount === auth.length ? 'ok' : authedCount === 0 ? 'error' : 'warn'
@@ -28,7 +25,6 @@
 		}
 	}
 
-	// Close the credentials dropdown on an outside click or Escape.
 	$effect(() => {
 		if (!credOpen) return;
 		const onClick = (e: MouseEvent) => {

@@ -43,7 +43,7 @@ describe('pickAvatar', () => {
 		const ids = ['550e8400-e29b-41d4-a716-446655440000', 'abc', '', crypto.randomUUID()];
 		for (const id of ids) {
 			expect(pickAvatar(id)).toBe(pickAvatar(id));
-			expect(pickAvatar(id)).toBe(pickAvatar(id)); // and again
+			expect(pickAvatar(id)).toBe(pickAvatar(id));
 		}
 	});
 
