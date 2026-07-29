@@ -4,6 +4,21 @@
 
 Pick a project folder → the app copies it, injects code-server into its `devcontainer.json`, runs `devcontainer up`, and publishes the editor on a unique host port. It also copies your host's Claude Code and GitHub CLI credentials into each container so `claude`, `gh`, and git-over-HTTPS work out of the box.
 
+## Quick start
+
+You need [Bun](https://bun.sh) and a running Docker daemon (see [Requirements](#requirements)). Then:
+
+```sh
+bunx codebay@latest
+```
+
+That's it — the UI opens in your browser on `http://localhost:6969`. State (the SQLite DB and
+per-instance workspace copies) lives in `~/.codebay`; set `DATA_DIR` to put it elsewhere, and see
+[Configuration](#configuration) for the rest of the environment variables.
+
+The other two ways to run it are [as a Docker container](#run-with-docker) and
+[from source](#setup).
+
 ## Claude Code in your devcontainer
 
 The app copies your Claude Code credentials and installs the attention hooks into every container, but it only copies them — it does **not** install the `claude` binary for projects that ship their own devcontainer.
@@ -95,7 +110,7 @@ To build the image yourself instead of pulling:
    export CODEBAY_DATA_DIR=/opt/codebay && mkdir -p "$CODEBAY_DATA_DIR"
    docker compose up -d
    ```
-4. Open `http://localhost:3333` and log in as `admin` with that password.
+4. Open `http://localhost:6969` and log in as `admin` with that password.
 
 ### Run the published image
 
@@ -142,11 +157,11 @@ host paths, so put `CODEBAY_DATA_DIR` **under `$HOME`** (e.g. `$HOME/.codebay`);
 
 ## Configuration
 
-- `PORT` — server port (default `3333`)
+- `PORT` — server port (default `6969`)
 - `DATA_DIR` — where state lives (default `~/.codebay`)
 - `DOCKER_HOST` — Docker daemon socket/URL to connect to (e.g. `unix://$HOME/.colima/default/docker.sock` or `tcp://1.2.3.4:2375`); defaults to your active Docker context
 - `BASIC_AUTH_PASSWORD` — enables HTTP Basic Auth over the whole UI (disabled when unset)
-- `MOCHI_KEY` — base64url-encoded 32-byte secret; set it for persistent deployments so signed image URLs and island props survive restarts (a random key is generated when unset)
+- `MOCHI_KEY` — base64url-encoded 32-byte secret used to sign island props and image URLs. You don't normally need to set it: when unset, a random key is generated on first run and saved to `<DATA_DIR>/mochi-key`, so it stays stable across restarts. Set it explicitly if several processes must share one key.
 - `CODEBAY_CLAUDE_CODE_TOKEN` — inject this Claude Code OAuth token into every container instead of discovering the host's credentials (e.g. from `claude setup-token`); recommended, see [Sharing one Claude login](#sharing-one-claude-login)
 - `CODEBAY_CLAUDE_KEYCHAIN_SERVICE` — macOS Keychain service to read Claude Code credentials from (default `Claude Code-credentials`). Set this if your `claude` runs under a custom `CLAUDE_CONFIG_DIR`, which gives its keychain entry a suffix (e.g. `Claude Code-credentials-c5a249db`)
 - `CODEBAY_GITHUB_TOKEN` — inject this GitHub token into every container instead of reading `gh auth token` from the host

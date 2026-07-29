@@ -1,8 +1,8 @@
 diff --git a/dist/src/index.js b/dist/src/index.js
-index 909d77811704dbd0047680989a137c536d780c04..586db58af91e20eb13690cc2cc45517fff9fbb73 100644
+index 1efd1f365acd4e61e506459041caa9a7321cafcc..5741eb48aec77aeb2ff362674cde201787b8167d 100644
 --- a/dist/src/index.js
 +++ b/dist/src/index.js
-@@ -97020,6 +97020,13 @@ function handleAttribute(str, attr, parent, preserveCase, svelte5Plus, element)
+@@ -91170,6 +91170,13 @@ function handleAttribute(str, attr, parent, preserveCase, svelte5Plus, element)
                  }
                  value.push('})');
              }

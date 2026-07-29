@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +16,40 @@ export const DATA_DIR = process.env.DATA_DIR
 		? process.env.DATA_DIR
 		: resolve(process.cwd(), process.env.DATA_DIR)
 	: join(homedir(), '.codebay');
+
+/**
+ * Give Mochi a stable signing secret for server-island props and image URLs.
+ *
+ * Left unset, Mochi mints a random key every boot and warns about it on startup —
+ * noise for a single-user local tool, but the warning is real: anything signed with
+ * the old key stops verifying after a restart. Baking a fixed key into the published
+ * package would silence it by publishing the secret to every `bunx codebay` user, so
+ * instead each installation gets its own random key, persisted next to its data.
+ *
+ * Must run before `Mochi.serve()`, which is where MOCHI_KEY is read. An explicit
+ * MOCHI_KEY always wins (deployments that share state across processes need one).
+ */
+export function ensureMochiKey(): void {
+	if (process.env.MOCHI_KEY?.trim()) {
+		return;
+	}
+	const keyPath = join(DATA_DIR, 'mochi-key');
+	try {
+		if (existsSync(keyPath)) {
+			const existing = readFileSync(keyPath, 'utf8').trim();
+			if (existing) {
+				process.env.MOCHI_KEY = existing;
+				return;
+			}
+		}
+		const key = randomBytes(32).toString('base64url');
+		mkdirSync(DATA_DIR, { recursive: true });
+		writeFileSync(keyPath, key + '\n', { mode: 0o600 });
+		process.env.MOCHI_KEY = key;
+	} catch (err) {
+		console.warn(`⚠ Could not persist a MOCHI_KEY in ${DATA_DIR}: ${(err as Error).message}`);
+	}
+}
 
 /** Per-instance working copies live here: <INSTANCES_DIR>/<id>/workspace. */
 export const INSTANCES_DIR = join(DATA_DIR, 'instances');
@@ -51,7 +86,7 @@ export const BASIC_AUTH_PASSWORD = process.env.BASIC_AUTH_PASSWORD || '';
 export const HOST = process.env.HOST || '127.0.0.1';
 
 /** TCP port the server listens on. */
-export const PORT = Number(process.env.PORT) || 3333;
+export const PORT = Number(process.env.PORT) || 6969;
 
 /**
  * Public origin the browser reaches this server on, used for Mochi's CSRF

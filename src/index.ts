@@ -8,7 +8,8 @@ import {
 	HOST,
 	PORT,
 	PUBLIC_ORIGIN,
-	TRUSTED_ORIGINS
+	TRUSTED_ORIGINS,
+	ensureMochiKey
 } from './lib/config.server.ts';
 
 if (!BASIC_AUTH_PASSWORD) {
@@ -19,6 +20,9 @@ if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !BASIC_AUTH_PASSWORD) {
 		`⚠ Binding to ${HOST} (non-loopback) without a password — anyone on the network can reach this server.`
 	);
 }
+
+// Seed MOCHI_KEY from (or into) DATA_DIR before Mochi reads it.
+ensureMochiKey();
 
 await Mochi.serve({
 	port: PORT,

@@ -8,7 +8,7 @@ services:
       DATA_DIR: ${CODEBAY_DATA_DIR:-/opt/codebay}
       DOCKER_HOST: unix:///var/run/docker.sock
       HOST: 0.0.0.0
-      PORT: ${PORT:-3333}
+      PORT: ${PORT:-6969}
       BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD:?set BASIC_AUTH_PASSWORD — HOST is 0.0.0.0}
       MOCHI_KEY: ${MOCHI_KEY:-}
       CODEBAY_GITHUB_TOKEN: ${CODEBAY_GITHUB_TOKEN:-}
