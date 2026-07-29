@@ -1,10 +1,10 @@
+import { PORT } from '../lib/config.server.ts';
 import { checkPresence, execInContainer } from '../lib/exec.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 /** Bridge URL a container reaches the manager on (Colima/Docker host-gateway). */
 function bridgeUrl(): string {
-	const port = Number(process.env.PORT) || 3333;
-	return `http://host.docker.internal:${port}/api/bridge/attention`;
+	return `http://host.docker.internal:${PORT}/api/bridge/attention`;
 }
 
 /** Where each container keeps its bridge-auth header, resolved at hook runtime. */

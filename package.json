@@ -5,7 +5,7 @@
 	"type": "module",
 	"license": "MIT",
 	"author": "Stanislav Khromov",
-	"homepage": "https://github.com/khromov/servbay#readme",
+	"homepage": "https://github.com/khromov/codebay#readme",
 	"bugs": {
 		"url": "https://github.com/khromov/codebay/issues"
 	},
@@ -28,9 +28,11 @@
 	"files": [
 		"bin",
 		"src",
+		"!src/**/*.test.ts",
 		"public",
 		"migrations",
 		".mochi",
+		"!.mochi/dev",
 		"svelte.config.js",
 		"README.md",
 		"LICENSE"
@@ -44,7 +46,7 @@
 	"scripts": {
 		"build": "mochi-framework build",
 		"start": "bun src/index.ts",
-		"prod": "bun run build && PORT=6969 bun run start",
+		"prod": "bun run build && bun run start",
 		"dev": "MODE=development DISABLE_OPEN_BROWSER=1 DATA_DIR=./.codebay bun src/index.ts",
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
 		"test": "bun test",
@@ -53,7 +55,8 @@
 		"checks": "bun run format && bun run typecheck && bun run test",
 		"clean": "rimraf .mochi",
 		"gen:chimes": "bun scripts/gen-chimes.ts",
-		"debug:tokens": "bun scripts/debug-tokens.ts"
+		"debug:tokens": "bun scripts/debug-tokens.ts",
+		"verify:package": "bun scripts/verify-package.ts"
 	},
 	"dependencies": {
 		"@devcontainers/cli": "^0.87.0",
@@ -62,7 +65,7 @@
 		"@lucide/svelte": "^1.21.0",
 		"@zihaolam/bun-sqlite-migrations": "^1.0.3",
 		"dockerode": "^5.0.1",
-		"mochi-framework": "^0.8.2",
+		"mochi-framework": "^0.9.0",
 		"svelte": "^5.56.4",
 		"svelte-french-toast": "^1.2.0"
 	},
@@ -79,7 +82,7 @@
 		"typescript": "^6.0.3",
 		"typescript-eslint": "^8.62.1"
 	},
-	"overrides": {
+	"resolutions": {
 		"msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*",
 		"svelte": "5.56.4"
 	},

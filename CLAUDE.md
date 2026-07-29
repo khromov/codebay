@@ -22,7 +22,8 @@ bun run checks     # format + typecheck + tests — run this after every change 
 bun run clean      # remove .mochi build output
 bun run lint       # prettier --check + eslint (read-only; `checks` runs format instead)
 bun run gen:chimes # re-render attention chimes to public/sounds/ WAVs (after editing scripts/gen-chimes.ts)
-bun run prod       # build + serve the production bundle on PORT=6969
+bun run prod       # build + serve the production bundle
+bun run verify:package # pack the tarball, install + boot it elsewhere (see npm packaging below)
 ```
 
 **Always run `bun run checks` after implementing a change** (it runs `format`, then `typecheck`, then `test`) and fix anything it surfaces before considering the work done.
@@ -31,11 +32,15 @@ Tests that touch server state are named `*.isolated.test.ts`; pure unit tests (e
 
 Both `dev` and `start` execute `src/index.ts` with Bun (Mochi serves SSR pages on the fly); `build` is only needed for a precompiled production bundle. The `dev` script already sets `MODE=development`, `DISABLE_OPEN_BROWSER=1`, and `DATA_DIR=./.codebay` (keeps state inside the repo while developing).
 
-**Port:** the server reads `PORT` (default 3333). When _you_ (Claude Code) run the app, use `PORT=4444 DISABLE_OPEN_BROWSER=1 bun run dev` so your instance stays separate from one the user may have running on 3333.
+**Port:** the server reads `PORT` (default 6969 — the fallback lives in `src/lib/config.server.ts`; everything else imports `PORT` from there rather than re-reading the env). When _you_ (Claude Code) run the app, use `PORT=4444 DISABLE_OPEN_BROWSER=1 bun run dev` so your instance stays separate from one the user may have running on 6969.
 
 **Browser launch:** on startup the server opens the web UI in the user's default browser. Set `DISABLE_OPEN_BROWSER=1` to skip it — _you_ (Claude Code) should always run with this set (the `dev` script already does).
 
 **Dev-only routes:** when `MODE=development`, `/debug` (UI component showcase) and `/debug/avatars` (every avatar sprite) are mounted.
+
+## Comments
+
+Comment the **why**, never the **what** — the code already says what it does, and a comment that restates it just rots. **One sentence.** Allow a second only when the why is genuinely incomprehensible without it (a non-obvious constraint, a bug being worked around, an ordering dependency between two calls); never a third. A comment that keeps growing usually means the code needs a better name or a smaller function, not more prose. Prefer no comment to an obvious one.
 
 ## Architecture
 
@@ -82,7 +87,17 @@ _To add one:_ create `src/container-injections/<name>.ts` exporting an `Injectio
 
 **Avatars** (`src/avatars/`): each instance gets a deterministic 8×8 sprite via `pickAvatar(id)` against the `avatars[]` registry in `index.ts`. `serialize.ts` powers the in-app avatar-editor easter egg — it turns a drawing into the exact module source a sprite ships as, plus a pre-filled GitHub issue URL. Those "Avatar contribution: …" issues are landed via the `avatar-contribution-pr` skill in `.claude/skills/`.
 
-**Distribution.** Three ways this ships: `bunx codebay` (bin entry `bin/codebay.ts`, which `chdir`s to the package root before importing `src/index.ts` because the server resolves the shell, pages, `public/`, and the `.mochi` manifest relative to cwd — so a published release must include a built `.mochi/`; the `files` list in `package.json` governs what's published); a GHCR image (`Dockerfile` + `docker-compose.yml`) that drives the **host's** daemon Docker-out-of-Docker — needs `--network host`, hence `BASIC_AUTH_PASSWORD`, and a `DATA_DIR` bind-mounted at an identical host↔container path; and running from source. Versioning/publishing is automated by release-please (`release-please-config.json`), so use conventional commit messages. README's Configuration section is the canonical env-var list (`PORT`, `DATA_DIR`, `DOCKER_HOST`, `BASIC_AUTH_PASSWORD`, `MOCHI_KEY`, `CODEBAY_CLAUDE_CODE_TOKEN`, `CODEBAY_GITHUB_TOKEN`, `DISABLE_OPEN_BROWSER`).
+**Distribution.** Three ways this ships: `bunx codebay` (see npm packaging below); a GHCR image (`Dockerfile` + `docker-compose.yml`) that drives the **host's** daemon Docker-out-of-Docker — needs `--network host`, hence `BASIC_AUTH_PASSWORD`, and a `DATA_DIR` bind-mounted at an identical host↔container path; and running from source. Versioning/publishing is automated by release-please (`release-please-config.json`), so use conventional commit messages. README's Configuration section is the canonical env-var list (`PORT`, `DATA_DIR`, `DOCKER_HOST`, `BASIC_AUTH_PASSWORD`, `MOCHI_KEY`, `CODEBAY_CLAUDE_CODE_TOKEN`, `CODEBAY_GITHUB_TOKEN`, `DISABLE_OPEN_BROWSER`).
+
+**npm packaging (`bunx codebay`).** The bin entry `bin/codebay.ts` `chdir`s to the package root before importing `src/index.ts`, because the server resolves the shell, pages, `public/`, and the `.mochi` manifest relative to cwd. It absolutizes a relative `DATA_DIR` **first**, so a user's `DATA_DIR=./state` lands where they ran the command instead of inside the npm cache. Invariants a published tarball must satisfy:
+
+- It ships a **built `.mochi/`**. In production Mochi loads SSR components from the prebuilt manifest; without it every page compiles on first request. Mochi ≥ 0.9's manifest v2 stores every disk path relative to the build root, so the build is relocatable — an earlier attempt on 0.8.x shipped absolute build-machine paths and only booted on the machine that built it.
+- It ships **`public/`**. Since 0.9 the build never copies `publicDir`; the runtime reads it from disk on every boot. Drop it from `files` and every static asset 404s.
+- `files` (not `.gitignore`) governs the tarball, and `package.json` uses **`resolutions`, not `overrides`** — npm rejects an `overrides` entry that conflicts with a direct dep (`EOVERRIDE`) and refuses to pack at all.
+
+`bun run verify:package` (`scripts/verify-package.ts`) is the guard for all of the above: it packs the tarball, installs it into a throwaway project, boots it there from a different cwd in production mode, and asserts the page renders, `/sounds/done.wav` is served, no island SSR errors are logged, no publicDir warning appears, and no manifest disk path escapes the package. Run it after touching anything in this list; `.github/workflows/release.yml` runs it right before `npm publish`.
+
+Releases: release-please (`release-please-config.json`) opens the version PR from conventional commits; merging it cuts a tag, and the publish job builds **from that tag** (never from moving `main`). npm is configured as a **trusted publisher** for this repo (OIDC), so there is no `NPM_TOKEN` secret — the job's `id-token: write` permission is what authenticates it, and provenance is attached automatically. The trust is pinned to the workflow _filename_, so renaming `.github/workflows/release.yml` breaks publishing until the setting on npmjs.com is updated to match.
 
 `writeOverrideConfig` parses the existing `devcontainer.json` as JSONC (custom `stripJsonc` strips comments/trailing commas) and merges in the code-server feature non-destructively — it operates on the _copy_, so rewriting/normalizing the file is safe.
 
