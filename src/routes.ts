@@ -20,6 +20,7 @@ import {
 } from './container-injections/claude-code-custom.ts';
 import { hostEnvVarPresence, parseHostEnvVarNames } from './container-injections/host-env-vars.ts';
 import { browse } from './lib/picker.server.ts';
+import { pickNamePrompt } from './avatars/name-prompts.ts';
 import {
 	addForwardedPort,
 	createInstance,
@@ -144,9 +145,11 @@ export const routes: Record<string, MochiRouteValue> = {
 		}
 	}),
 
-	// Reached from the settings page's coin; the sprite registry is a static client
-	// import, so there is nothing for the server to hand over.
-	'/avatars': Mochi.page('./src/pages/Avatars.svelte'),
+	// Reached from the settings page's coin. The name hint is rolled here rather than in
+	// the editor so hydration can't re-roll it and swap the word out mid-load.
+	'/avatars': Mochi.page('./src/pages/Avatars.svelte', {
+		serverProps: () => ({ namePlaceholder: pickNamePrompt() })
+	}),
 
 	// Settings mutations are Form actions rather than JSON routes, so each control
 	// still works without JS and `enhance` only upgrades it.

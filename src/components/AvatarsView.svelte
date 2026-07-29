@@ -4,6 +4,8 @@
 	import Avatar from './Avatar.svelte';
 	import AvatarEditor from './AvatarEditor.svelte';
 	import { avatars } from '../avatars/index.ts';
+
+	let { namePlaceholder }: { namePlaceholder: string } = $props();
 </script>
 
 <div class="page">
@@ -12,7 +14,7 @@
 	</AppBar>
 
 	<main class="content">
-		<AvatarEditor />
+		<AvatarEditor {namePlaceholder} />
 
 		<section class="catalog">
 			<header>
