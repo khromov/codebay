@@ -3,7 +3,7 @@
 	import type { AvatarArt } from '../avatars/types.ts';
 	import Avatar from './Avatar.svelte';
 
-	let { onclick }: { onclick: () => void } = $props();
+	let { href = '/avatars' }: { href?: string } = $props();
 
 	const coinArt: AvatarArt = {
 		name: 'coin',
@@ -22,12 +22,12 @@
 
 <div class="coin-row">
 	<span class="pixel-line" aria-hidden="true"></span>
-	<button class="coin-btn" {onclick} aria-label="Draw your own avatar" title="Draw your own avatar">
+	<a class="coin-btn" {href} aria-label="Draw your own avatar" title="Draw your own avatar">
 		<span class="new" aria-hidden="true">New</span>
 		<span class="coin" aria-hidden="true">
 			<Avatar art={coinArt} name="coin" scale={3} />
 		</span>
-	</button>
+	</a>
 	<span class="pixel-line" aria-hidden="true"></span>
 </div>
 
@@ -56,6 +56,7 @@
 		border: none;
 		background: none;
 		cursor: pointer;
+		text-decoration: none;
 	}
 	.new {
 		font-family: var(--font-mono);

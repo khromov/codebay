@@ -144,6 +144,10 @@ export const routes: Record<string, MochiRouteValue> = {
 		}
 	}),
 
+	// Reached from the settings page's coin; the sprite registry is a static client
+	// import, so there is nothing for the server to hand over.
+	'/avatars': Mochi.page('./src/pages/Avatars.svelte'),
+
 	// Settings mutations are Form actions rather than JSON routes, so each control
 	// still works without JS and `enhance` only upgrades it.
 	'/settings': Mochi.page('./src/pages/Settings.svelte', {
@@ -430,8 +434,7 @@ export const routes: Record<string, MochiRouteValue> = {
 				'/debug': Mochi.page('./src/pages/UI.svelte', {
 					// Feed the showcase the real auth providers so CredMenu mirrors `/`.
 					serverProps: async () => ({ preflight: await preflight() })
-				}),
-				'/debug/avatars': Mochi.page('./src/pages/Avatars.svelte')
+				})
 			}
 		: {})
 };

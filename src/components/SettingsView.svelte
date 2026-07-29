@@ -22,7 +22,6 @@
 	import { playChime, unlockAudio } from '../sound.ts';
 	import Button from './Button.svelte';
 	import CoinButton from './CoinButton.svelte';
-	import AvatarEditor from './AvatarEditor.svelte';
 
 	/** Every settings form action fails with the same `{ error }` shape. */
 	type ActionFailure = { error: string };
@@ -440,15 +439,6 @@
 		// A toggle is a user gesture — unlock audio and preview when enabling.
 		unlockAudio();
 		if (on) playChime('done');
-	}
-
-	// Easter egg: the corner coin opens a pixel editor for contributing an avatar sprite.
-	let avatarEditorOpen = $state(false);
-
-	function openAvatarEditor() {
-		unlockAudio();
-		if (sound) playChime('done');
-		avatarEditorOpen = true;
 	}
 
 	// The server exits mid-flight, so a dropped connection means success here too.
@@ -1173,12 +1163,8 @@
 			</form>
 		</section>
 
-		<CoinButton onclick={openAvatarEditor} />
+		<CoinButton />
 	</main>
-
-	{#if avatarEditorOpen}
-		<AvatarEditor onclose={() => (avatarEditorOpen = false)} />
-	{/if}
 </div>
 
 <!-- Settings renders outside AppShell, which hosts the app-wide Toaster. -->

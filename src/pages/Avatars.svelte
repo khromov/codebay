@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '@fontsource-variable/doto';
 	import '@fontsource-variable/jetbrains-mono';
-	import AvatarsGallery from '../components/AvatarsGallery.svelte';
+	import AvatarsView from '../components/AvatarsView.svelte';
 </script>
 
-<AvatarsGallery mochi:hydrate />
+<AvatarsView mochi:hydrate />

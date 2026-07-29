@@ -1,5 +1,4 @@
 <script lang="ts">
-	import X from '@lucide/svelte/icons/x';
 	import Copy from '@lucide/svelte/icons/copy';
 	import Eraser from '@lucide/svelte/icons/eraser';
 	import Contrast from '@lucide/svelte/icons/contrast';
@@ -15,9 +14,7 @@
 	import Avatar from './Avatar.svelte';
 	import Button from './Button.svelte';
 
-	let { onclose }: { onclose: () => void } = $props();
-
-	// Picked randomly so the hint varies each time the editor opens.
+	// Picked randomly so the hint varies each time the page loads.
 	const NAME_PROMPTS = [
 		'dragon',
 		'unicorn',
@@ -110,124 +107,95 @@
 	}
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
+<section class="editor">
+	<div class="head">
+		<h2>Draw your avatar</h2>
+	</div>
 
-<div
-	class="overlay"
-	role="button"
-	tabindex="0"
-	onclick={onclose}
-	onkeydown={(e) => e.key === 'Escape' && onclose()}
->
-	<div
-		class="modal"
-		role="dialog"
-		aria-modal="true"
-		aria-label="Draw your own avatar"
-		tabindex="-1"
-		onclick={(e) => e.stopPropagation()}
-		onkeydown={() => {}}
-	>
-		<div class="head">
-			<h2>Draw your avatar</h2>
-			<button class="x" onclick={onclose} aria-label="Close"><X size={16} /></button>
-		</div>
-
-		<div class="body">
-			<div class="grid-frame">
-				{#each RING_CELLS as { r, c }, i (i)}
-					<span class="ring-cell" style="grid-row:{r + 1};grid-column:{c + 1}" aria-hidden="true"
-					></span>
+	<div class="body">
+		<div class="grid-frame">
+			{#each RING_CELLS as { r, c }, i (i)}
+				<span class="ring-cell" style="grid-row:{r + 1};grid-column:{c + 1}" aria-hidden="true"
+				></span>
+			{/each}
+			<div
+				class="grid"
+				bind:this={gridEl}
+				role="img"
+				aria-label="8 by 8 pixel drawing canvas"
+				{onpointerdown}
+				{onpointermove}
+				onpointerup={stopPainting}
+				onpointercancel={stopPainting}
+				onlostpointercapture={stopPainting}
+			>
+				{#each cells as cell, i (i)}
+					<span class="cell" class:on={cell === ON}></span>
 				{/each}
-				<div
-					class="grid"
-					bind:this={gridEl}
-					role="img"
-					aria-label="8 by 8 pixel drawing canvas"
-					{onpointerdown}
-					{onpointermove}
-					onpointerup={stopPainting}
-					onpointercancel={stopPainting}
-					onlostpointercapture={stopPainting}
-				>
-					{#each cells as cell, i (i)}
-						<span class="cell" class:on={cell === ON}></span>
-					{/each}
-				</div>
-			</div>
-
-			<div class="side">
-				<div class="preview">
-					<div class="preview-label">Preview</div>
-					<div class="preview-row">
-						<Avatar {art} name={art.name} scale={6} />
-						<Avatar {art} name={art.name} scale={3} />
-					</div>
-				</div>
-
-				<label class="name-field">
-					<span class="preview-label">Name</span>
-					<input
-						type="text"
-						bind:value={avatarName}
-						placeholder={namePlaceholder}
-						spellcheck="false"
-						autocapitalize="off"
-						autocorrect="off"
-						autocomplete="off"
-						maxlength="24"
-					/>
-				</label>
-
-				<div class="tools">
-					<Button size="sm" icon={Eraser} onclick={clear}>Clear</Button>
-					<Button size="sm" icon={Contrast} onclick={invert}>Invert</Button>
-				</div>
 			</div>
 		</div>
 
-		<div class="foot">
-			<span class="hint">Draw something, then open an issue to get it into the official set.</span>
-			<div class="actions">
-				<Button size="sm" icon={Copy} disabled={!canContribute} onclick={copyModule}>Copy</Button>
-				<Button
-					size="sm"
-					variant="primary"
-					icon={ExternalLink}
-					disabled={!canContribute}
-					href={toIssueUrl(art)}
-					target="_blank"
-					rel="noopener"
-				>
-					Open GitHub issue
-				</Button>
+		<div class="side">
+			<div class="preview">
+				<div class="preview-label">Preview</div>
+				<div class="preview-row">
+					<Avatar {art} name={art.name} scale={6} />
+					<Avatar {art} name={art.name} scale={3} />
+				</div>
+			</div>
+
+			<label class="name-field">
+				<span class="preview-label">Name</span>
+				<input
+					type="text"
+					bind:value={avatarName}
+					placeholder={namePlaceholder}
+					spellcheck="false"
+					autocapitalize="off"
+					autocorrect="off"
+					autocomplete="off"
+					maxlength="24"
+				/>
+			</label>
+
+			<div class="tools">
+				<Button size="sm" icon={Eraser} onclick={clear}>Clear</Button>
+				<Button size="sm" icon={Contrast} onclick={invert}>Invert</Button>
 			</div>
 		</div>
 	</div>
-</div>
+
+	<div class="foot">
+		<span class="hint">Draw something, then open an issue to get it into the official set.</span>
+		<div class="actions">
+			<Button size="sm" icon={Copy} disabled={!canContribute} onclick={copyModule}>Copy</Button>
+			<Button
+				size="sm"
+				variant="primary"
+				icon={ExternalLink}
+				disabled={!canContribute}
+				href={toIssueUrl(art)}
+				target="_blank"
+				rel="noopener"
+			>
+				Open GitHub issue
+			</Button>
+		</div>
+	</div>
+</section>
 
 <style>
-	.overlay {
-		position: fixed;
-		inset: 0;
-		background: color-mix(in srgb, var(--ink) 50%, transparent);
-		display: grid;
-		place-items: center;
-		padding: 24px;
-		z-index: 50;
-	}
-	.modal {
-		width: min(520px, 100%);
+	.editor {
+		width: 100%;
 		display: flex;
 		flex-direction: column;
 		background: var(--bg-card);
+		border: 1px solid var(--rule);
 		overflow: hidden;
-		box-shadow: 8px 8px 0 var(--ink);
 	}
 	.head {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
 		padding: 14px 18px;
 		border-bottom: 1px solid var(--ink);
 		background: var(--ink);
@@ -241,17 +209,6 @@
 		letter-spacing: 0.06em;
 		color: var(--bg);
 	}
-	.x {
-		display: inline-flex;
-		align-items: center;
-		border: none;
-		background: none;
-		cursor: pointer;
-		color: var(--bg);
-	}
-	.x:hover {
-		opacity: 0.7;
-	}
 	.body {
 		display: flex;
 		flex-wrap: wrap;
@@ -260,10 +217,10 @@
 	}
 	.grid-frame {
 		display: grid;
-		grid-template-columns: repeat(10, 32px);
-		grid-template-rows: repeat(10, 32px);
-		width: 320px;
-		height: 320px;
+		grid-template-columns: repeat(10, 40px);
+		grid-template-rows: repeat(10, 40px);
+		width: 400px;
+		height: 400px;
 		flex: none;
 		border: 1px solid var(--ink);
 		background: var(--bg);

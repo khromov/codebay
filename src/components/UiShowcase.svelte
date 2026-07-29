@@ -157,7 +157,7 @@
 	<header>
 		<h1>UI</h1>
 		<p>Component showcase · dev preview · tweak each component’s props below</p>
-		<a class="gallery-link" href="/debug/avatars">→ Avatar sprite gallery</a>
+		<a class="gallery-link" href="/avatars">→ Avatar sprite gallery</a>
 	</header>
 
 	<div class="grid">

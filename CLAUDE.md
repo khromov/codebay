@@ -36,7 +36,7 @@ Both `dev` and `start` execute `src/index.ts` with Bun (Mochi serves SSR pages o
 
 **Browser launch:** on startup the server opens the web UI in the user's default browser. Set `DISABLE_OPEN_BROWSER=1` to skip it — _you_ (Claude Code) should always run with this set (the `dev` script already does).
 
-**Dev-only routes:** when `MODE=development`, `/debug` (UI component showcase) and `/debug/avatars` (every avatar sprite) are mounted.
+**Dev-only routes:** when `MODE=development`, `/debug` (UI component showcase) is mounted.
 
 ## Comments
 
@@ -85,7 +85,7 @@ _To add one:_ create `src/container-injections/<name>.ts` exporting an `Injectio
 
 **Handles / theme** (`src/lib/theme.server.ts`): `src/index.ts` composes middleware as `sequence(basicAuth, themeHandle)`. `themeHandle` rewrites the SSR'd `<html>` tag with `data-theme` from the theme cookie via `transformPage`, so the first paint has no flash-of-wrong-theme; it fires for every HTML response including 404s and proxy passthrough. Client-only UI prefs (e.g. the attention chime toggle) live in `src/settings.ts` on `localStorage` and no-op during SSR.
 
-**Avatars** (`src/avatars/`): each instance gets a deterministic 8×8 sprite via `pickAvatar(id)` against the `avatars[]` registry in `index.ts`. `serialize.ts` powers the in-app avatar-editor easter egg — it turns a drawing into the exact module source a sprite ships as, plus a pre-filled GitHub issue URL. Those "Avatar contribution: …" issues are landed via the `avatar-contribution-pr` skill in `.claude/skills/`.
+**Avatars** (`src/avatars/`): each instance gets a deterministic 8×8 sprite via `pickAvatar(id)` against the `avatars[]` registry in `index.ts`. `serialize.ts` powers the avatar-editor easter egg at `/avatars` (reached from the coin at the bottom of `/settings`; the page also lists the whole set) — it turns a drawing into the exact module source a sprite ships as, plus a pre-filled GitHub issue URL. Those "Avatar contribution: …" issues are landed via the `avatar-contribution-pr` skill in `.claude/skills/`.
 
 **Distribution.** Three ways this ships: `bunx codebay` (see npm packaging below); a GHCR image (`Dockerfile` + `docker-compose.yml`) that drives the **host's** daemon Docker-out-of-Docker — needs `--network host`, hence `BASIC_AUTH_PASSWORD`, and a `DATA_DIR` bind-mounted at an identical host↔container path; and running from source. Versioning/publishing is automated by release-please (`release-please-config.json`), so use conventional commit messages. README's Configuration section is the canonical env-var list (`PORT`, `DATA_DIR`, `DOCKER_HOST`, `BASIC_AUTH_PASSWORD`, `MOCHI_KEY`, `CODEBAY_CLAUDE_CODE_TOKEN`, `CODEBAY_GITHUB_TOKEN`, `DISABLE_OPEN_BROWSER`).
 
