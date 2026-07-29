@@ -59,34 +59,34 @@
 		"verify:package": "bun scripts/verify-package.ts"
 	},
 	"dependencies": {
-		"@devcontainers/cli": "^0.87.0",
+		"@devcontainers/cli": "^0.88.0",
 		"@fontsource-variable/doto": "^5.2.10",
 		"@fontsource-variable/jetbrains-mono": "^5.2.8",
-		"@lucide/svelte": "^1.21.0",
+		"@lucide/svelte": "^1.27.0",
 		"@zihaolam/bun-sqlite-migrations": "^1.0.3",
 		"dockerode": "^5.0.1",
 		"mochi-framework": "^0.9.0",
-		"svelte": "^5.56.4",
+		"svelte": "^5.56.8",
 		"svelte-french-toast": "^1.2.0"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
 		"@types/bun": "1.3.14",
 		"@types/dockerode": "^4.0.1",
-		"eslint": "^10.6.0",
+		"eslint": "^10.8.0",
 		"eslint-plugin-svelte": "^3.20.0",
-		"globals": "^17.7.0",
+		"globals": "^17.8.0",
 		"prettier": "^3.9.4",
 		"prettier-plugin-svelte": "^4.1.1",
-		"svelte-check": "4.6.0",
+		"svelte-check": "4.7.4",
 		"typescript": "^6.0.3",
 		"typescript-eslint": "^8.62.1"
 	},
 	"resolutions": {
 		"msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*",
-		"svelte": "5.56.4"
+		"svelte": "5.56.8"
 	},
 	"patchedDependencies": {
-		"svelte-check@4.6.0": "patches/svelte-check@4.6.0.patch"
+		"svelte-check@4.7.4": "patches/svelte-check@4.7.4.patch"
 	}
 }
