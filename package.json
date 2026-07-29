@@ -1,6 +1,6 @@
 {
 	"name": "codebay",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Web UI for spinning up isolated devcontainer instances from any local folder, each with a browser-based VS Code (code-server) — built for parallel Claude Code workflows.",
 	"type": "module",
 	"license": "MIT",
