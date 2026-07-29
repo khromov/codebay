@@ -37,6 +37,17 @@ export function ensureMochiKey(): void {
 	}
 }
 
+/** Read relative to this module, not cwd, because under `bunx codebay` cwd is the user's folder. */
+export const APP_VERSION: string = (() => {
+	try {
+		const path = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json');
+		const version = JSON.parse(readFileSync(path, 'utf8')).version;
+		return typeof version === 'string' ? version : 'unknown';
+	} catch {
+		return 'unknown';
+	}
+})();
+
 /** Per-instance working copies live here: <INSTANCES_DIR>/<id>/workspace. */
 export const INSTANCES_DIR = join(DATA_DIR, 'instances');
 

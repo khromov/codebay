@@ -45,7 +45,7 @@ import {
 	listFolderHistory,
 	setOption
 } from './lib/db.server.ts';
-import { DEFAULT_COPY_IGNORE, DEFAULT_IMAGE } from './lib/config.server.ts';
+import { APP_VERSION, DEFAULT_COPY_IGNORE, DEFAULT_IMAGE } from './lib/config.server.ts';
 import { wsUpgradeAllowed } from './lib/auth.server.ts';
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
@@ -181,7 +181,8 @@ export const routes: Record<string, MochiRouteValue> = {
 				customEndpointModel: getOption('custom_endpoint_model') ?? DEFAULT_MODEL,
 				hostEnvVarsEnabled: getOption('host_env_vars_enabled') === '1',
 				hostEnvVarNames,
-				hostEnvVarPresence: hostEnvVarPresence(hostEnvVarNames)
+				hostEnvVarPresence: hostEnvVarPresence(hostEnvVarNames),
+				version: APP_VERSION
 			};
 		},
 		actions: {

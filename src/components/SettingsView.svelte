@@ -46,7 +46,8 @@
 		customEndpointModel,
 		hostEnvVarsEnabled,
 		hostEnvVarNames,
-		hostEnvVarPresence
+		hostEnvVarPresence,
+		version
 	}: {
 		defaultImage: string;
 		builtinImage: string;
@@ -68,6 +69,7 @@
 		hostEnvVarsEnabled: boolean;
 		hostEnvVarNames: string[];
 		hostEnvVarPresence: Record<string, boolean>;
+		version: string;
 	} = $props();
 
 	// Defaults to on during SSR, where localStorage doesn't exist.
@@ -1164,6 +1166,8 @@
 		</section>
 
 		<CoinButton />
+
+		<div class="version">Codebay v{version}</div>
 	</main>
 </div>
 
@@ -1217,6 +1221,12 @@
 	.danger-card :global(.btn) {
 		flex: none;
 		white-space: nowrap;
+	}
+	.version {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		letter-spacing: 0.08em;
+		color: var(--ink-soft);
 	}
 	.shutting {
 		flex: none;
