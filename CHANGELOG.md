@@ -2,10 +2,9 @@
 
 ## [0.2.1](https://github.com/khromov/codebay/compare/codebay-v0.2.0...codebay-v0.2.1) (2026-07-30)
 
-
 ### Bug Fixes
 
-* publish forwarded ports on HOST, show version, stabilize avatar hint ([#59](https://github.com/khromov/codebay/issues/59)) ([aa50799](https://github.com/khromov/codebay/commit/aa507994ab970d9af01c7e02dc3732aa0d8d52ba))
+- publish forwarded ports on HOST, show version, stabilize avatar hint ([#59](https://github.com/khromov/codebay/issues/59)) ([aa50799](https://github.com/khromov/codebay/commit/aa507994ab970d9af01c7e02dc3732aa0d8d52ba))
 
 ## [0.2.0](https://github.com/khromov/codebay/compare/codebay-v0.1.0...codebay-v0.2.0) (2026-07-29)
 
