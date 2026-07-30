@@ -23,7 +23,8 @@
 		customEndpointModel,
 		hostEnvVarsEnabled,
 		hostEnvVarNames,
-		hostEnvVarPresence
+		hostEnvVarPresence,
+		version
 	}: {
 		defaultImage: string;
 		builtinImage: string;
@@ -45,6 +46,7 @@
 		hostEnvVarsEnabled: boolean;
 		hostEnvVarNames: string[];
 		hostEnvVarPresence: Record<string, boolean>;
+		version: string;
 	} = $props();
 </script>
 
@@ -69,5 +71,6 @@
 	{hostEnvVarsEnabled}
 	{hostEnvVarNames}
 	{hostEnvVarPresence}
+	{version}
 	mochi:hydrate
 />

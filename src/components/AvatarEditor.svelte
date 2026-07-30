@@ -14,32 +14,8 @@
 	import Avatar from './Avatar.svelte';
 	import Button from './Button.svelte';
 
-	// Picked randomly so the hint varies each time the page loads.
-	const NAME_PROMPTS = [
-		'dragon',
-		'unicorn',
-		'cactus',
-		'comet',
-		'pretzel',
-		'volcano',
-		'narwhal',
-		'waffle',
-		'satellite',
-		'pineapple',
-		'kraken',
-		'yeti',
-		'moose',
-		'lighthouse',
-		'toaster',
-		'hedgehog',
-		'walrus',
-		'pumpkin',
-		'jellyfish',
-		'tornado',
-		'igloo',
-		'boomerang'
-	];
-	const namePlaceholder = NAME_PROMPTS[Math.floor(Math.random() * NAME_PROMPTS.length)];
+	// Rolled by the route, not here, so hydration doesn't pick a different word.
+	let { namePlaceholder }: { namePlaceholder: string } = $props();
 
 	// Same shape `decode()` produces, so the two round-trip.
 	let cells = $state<number[]>(Array(ROWS * COLS).fill(OFF));
@@ -109,7 +85,7 @@
 
 <section class="editor">
 	<div class="head">
-		<h2>Draw your avatar</h2>
+		<h2>Draw your own avatar</h2>
 	</div>
 
 	<div class="body">

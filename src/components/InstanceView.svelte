@@ -5,6 +5,7 @@
 	import HealthBox from './HealthBox.svelte';
 	import StatusBadge from './StatusBadge.svelte';
 	import Skeleton from './Skeleton.svelte';
+	import { forwardedPortUrl } from '../lib/links.ts';
 	import { liveSocket, liveStream } from '../live.ts';
 	import { apiPost, apiDelete } from '../api.ts';
 	import { enhance } from 'mochi-framework';
@@ -189,8 +190,9 @@
 						<li>
 							<span class="cp">:{f.container_port}</span>
 							<span class="arr">→</span>
-							<a href={`http://localhost:${f.host_port}`} target="_blank" rel="noopener"
-								>localhost:{f.host_port} <ArrowUpRight size={12} /></a
+							<a href={forwardedPortUrl(f.host_port)} target="_blank" rel="noopener"
+								>{forwardedPortUrl(f.host_port).replace('http://', '')}
+								<ArrowUpRight size={12} /></a
 							>
 							<button class="rm" title="Remove" onclick={() => removePort(f.container_port)}
 								>×</button
