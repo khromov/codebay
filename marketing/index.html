@@ -1,0 +1,1015 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Codebay — the devcontainer manager</title>
+		<meta
+			name="description"
+			content="Codebay spins up isolated devcontainer instances from any local folder or Git repo, each with its own browser-based VS Code — built for parallel Claude Code workflows."
+		/>
+		<meta name="theme-color" content="#d7d8d2" />
+		<link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
+		<meta property="og:title" content="Codebay — the devcontainer manager" />
+		<meta
+			property="og:description"
+			content="Isolated devcontainers, one command away. Browser-based VS Code, per instance. Built for parallel Claude Code workflows."
+		/>
+		<meta property="og:type" content="website" />
+		<meta name="twitter:card" content="summary" />
+		<link rel="stylesheet" href="./styles.css" />
+	</head>
+	<body>
+		<header class="site-header">
+			<div class="stage">
+				<a class="brand" href="#top">
+					<span class="logo">
+						<svg
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path
+								d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"
+							/>
+							<path d="M12 22V12" />
+							<polyline points="3.29 7 12 12 20.71 7" />
+							<path d="m7.5 4.27 9 5.15" />
+						</svg>
+					</span>
+					<span>Codebay</span>
+					<span class="tagline">devcontainer manager</span>
+				</a>
+				<nav class="nav-actions">
+					<a
+						class="btn ghost"
+						href="https://github.com/khromov/codebay"
+						target="_blank"
+						rel="noopener"
+					>
+						<svg viewBox="0 0 24 24" fill="currentColor">
+							<path
+								d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
+							/>
+						</svg>
+						<span class="label-full">GitHub</span>
+					</a>
+					<a class="btn primary" href="#install"
+						><span class="label-full">Get Started</span><span class="label-short">Start</span></a
+					>
+				</nav>
+			</div>
+		</header>
+
+		<main id="top">
+			<section class="hero">
+				<div class="stage">
+					<span class="eyebrow"
+						><span class="dot"></span>OPEN SOURCE · SELF-HOSTED · BUN-POWERED</span
+					>
+					<h1 class="headline">Isolated devcontainers.<br />A browser IDE for each one.</h1>
+					<p class="subhead">
+						Point Codebay at a local folder or a Git repo URL and it spins up a fully isolated
+						devcontainer with its own browser-based VS Code — built for running parallel
+						Claude&nbsp;Code workflows without them stepping on each other.
+					</p>
+
+					<div class="demo-frame panel">
+						<div class="panel-bar">
+							<span class="panel-bar-dots"><span></span><span></span><span></span></span>
+							<span>Codebay — Live Demo</span>
+							<span class="panel-bar-dots spacer" aria-hidden="true"
+								><span></span><span></span><span></span
+							></span>
+						</div>
+						<div class="demo-screen">
+							<video autoplay muted loop playsinline poster="./assets/demo-poster.svg">
+								<source src="./assets/demo.mp4" type="video/mp4" />
+							</video>
+						</div>
+					</div>
+
+					<div class="cta-row">
+						<div class="code-chip">
+							<span><span class="prompt">$</span> bunx codebay@latest</span>
+							<button
+								type="button"
+								data-copy="bunx codebay@latest"
+								aria-label="Copy install command"
+							>
+								<svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+									<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+								</svg>
+								<span class="btn-label">Copy</span>
+							</button>
+						</div>
+						<a
+							class="btn ghost lg"
+							href="https://github.com/khromov/codebay"
+							target="_blank"
+							rel="noopener"
+						>
+							View on GitHub
+							<svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M5 12h14" />
+								<path d="m12 5 7 7-7 7" />
+							</svg>
+						</a>
+					</div>
+				</div>
+			</section>
+
+			<section id="different">
+				<div class="stage">
+					<div class="section-head">
+						<h2>What makes Codebay different?</h2>
+						<p>Not another wrapper around an agent SDK — the real thing, properly sandboxed.</p>
+					</div>
+					<div class="diff-grid">
+						<article class="diff-card panel">
+							<span class="icon-badge lg"
+								><svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path
+										d="M22 7.7c0-.6-.4-1.2-.8-1.5l-6.3-3.9a1.72 1.72 0 0 0-1.7 0l-10.3 6c-.5.2-.9.8-.9 1.4v6.6c0 .5.4 1.2.8 1.5l6.3 3.9a1.72 1.72 0 0 0 1.7 0l10.3-6c.5-.3.9-1 .9-1.5Z"
+									/>
+									<path d="M10 21.9V14L2.1 9.1" />
+									<path d="m10 14 11.9-6.9" />
+									<path d="M14 19.8v-8.1" />
+									<path d="M18 17.5V9.4" /></svg
+							></span>
+							<h3>Real isolation, not worktrees</h3>
+							<p>
+								Every instance is its own Docker container — no shared worktrees, no port
+								collisions, no accidentally killing your dev server, and nothing left behind to
+								clean up when you're done.
+							</p>
+						</article>
+						<article class="diff-card panel">
+							<span class="icon-badge lg"
+								><svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<circle cx="12" cy="12" r="10" />
+									<path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+									<path d="M2 12h20" /></svg
+							></span>
+							<h3>Local or fully remote</h3>
+							<p>
+								Run it against Docker Desktop or Colima on your laptop, or point it at a remote
+								server and drive every instance from the browser.
+							</p>
+						</article>
+						<article class="diff-card panel">
+							<span class="icon-badge lg"
+								><svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
+									<path
+										d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09"
+									/>
+									<path
+										d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"
+									/>
+									<path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05" /></svg
+							></span>
+							<h3>Real Claude Code, always current</h3>
+							<p>
+								No Agents SDK abstraction in the way — it's the actual Claude Code CLI running in
+								each container, so you get the latest features the day they ship.
+							</p>
+						</article>
+						<article class="diff-card panel">
+							<span class="icon-badge lg"
+								><svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path
+										d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"
+									/>
+									<circle cx="16.5" cy="7.5" r=".5" fill="currentColor" /></svg
+							></span>
+							<h3>Your auth, zero config</h3>
+							<p>
+								Existing Claude Code and GitHub credentials are copied into every container
+								automatically — no re-logging in, no tokens to paste.
+							</p>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section id="features">
+				<div class="stage">
+					<div class="section-head">
+						<h2>Everything wired up for you</h2>
+						<p>One `devcontainer up`, plenty of automatic plumbing underneath.</p>
+					</div>
+					<div class="feature-grid">
+						<article class="feature-card panel">
+							<span class="icon-badge"
+								><svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path d="M15 6a9 9 0 0 0-9 9V3" />
+									<circle cx="18" cy="6" r="3" />
+									<circle cx="6" cy="18" r="3" /></svg
+							></span>
+							<h3>Local folder or Git URL</h3>
+							<p>
+								Copy a folder or clone a repo — either way <code>.git</code> history and your remote
+								come along for the ride.
+							</p>
+						</article>
+						<article class="feature-card panel">
+							<span class="icon-badge"
+								><svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path d="M12 19h8" />
+									<path d="m4 17 6-6-6-6" /></svg
+							></span>
+							<h3>Browser-based VS Code</h3>
+							<p>
+								Every instance runs its own code-server, proxied same-origin behind your password —
+								no raw ports to remember.
+							</p>
+						</article>
+						<article class="feature-card panel">
+							<span class="icon-badge"
+								><svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path
+										d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"
+									/>
+									<path d="M20 2v4" />
+									<path d="M22 4h-4" />
+									<circle cx="4" cy="20" r="2" /></svg
+							></span>
+							<h3>Ready-to-run dev environment</h3>
+							<p>
+								tmux, git identity, and Claude Code aliases are injected into every container — a
+								workflow, not just a shell.
+							</p>
+						</article>
+						<article class="feature-card panel">
+							<span class="icon-badge"
+								><svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path d="M10.268 21a2 2 0 0 0 3.464 0" />
+									<path
+										d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"
+									/></svg
+							></span>
+							<h3>Attention pulses</h3>
+							<p>
+								Containers signal <em>done</em> or <em>waiting</em> back to the dashboard, so you
+								know which tab needs you.
+							</p>
+						</article>
+						<article class="feature-card panel">
+							<span class="icon-badge"
+								><svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<rect width="7" height="9" x="3" y="3" rx="1" />
+									<rect width="7" height="5" x="14" y="3" rx="1" />
+									<rect width="7" height="9" x="14" y="12" rx="1" />
+									<rect width="7" height="5" x="3" y="16" rx="1" /></svg
+							></span>
+							<h3>Live dashboard</h3>
+							<p>
+								The full instance list and per-container health stream over WebSockets, reconciled
+								against real Docker state.
+							</p>
+						</article>
+						<article class="feature-card panel">
+							<span class="icon-badge"
+								><svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path
+										d="M17 19a1 1 0 0 1-1-1v-2a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2a1 1 0 0 1-1 1z"
+									/>
+									<path d="M17 21v-2" />
+									<path d="M19 14V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V10" />
+									<path d="M21 21v-2" />
+									<path d="M3 5V3" />
+									<path d="M4 10a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2a2 2 0 0 1-2 2z" />
+									<path d="M7 5V3" /></svg
+							></span>
+							<h3>Port forwarding</h3>
+							<p>
+								A project's declared <code>forwardPorts</code>/<code>appPort</code> are published
+								automatically — add more anytime.
+							</p>
+						</article>
+						<article class="feature-card panel">
+							<span class="icon-badge"
+								><svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path
+										d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"
+									/>
+									<path d="m7 16.5-4.74-2.85" />
+									<path d="m7 16.5 5-3" />
+									<path d="M7 16.5v5.17" />
+									<path
+										d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"
+									/>
+									<path d="m17 16.5-5-3" />
+									<path d="m17 16.5 4.74-2.85" />
+									<path d="M17 16.5v5.17" />
+									<path
+										d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"
+									/>
+									<path d="M12 8 7.26 5.15" />
+									<path d="m12 8 4.74-2.85" />
+									<path d="M12 13.5V8" /></svg
+							></span>
+							<h3>Runs itself, too</h3>
+							<p>
+								Ship Codebay as a container against the host's own Docker daemon —
+								Docker-outside-of-Docker, no extra install.
+							</p>
+						</article>
+						<article class="feature-card panel">
+							<span class="icon-badge"
+								><svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path
+										d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"
+									/></svg
+							></span>
+							<h3>One command start</h3>
+							<p>
+								<code>bunx codebay@latest</code> and you're live at <code>localhost:6969</code> — no
+								config file required.
+							</p>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section id="how-it-works">
+				<div class="stage">
+					<div class="section-head">
+						<h2>How it works</h2>
+						<p>From source to a running browser IDE in four steps.</p>
+					</div>
+					<div class="steps">
+						<div class="step panel">
+							<span class="step-num">1</span>
+							<h3>Pick a source</h3>
+							<p>A local folder, or paste a Git repo URL.</p>
+						</div>
+						<div class="step panel">
+							<span class="step-num">2</span>
+							<h3>We inject the tooling</h3>
+							<p>
+								code-server, port forwards, and your credentials go into
+								<code>devcontainer.json</code>.
+							</p>
+						</div>
+						<div class="step panel">
+							<span class="step-num">3</span>
+							<h3><code>devcontainer up</code></h3>
+							<p>The official CLI builds and starts your container.</p>
+						</div>
+						<div class="step panel">
+							<span class="step-num">4</span>
+							<h3>Open the browser IDE</h3>
+							<p>A unique host port, proxied and password protected.</p>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section id="avatars">
+				<div class="stage">
+					<div class="section-head">
+						<h2>Every instance gets a mascot</h2>
+						<p>
+							A deterministic 8×8 pixel sprite, picked from a growing catalog — same instance, same
+							avatar, every time.
+						</p>
+					</div>
+					<div class="avatar-grid">
+						<figure class="avatar-tile" title="anchor">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="anchor pixel avatar"
+							>
+								<rect x="3" y="0" width="2" height="1" />
+								<rect x="2" y="1" width="1" height="1" />
+								<rect x="5" y="1" width="1" height="1" />
+								<rect x="2" y="2" width="1" height="1" />
+								<rect x="5" y="2" width="1" height="1" />
+								<rect x="1" y="3" width="6" height="1" />
+								<rect x="3" y="4" width="2" height="1" />
+								<rect x="0" y="5" width="1" height="1" />
+								<rect x="3" y="5" width="2" height="1" />
+								<rect x="7" y="5" width="1" height="1" />
+								<rect x="0" y="6" width="8" height="1" />
+								<rect x="1" y="7" width="6" height="1" />
+							</svg>
+							<figcaption>anchor</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="bee">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="bee pixel avatar"
+							>
+								<rect x="1" y="0" width="1" height="1" />
+								<rect x="6" y="0" width="1" height="1" />
+								<rect x="0" y="1" width="2" height="1" />
+								<rect x="3" y="1" width="2" height="1" />
+								<rect x="6" y="1" width="2" height="1" />
+								<rect x="0" y="2" width="1" height="1" />
+								<rect x="2" y="2" width="4" height="1" />
+								<rect x="7" y="2" width="1" height="1" />
+								<rect x="1" y="3" width="6" height="1" />
+								<rect x="1" y="4" width="6" height="1" />
+								<rect x="1" y="6" width="6" height="1" />
+								<rect x="2" y="7" width="4" height="1" />
+							</svg>
+							<figcaption>bee</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="rocket">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="rocket pixel avatar"
+							>
+								<rect x="3" y="0" width="2" height="1" />
+								<rect x="2" y="1" width="4" height="1" />
+								<rect x="2" y="2" width="1" height="1" />
+								<rect x="5" y="2" width="1" height="1" />
+								<rect x="2" y="3" width="4" height="1" />
+								<rect x="1" y="4" width="6" height="1" />
+								<rect x="0" y="5" width="2" height="1" />
+								<rect x="3" y="5" width="2" height="1" />
+								<rect x="6" y="5" width="2" height="1" />
+								<rect x="2" y="6" width="1" height="1" />
+								<rect x="5" y="6" width="1" height="1" />
+								<rect x="3" y="7" width="2" height="1" />
+							</svg>
+							<figcaption>rocket</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="owl">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="owl pixel avatar"
+							>
+								<rect x="0" y="0" width="1" height="1" />
+								<rect x="7" y="0" width="1" height="1" />
+								<rect x="0" y="1" width="2" height="1" />
+								<rect x="6" y="1" width="2" height="1" />
+								<rect x="1" y="2" width="6" height="1" />
+								<rect x="1" y="3" width="1" height="1" />
+								<rect x="3" y="3" width="2" height="1" />
+								<rect x="6" y="3" width="1" height="1" />
+								<rect x="1" y="4" width="1" height="1" />
+								<rect x="3" y="4" width="2" height="1" />
+								<rect x="6" y="4" width="1" height="1" />
+								<rect x="1" y="5" width="6" height="1" />
+								<rect x="1" y="6" width="6" height="1" />
+								<rect x="2" y="7" width="1" height="1" />
+								<rect x="5" y="7" width="1" height="1" />
+							</svg>
+							<figcaption>owl</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="fox">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="fox pixel avatar"
+							>
+								<rect x="0" y="0" width="2" height="1" />
+								<rect x="6" y="0" width="2" height="1" />
+								<rect x="0" y="1" width="2" height="1" />
+								<rect x="6" y="1" width="2" height="1" />
+								<rect x="0" y="2" width="8" height="1" />
+								<rect x="0" y="3" width="3" height="1" />
+								<rect x="5" y="3" width="3" height="1" />
+								<rect x="0" y="4" width="8" height="1" />
+								<rect x="0" y="5" width="8" height="1" />
+								<rect x="1" y="6" width="6" height="1" />
+								<rect x="2" y="7" width="4" height="1" />
+							</svg>
+							<figcaption>fox</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="robot">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="robot pixel avatar"
+							>
+								<rect x="3" y="0" width="2" height="1" />
+								<rect x="3" y="1" width="1" height="1" />
+								<rect x="1" y="2" width="6" height="1" />
+								<rect x="0" y="3" width="1" height="1" />
+								<rect x="2" y="3" width="4" height="1" />
+								<rect x="7" y="3" width="1" height="1" />
+								<rect x="0" y="4" width="1" height="1" />
+								<rect x="3" y="4" width="2" height="1" />
+								<rect x="7" y="4" width="1" height="1" />
+								<rect x="1" y="5" width="6" height="1" />
+								<rect x="1" y="6" width="5" height="1" />
+								<rect x="1" y="7" width="6" height="1" />
+							</svg>
+							<figcaption>robot</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="crown">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="crown pixel avatar"
+							>
+								<rect x="0" y="0" width="1" height="1" />
+								<rect x="7" y="0" width="1" height="1" />
+								<rect x="0" y="1" width="1" height="1" />
+								<rect x="3" y="1" width="2" height="1" />
+								<rect x="7" y="1" width="1" height="1" />
+								<rect x="0" y="2" width="2" height="1" />
+								<rect x="3" y="2" width="2" height="1" />
+								<rect x="6" y="2" width="2" height="1" />
+								<rect x="0" y="3" width="2" height="1" />
+								<rect x="3" y="3" width="2" height="1" />
+								<rect x="6" y="3" width="2" height="1" />
+								<rect x="0" y="4" width="8" height="1" />
+								<rect x="0" y="5" width="1" height="1" />
+								<rect x="2" y="5" width="1" height="1" />
+								<rect x="4" y="5" width="1" height="1" />
+								<rect x="6" y="5" width="1" height="1" />
+								<rect x="0" y="6" width="8" height="1" />
+								<rect x="0" y="7" width="8" height="1" />
+							</svg>
+							<figcaption>crown</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="key">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="key pixel avatar"
+							>
+								<rect x="1" y="0" width="4" height="1" />
+								<rect x="0" y="1" width="2" height="1" />
+								<rect x="4" y="1" width="2" height="1" />
+								<rect x="0" y="2" width="2" height="1" />
+								<rect x="4" y="2" width="2" height="1" />
+								<rect x="0" y="3" width="2" height="1" />
+								<rect x="4" y="3" width="2" height="1" />
+								<rect x="1" y="4" width="4" height="1" />
+								<rect x="2" y="5" width="2" height="1" />
+								<rect x="2" y="6" width="4" height="1" />
+								<rect x="2" y="7" width="2" height="1" />
+								<rect x="5" y="7" width="2" height="1" />
+							</svg>
+							<figcaption>key</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="diamond">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="diamond pixel avatar"
+							>
+								<rect x="1" y="0" width="6" height="1" />
+								<rect x="0" y="1" width="1" height="1" />
+								<rect x="2" y="1" width="1" height="1" />
+								<rect x="5" y="1" width="1" height="1" />
+								<rect x="7" y="1" width="1" height="1" />
+								<rect x="0" y="2" width="8" height="1" />
+								<rect x="0" y="3" width="2" height="1" />
+								<rect x="3" y="3" width="2" height="1" />
+								<rect x="6" y="3" width="2" height="1" />
+								<rect x="1" y="4" width="1" height="1" />
+								<rect x="3" y="4" width="2" height="1" />
+								<rect x="6" y="4" width="1" height="1" />
+								<rect x="1" y="5" width="2" height="1" />
+								<rect x="5" y="5" width="2" height="1" />
+								<rect x="2" y="6" width="4" height="1" />
+								<rect x="3" y="7" width="2" height="1" />
+							</svg>
+							<figcaption>diamond</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="ghost">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="ghost pixel avatar"
+							>
+								<rect x="2" y="0" width="4" height="1" />
+								<rect x="1" y="1" width="6" height="1" />
+								<rect x="0" y="2" width="2" height="1" />
+								<rect x="3" y="2" width="2" height="1" />
+								<rect x="6" y="2" width="2" height="1" />
+								<rect x="0" y="3" width="2" height="1" />
+								<rect x="3" y="3" width="2" height="1" />
+								<rect x="6" y="3" width="2" height="1" />
+								<rect x="0" y="4" width="8" height="1" />
+								<rect x="0" y="5" width="8" height="1" />
+								<rect x="0" y="6" width="8" height="1" />
+								<rect x="0" y="7" width="1" height="1" />
+								<rect x="2" y="7" width="2" height="1" />
+								<rect x="5" y="7" width="2" height="1" />
+							</svg>
+							<figcaption>ghost</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="octopus">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="octopus pixel avatar"
+							>
+								<rect x="2" y="0" width="4" height="1" />
+								<rect x="1" y="1" width="6" height="1" />
+								<rect x="0" y="2" width="3" height="1" />
+								<rect x="5" y="2" width="3" height="1" />
+								<rect x="0" y="3" width="8" height="1" />
+								<rect x="0" y="4" width="8" height="1" />
+								<rect x="0" y="5" width="8" height="1" />
+								<rect x="1" y="6" width="6" height="1" />
+								<rect x="0" y="7" width="1" height="1" />
+								<rect x="2" y="7" width="1" height="1" />
+								<rect x="4" y="7" width="1" height="1" />
+								<rect x="6" y="7" width="1" height="1" />
+							</svg>
+							<figcaption>octopus</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="penguin">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="penguin pixel avatar"
+							>
+								<rect x="2" y="0" width="4" height="1" />
+								<rect x="1" y="1" width="6" height="1" />
+								<rect x="1" y="2" width="2" height="1" />
+								<rect x="5" y="2" width="2" height="1" />
+								<rect x="1" y="3" width="1" height="1" />
+								<rect x="3" y="3" width="2" height="1" />
+								<rect x="6" y="3" width="1" height="1" />
+								<rect x="0" y="4" width="2" height="1" />
+								<rect x="5" y="4" width="2" height="1" />
+								<rect x="0" y="5" width="2" height="1" />
+								<rect x="5" y="5" width="2" height="1" />
+								<rect x="0" y="6" width="7" height="1" />
+								<rect x="1" y="7" width="1" height="1" />
+								<rect x="6" y="7" width="1" height="1" />
+							</svg>
+							<figcaption>penguin</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="snakegame">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="snakegame pixel avatar"
+							>
+								<rect x="0" y="0" width="8" height="1" />
+								<rect x="0" y="1" width="1" height="1" />
+								<rect x="7" y="1" width="1" height="1" />
+								<rect x="0" y="2" width="1" height="1" />
+								<rect x="2" y="2" width="2" height="1" />
+								<rect x="7" y="2" width="1" height="1" />
+								<rect x="0" y="3" width="1" height="1" />
+								<rect x="2" y="3" width="1" height="1" />
+								<rect x="5" y="3" width="1" height="1" />
+								<rect x="7" y="3" width="1" height="1" />
+								<rect x="0" y="4" width="1" height="1" />
+								<rect x="2" y="4" width="2" height="1" />
+								<rect x="7" y="4" width="1" height="1" />
+								<rect x="0" y="5" width="1" height="1" />
+								<rect x="3" y="5" width="2" height="1" />
+								<rect x="7" y="5" width="1" height="1" />
+								<rect x="0" y="6" width="1" height="1" />
+								<rect x="7" y="6" width="1" height="1" />
+								<rect x="0" y="7" width="8" height="1" />
+							</svg>
+							<figcaption>snakegame</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="svelte">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="svelte pixel avatar"
+							>
+								<rect x="2" y="0" width="5" height="1" />
+								<rect x="1" y="1" width="3" height="1" />
+								<rect x="6" y="1" width="1" height="1" />
+								<rect x="0" y="2" width="2" height="1" />
+								<rect x="5" y="2" width="1" height="1" />
+								<rect x="0" y="3" width="8" height="1" />
+								<rect x="0" y="4" width="8" height="1" />
+								<rect x="2" y="5" width="1" height="1" />
+								<rect x="6" y="5" width="2" height="1" />
+								<rect x="1" y="6" width="1" height="1" />
+								<rect x="4" y="6" width="3" height="1" />
+								<rect x="1" y="7" width="4" height="1" />
+							</svg>
+							<figcaption>svelte</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="target">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="target pixel avatar"
+							>
+								<rect x="2" y="0" width="4" height="1" />
+								<rect x="1" y="1" width="1" height="1" />
+								<rect x="6" y="1" width="1" height="1" />
+								<rect x="0" y="2" width="1" height="1" />
+								<rect x="7" y="2" width="1" height="1" />
+								<rect x="0" y="3" width="1" height="1" />
+								<rect x="3" y="3" width="2" height="1" />
+								<rect x="7" y="3" width="1" height="1" />
+								<rect x="0" y="4" width="1" height="1" />
+								<rect x="3" y="4" width="2" height="1" />
+								<rect x="7" y="4" width="1" height="1" />
+								<rect x="0" y="5" width="1" height="1" />
+								<rect x="7" y="5" width="1" height="1" />
+								<rect x="1" y="6" width="1" height="1" />
+								<rect x="6" y="6" width="1" height="1" />
+								<rect x="2" y="7" width="4" height="1" />
+							</svg>
+							<figcaption>target</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="whale">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="whale pixel avatar"
+							>
+								<rect x="4" y="0" width="1" height="1" />
+								<rect x="3" y="1" width="3" height="1" />
+								<rect x="2" y="2" width="4" height="1" />
+								<rect x="7" y="2" width="1" height="1" />
+								<rect x="1" y="3" width="1" height="1" />
+								<rect x="3" y="3" width="4" height="1" />
+								<rect x="0" y="4" width="6" height="1" />
+								<rect x="7" y="4" width="1" height="1" />
+								<rect x="1" y="5" width="5" height="1" />
+								<rect x="2" y="6" width="4" height="1" />
+								<rect x="3" y="7" width="2" height="1" />
+							</svg>
+							<figcaption>whale</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="invader">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="invader pixel avatar"
+							>
+								<rect x="0" y="0" width="1" height="1" />
+								<rect x="7" y="0" width="1" height="1" />
+								<rect x="1" y="1" width="1" height="1" />
+								<rect x="6" y="1" width="1" height="1" />
+								<rect x="0" y="2" width="8" height="1" />
+								<rect x="0" y="3" width="2" height="1" />
+								<rect x="3" y="3" width="2" height="1" />
+								<rect x="6" y="3" width="2" height="1" />
+								<rect x="0" y="4" width="8" height="1" />
+								<rect x="2" y="5" width="4" height="1" />
+								<rect x="1" y="6" width="2" height="1" />
+								<rect x="5" y="6" width="2" height="1" />
+								<rect x="0" y="7" width="1" height="1" />
+								<rect x="2" y="7" width="1" height="1" />
+								<rect x="5" y="7" width="1" height="1" />
+								<rect x="7" y="7" width="1" height="1" />
+							</svg>
+							<figcaption>invader</figcaption>
+						</figure>
+						<figure class="avatar-tile" title="kangaroo">
+							<svg
+								class="sprite"
+								viewBox="0 0 8 8"
+								shape-rendering="crispEdges"
+								role="img"
+								aria-label="kangaroo pixel avatar"
+							>
+								<rect x="2" y="0" width="1" height="1" />
+								<rect x="4" y="0" width="1" height="1" />
+								<rect x="2" y="1" width="3" height="1" />
+								<rect x="1" y="2" width="4" height="1" />
+								<rect x="3" y="3" width="2" height="1" />
+								<rect x="2" y="4" width="5" height="1" />
+								<rect x="3" y="5" width="4" height="1" />
+								<rect x="3" y="6" width="2" height="1" />
+								<rect x="6" y="6" width="1" height="1" />
+								<rect x="2" y="7" width="3" height="1" />
+								<rect x="7" y="7" width="1" height="1" />
+							</svg>
+							<figcaption>kangaroo</figcaption>
+						</figure>
+					</div>
+				</div>
+			</section>
+
+			<section id="install">
+				<div class="stage">
+					<div class="section-head">
+						<h2>Get started</h2>
+						<p>No install script, no config file — one command and you're live.</p>
+					</div>
+					<div class="install-panel panel">
+						<div class="code-chip">
+							<span><span class="prompt">$</span> bunx codebay@latest</span>
+							<button
+								type="button"
+								data-copy="bunx codebay@latest"
+								aria-label="Copy install command"
+							>
+								<svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+									<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+								</svg>
+								<span class="btn-label">Copy</span>
+							</button>
+						</div>
+						<ul class="requirements">
+							<li>Bun ≥ 1.3.14 — Node.js is not supported</li>
+							<li>A running Docker daemon (Docker Desktop, Colima, OrbStack…)</li>
+							<li>macOS or Linux (Windows untested)</li>
+						</ul>
+						<a
+							class="doc-link"
+							href="https://github.com/khromov/codebay#readme"
+							target="_blank"
+							rel="noopener"
+							>Read the docs on GitHub →</a
+						>
+					</div>
+				</div>
+			</section>
+		</main>
+
+		<footer>
+			<div class="stage">
+				<a class="brand brand-sm" href="#top">
+					<span class="logo">
+						<svg
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							width="18"
+							height="18"
+						>
+							<path
+								d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"
+							/>
+							<path d="M12 22V12" />
+							<polyline points="3.29 7 12 12 20.71 7" />
+							<path d="m7.5 4.27 9 5.15" />
+						</svg>
+					</span>
+					<span>Codebay</span>
+				</a>
+				<div class="footer-meta">
+					<a href="https://github.com/khromov/codebay" target="_blank" rel="noopener">
+						<svg viewBox="0 0 24 24" fill="currentColor">
+							<path
+								d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
+							/>
+						</svg>
+						khromov/codebay
+					</a>
+					<span>MIT License © 2026 Stanislav Khromov</span>
+					<span>Built with Bun + Mochi</span>
+				</div>
+			</div>
+		</footer>
+
+		<script src="./script.js"></script>
+	</body>
+</html>
