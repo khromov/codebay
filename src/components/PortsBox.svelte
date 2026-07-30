@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Cable from '@lucide/svelte/icons/cable';
+	import { forwardedPortUrl } from '../lib/links.ts';
 	import type { PortForward } from '../types.ts';
 
 	let { ports }: { ports: PortForward[] } = $props();
@@ -13,10 +14,10 @@
 				<a
 					class="fport"
 					class:open={f.open}
-					href={`http://localhost:${f.host_port}`}
+					href={forwardedPortUrl(f.host_port)}
 					target="_blank"
 					rel="noopener"
-					title={`container :${f.container_port} → http://localhost:${f.host_port} ${f.open ? '(open)' : '(not published yet)'}`}
+					title={`container :${f.container_port} → ${forwardedPortUrl(f.host_port)} ${f.open ? '(open)' : '(not published yet)'}`}
 					>{f.container_port}</a
 				>
 			{/each}

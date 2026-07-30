@@ -3,7 +3,13 @@ import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT as TMUX_INSTALL_SCRIPT } from '../container-injections/tmux.ts';
-import { CODE_SERVER_PORT, DEFAULT_IMAGE, devcontainerBin, dockerEnv } from './config.server.ts';
+import {
+	CODE_SERVER_PORT,
+	DEFAULT_IMAGE,
+	PUBLISH_HOST,
+	devcontainerBin,
+	dockerEnv
+} from './config.server.ts';
 import { spawnCapture } from './spawn.server.ts';
 import type { PortForward } from '../types.ts';
 
@@ -294,9 +300,11 @@ export async function writeOverrideConfig(
 	};
 
 	// Rendered from scratch rather than merged, so removing a forward actually drops its mapping.
+	// code-server stays loopback even under HOST=0.0.0.0 — it has no auth of its own, so the LAN
+	// reaches it only through the Basic-Auth-gated /p/:id/ proxy.
 	config.appPort = [
 		`127.0.0.1:${hostPort}:${CODE_SERVER_PORT}`,
-		...forwards.map((f) => `127.0.0.1:${f.host_port}:${f.container_port}`)
+		...forwards.map((f) => `${PUBLISH_HOST}:${f.host_port}:${f.container_port}`)
 	];
 
 	// host.docker.internal isn't automatic on Colima/Linux Docker.

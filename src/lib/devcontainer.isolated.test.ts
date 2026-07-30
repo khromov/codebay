@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PUBLISH_HOST } from './config.server.ts';
 import { readDeclaredContainerPorts, writeOverrideConfig } from './devcontainer.server.ts';
 
 describe('readDeclaredContainerPorts', () => {
@@ -214,6 +215,25 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		);
 		await writeOverrideConfig(dir, 8001);
 		expect(readDevcontainer().postCreateCommand).toBe('echo {a,}');
+	});
+
+	test('renders appPort with code-server pinned to loopback and forwards on PUBLISH_HOST', async () => {
+		await writeOverrideConfig(dir, 8001, [{ host_port: 8002, container_port: 3000 }]);
+		expect(readDevcontainer().appPort).toEqual([
+			// code-server never leaves loopback — it runs with auth disabled.
+			'127.0.0.1:8001:8080',
+			`${PUBLISH_HOST}:8002:3000`
+		]);
+	});
+
+	test('discards a user-authored appPort instead of merging it', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1', appPort: ['9999:9999'] })
+		);
+		await writeOverrideConfig(dir, 8001);
+		expect(readDevcontainer().appPort).toEqual(['127.0.0.1:8001:8080']);
 	});
 
 	test('installs the Node + Claude Code features for the default config', async () => {

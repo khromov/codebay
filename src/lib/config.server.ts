@@ -69,6 +69,13 @@ export const BASIC_AUTH_PASSWORD = process.env.BASIC_AUTH_PASSWORD || '';
 /** Loopback by default so an instance with no password isn't exposed to the LAN. */
 export const HOST = process.env.HOST || '127.0.0.1';
 
+/**
+ * Forwarded app ports follow the server's bind; code-server's own port never does
+ * (it runs with auth disabled). Anything but `0.0.0.0` degrades to loopback rather
+ * than risking an appPort string Docker rejects.
+ */
+export const PUBLISH_HOST = HOST === '0.0.0.0' ? '0.0.0.0' : '127.0.0.1';
+
 export const PORT = Number(process.env.PORT) || 6969;
 
 /** Mochi's CSRF origin check compares against these; override when behind a proxy. */
