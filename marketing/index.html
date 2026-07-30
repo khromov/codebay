@@ -67,10 +67,7 @@
 		<main id="top">
 			<section class="hero">
 				<div class="stage">
-					<span class="eyebrow"
-						><span class="dot"></span>OPEN SOURCE · SELF-HOSTED · BUN-POWERED</span
-					>
-					<h1 class="headline">Isolated devcontainers.<br />A browser IDE for each one.</h1>
+					<h1 class="headline">Isolated workspaces for your agents.</h1>
 					<p class="subhead">
 						Point Codebay at a local folder or a Git repo URL and it spins up a fully isolated
 						devcontainer with its own browser-based VS Code — built for running parallel
@@ -185,8 +182,8 @@
 							></span>
 							<h3>Local or fully remote</h3>
 							<p>
-								Run it against Docker Desktop or Colima on your laptop, or point it at a remote
-								server and drive every instance from the browser.
+								Run it against Docker Desktop or Colima on your laptop, or run it on a remote server
+								and drive every instance from the browser.
 							</p>
 						</article>
 						<article class="diff-card panel">
@@ -210,8 +207,8 @@
 							></span>
 							<h3>Real Claude Code, always current</h3>
 							<p>
-								No Agents SDK abstraction in the way — it's the actual Claude Code CLI running in
-								each container, so you get the latest features the day they ship.
+								No abstractions in the way — it's the actual Claude Code CLI running in each
+								container, so you get the latest features the day they ship.
 							</p>
 						</article>
 						<article class="diff-card panel">
@@ -243,7 +240,7 @@
 				<div class="stage">
 					<div class="section-head">
 						<h2>Everything wired up for you</h2>
-						<p>One `devcontainer up`, plenty of automatic plumbing underneath.</p>
+						<p>Handled automatically, out of the box.</p>
 					</div>
 					<div class="feature-grid">
 						<article class="feature-card panel">
@@ -262,8 +259,7 @@
 							></span>
 							<h3>Local folder or Git URL</h3>
 							<p>
-								Copy a folder or clone a repo — either way <code>.git</code> history and your remote
-								come along for the ride.
+								Copy a folder or clone a repo — <code>.git</code> history comes along either way.
 							</p>
 						</article>
 						<article class="feature-card panel">
@@ -280,10 +276,7 @@
 									<path d="m4 17 6-6-6-6" /></svg
 							></span>
 							<h3>Browser-based VS Code</h3>
-							<p>
-								Every instance runs its own code-server, proxied same-origin behind your password —
-								no raw ports to remember.
-							</p>
+							<p>Every instance runs its own code-server, proxied behind your password.</p>
 						</article>
 						<article class="feature-card panel">
 							<span class="icon-badge"
@@ -303,10 +296,7 @@
 									<circle cx="4" cy="20" r="2" /></svg
 							></span>
 							<h3>Ready-to-run dev environment</h3>
-							<p>
-								tmux, git identity, and Claude Code aliases are injected into every container — a
-								workflow, not just a shell.
-							</p>
+							<p>tmux, git identity, and Claude Code aliases, injected automatically.</p>
 						</article>
 						<article class="feature-card panel">
 							<span class="icon-badge"
@@ -325,8 +315,8 @@
 							></span>
 							<h3>Attention pulses</h3>
 							<p>
-								Containers signal <em>done</em> or <em>waiting</em> back to the dashboard, so you
-								know which tab needs you.
+								Containers signal <em>done</em> or <em>waiting</em>, so you know which tab needs
+								you.
 							</p>
 						</article>
 						<article class="feature-card panel">
@@ -345,10 +335,7 @@
 									<rect width="7" height="5" x="3" y="16" rx="1" /></svg
 							></span>
 							<h3>Live dashboard</h3>
-							<p>
-								The full instance list and per-container health stream over WebSockets, reconciled
-								against real Docker state.
-							</p>
+							<p>Instance list and health, streamed live over WebSockets.</p>
 						</article>
 						<article class="feature-card panel">
 							<span class="icon-badge"
@@ -371,10 +358,7 @@
 									<path d="M7 5V3" /></svg
 							></span>
 							<h3>Port forwarding</h3>
-							<p>
-								A project's declared <code>forwardPorts</code>/<code>appPort</code> are published
-								automatically — add more anytime.
-							</p>
+							<p>Declared ports are published automatically — add more anytime.</p>
 						</article>
 						<article class="feature-card panel">
 							<span class="icon-badge"
@@ -406,10 +390,7 @@
 									<path d="M12 13.5V8" /></svg
 							></span>
 							<h3>Runs itself, too</h3>
-							<p>
-								Ship Codebay as a container against the host's own Docker daemon —
-								Docker-outside-of-Docker, no extra install.
-							</p>
+							<p>Ship Codebay itself as a container — Docker-outside-of-Docker.</p>
 						</article>
 						<article class="feature-card panel">
 							<span class="icon-badge"
@@ -427,8 +408,7 @@
 							></span>
 							<h3>One command start</h3>
 							<p>
-								<code>bunx codebay@latest</code> and you're live at <code>localhost:6969</code> — no
-								config file required.
+								<code>bunx codebay@latest</code> and you're live at <code>localhost:6969</code>.
 							</p>
 						</article>
 					</div>
@@ -449,7 +429,7 @@
 						</div>
 						<div class="step panel">
 							<span class="step-num">2</span>
-							<h3>We inject the tooling</h3>
+							<h3>Codebay injects the tooling</h3>
 							<p>
 								code-server, port forwards, and your credentials go into
 								<code>devcontainer.json</code>.
@@ -473,455 +453,897 @@
 				<div class="stage">
 					<div class="section-head">
 						<h2>Every instance gets a mascot</h2>
-						<p>
-							A deterministic 8×8 pixel sprite, picked from a growing catalog — same instance, same
-							avatar, every time.
-						</p>
+						<p>A cute sprite to keep you company.</p>
 					</div>
-					<div class="avatar-grid">
-						<figure class="avatar-tile" title="anchor">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="anchor pixel avatar"
-							>
-								<rect x="3" y="0" width="2" height="1" />
-								<rect x="2" y="1" width="1" height="1" />
-								<rect x="5" y="1" width="1" height="1" />
-								<rect x="2" y="2" width="1" height="1" />
-								<rect x="5" y="2" width="1" height="1" />
-								<rect x="1" y="3" width="6" height="1" />
-								<rect x="3" y="4" width="2" height="1" />
-								<rect x="0" y="5" width="1" height="1" />
-								<rect x="3" y="5" width="2" height="1" />
-								<rect x="7" y="5" width="1" height="1" />
-								<rect x="0" y="6" width="8" height="1" />
-								<rect x="1" y="7" width="6" height="1" />
-							</svg>
-							<figcaption>anchor</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="bee">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="bee pixel avatar"
-							>
-								<rect x="1" y="0" width="1" height="1" />
-								<rect x="6" y="0" width="1" height="1" />
-								<rect x="0" y="1" width="2" height="1" />
-								<rect x="3" y="1" width="2" height="1" />
-								<rect x="6" y="1" width="2" height="1" />
-								<rect x="0" y="2" width="1" height="1" />
-								<rect x="2" y="2" width="4" height="1" />
-								<rect x="7" y="2" width="1" height="1" />
-								<rect x="1" y="3" width="6" height="1" />
-								<rect x="1" y="4" width="6" height="1" />
-								<rect x="1" y="6" width="6" height="1" />
-								<rect x="2" y="7" width="4" height="1" />
-							</svg>
-							<figcaption>bee</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="rocket">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="rocket pixel avatar"
-							>
-								<rect x="3" y="0" width="2" height="1" />
-								<rect x="2" y="1" width="4" height="1" />
-								<rect x="2" y="2" width="1" height="1" />
-								<rect x="5" y="2" width="1" height="1" />
-								<rect x="2" y="3" width="4" height="1" />
-								<rect x="1" y="4" width="6" height="1" />
-								<rect x="0" y="5" width="2" height="1" />
-								<rect x="3" y="5" width="2" height="1" />
-								<rect x="6" y="5" width="2" height="1" />
-								<rect x="2" y="6" width="1" height="1" />
-								<rect x="5" y="6" width="1" height="1" />
-								<rect x="3" y="7" width="2" height="1" />
-							</svg>
-							<figcaption>rocket</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="owl">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="owl pixel avatar"
-							>
-								<rect x="0" y="0" width="1" height="1" />
-								<rect x="7" y="0" width="1" height="1" />
-								<rect x="0" y="1" width="2" height="1" />
-								<rect x="6" y="1" width="2" height="1" />
-								<rect x="1" y="2" width="6" height="1" />
-								<rect x="1" y="3" width="1" height="1" />
-								<rect x="3" y="3" width="2" height="1" />
-								<rect x="6" y="3" width="1" height="1" />
-								<rect x="1" y="4" width="1" height="1" />
-								<rect x="3" y="4" width="2" height="1" />
-								<rect x="6" y="4" width="1" height="1" />
-								<rect x="1" y="5" width="6" height="1" />
-								<rect x="1" y="6" width="6" height="1" />
-								<rect x="2" y="7" width="1" height="1" />
-								<rect x="5" y="7" width="1" height="1" />
-							</svg>
-							<figcaption>owl</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="fox">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="fox pixel avatar"
-							>
-								<rect x="0" y="0" width="2" height="1" />
-								<rect x="6" y="0" width="2" height="1" />
-								<rect x="0" y="1" width="2" height="1" />
-								<rect x="6" y="1" width="2" height="1" />
-								<rect x="0" y="2" width="8" height="1" />
-								<rect x="0" y="3" width="3" height="1" />
-								<rect x="5" y="3" width="3" height="1" />
-								<rect x="0" y="4" width="8" height="1" />
-								<rect x="0" y="5" width="8" height="1" />
-								<rect x="1" y="6" width="6" height="1" />
-								<rect x="2" y="7" width="4" height="1" />
-							</svg>
-							<figcaption>fox</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="robot">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="robot pixel avatar"
-							>
-								<rect x="3" y="0" width="2" height="1" />
-								<rect x="3" y="1" width="1" height="1" />
-								<rect x="1" y="2" width="6" height="1" />
-								<rect x="0" y="3" width="1" height="1" />
-								<rect x="2" y="3" width="4" height="1" />
-								<rect x="7" y="3" width="1" height="1" />
-								<rect x="0" y="4" width="1" height="1" />
-								<rect x="3" y="4" width="2" height="1" />
-								<rect x="7" y="4" width="1" height="1" />
-								<rect x="1" y="5" width="6" height="1" />
-								<rect x="1" y="6" width="5" height="1" />
-								<rect x="1" y="7" width="6" height="1" />
-							</svg>
-							<figcaption>robot</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="crown">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="crown pixel avatar"
-							>
-								<rect x="0" y="0" width="1" height="1" />
-								<rect x="7" y="0" width="1" height="1" />
-								<rect x="0" y="1" width="1" height="1" />
-								<rect x="3" y="1" width="2" height="1" />
-								<rect x="7" y="1" width="1" height="1" />
-								<rect x="0" y="2" width="2" height="1" />
-								<rect x="3" y="2" width="2" height="1" />
-								<rect x="6" y="2" width="2" height="1" />
-								<rect x="0" y="3" width="2" height="1" />
-								<rect x="3" y="3" width="2" height="1" />
-								<rect x="6" y="3" width="2" height="1" />
-								<rect x="0" y="4" width="8" height="1" />
-								<rect x="0" y="5" width="1" height="1" />
-								<rect x="2" y="5" width="1" height="1" />
-								<rect x="4" y="5" width="1" height="1" />
-								<rect x="6" y="5" width="1" height="1" />
-								<rect x="0" y="6" width="8" height="1" />
-								<rect x="0" y="7" width="8" height="1" />
-							</svg>
-							<figcaption>crown</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="key">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="key pixel avatar"
-							>
-								<rect x="1" y="0" width="4" height="1" />
-								<rect x="0" y="1" width="2" height="1" />
-								<rect x="4" y="1" width="2" height="1" />
-								<rect x="0" y="2" width="2" height="1" />
-								<rect x="4" y="2" width="2" height="1" />
-								<rect x="0" y="3" width="2" height="1" />
-								<rect x="4" y="3" width="2" height="1" />
-								<rect x="1" y="4" width="4" height="1" />
-								<rect x="2" y="5" width="2" height="1" />
-								<rect x="2" y="6" width="4" height="1" />
-								<rect x="2" y="7" width="2" height="1" />
-								<rect x="5" y="7" width="2" height="1" />
-							</svg>
-							<figcaption>key</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="diamond">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="diamond pixel avatar"
-							>
-								<rect x="1" y="0" width="6" height="1" />
-								<rect x="0" y="1" width="1" height="1" />
-								<rect x="2" y="1" width="1" height="1" />
-								<rect x="5" y="1" width="1" height="1" />
-								<rect x="7" y="1" width="1" height="1" />
-								<rect x="0" y="2" width="8" height="1" />
-								<rect x="0" y="3" width="2" height="1" />
-								<rect x="3" y="3" width="2" height="1" />
-								<rect x="6" y="3" width="2" height="1" />
-								<rect x="1" y="4" width="1" height="1" />
-								<rect x="3" y="4" width="2" height="1" />
-								<rect x="6" y="4" width="1" height="1" />
-								<rect x="1" y="5" width="2" height="1" />
-								<rect x="5" y="5" width="2" height="1" />
-								<rect x="2" y="6" width="4" height="1" />
-								<rect x="3" y="7" width="2" height="1" />
-							</svg>
-							<figcaption>diamond</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="ghost">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="ghost pixel avatar"
-							>
-								<rect x="2" y="0" width="4" height="1" />
-								<rect x="1" y="1" width="6" height="1" />
-								<rect x="0" y="2" width="2" height="1" />
-								<rect x="3" y="2" width="2" height="1" />
-								<rect x="6" y="2" width="2" height="1" />
-								<rect x="0" y="3" width="2" height="1" />
-								<rect x="3" y="3" width="2" height="1" />
-								<rect x="6" y="3" width="2" height="1" />
-								<rect x="0" y="4" width="8" height="1" />
-								<rect x="0" y="5" width="8" height="1" />
-								<rect x="0" y="6" width="8" height="1" />
-								<rect x="0" y="7" width="1" height="1" />
-								<rect x="2" y="7" width="2" height="1" />
-								<rect x="5" y="7" width="2" height="1" />
-							</svg>
-							<figcaption>ghost</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="octopus">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="octopus pixel avatar"
-							>
-								<rect x="2" y="0" width="4" height="1" />
-								<rect x="1" y="1" width="6" height="1" />
-								<rect x="0" y="2" width="3" height="1" />
-								<rect x="5" y="2" width="3" height="1" />
-								<rect x="0" y="3" width="8" height="1" />
-								<rect x="0" y="4" width="8" height="1" />
-								<rect x="0" y="5" width="8" height="1" />
-								<rect x="1" y="6" width="6" height="1" />
-								<rect x="0" y="7" width="1" height="1" />
-								<rect x="2" y="7" width="1" height="1" />
-								<rect x="4" y="7" width="1" height="1" />
-								<rect x="6" y="7" width="1" height="1" />
-							</svg>
-							<figcaption>octopus</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="penguin">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="penguin pixel avatar"
-							>
-								<rect x="2" y="0" width="4" height="1" />
-								<rect x="1" y="1" width="6" height="1" />
-								<rect x="1" y="2" width="2" height="1" />
-								<rect x="5" y="2" width="2" height="1" />
-								<rect x="1" y="3" width="1" height="1" />
-								<rect x="3" y="3" width="2" height="1" />
-								<rect x="6" y="3" width="1" height="1" />
-								<rect x="0" y="4" width="2" height="1" />
-								<rect x="5" y="4" width="2" height="1" />
-								<rect x="0" y="5" width="2" height="1" />
-								<rect x="5" y="5" width="2" height="1" />
-								<rect x="0" y="6" width="7" height="1" />
-								<rect x="1" y="7" width="1" height="1" />
-								<rect x="6" y="7" width="1" height="1" />
-							</svg>
-							<figcaption>penguin</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="snakegame">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="snakegame pixel avatar"
-							>
-								<rect x="0" y="0" width="8" height="1" />
-								<rect x="0" y="1" width="1" height="1" />
-								<rect x="7" y="1" width="1" height="1" />
-								<rect x="0" y="2" width="1" height="1" />
-								<rect x="2" y="2" width="2" height="1" />
-								<rect x="7" y="2" width="1" height="1" />
-								<rect x="0" y="3" width="1" height="1" />
-								<rect x="2" y="3" width="1" height="1" />
-								<rect x="5" y="3" width="1" height="1" />
-								<rect x="7" y="3" width="1" height="1" />
-								<rect x="0" y="4" width="1" height="1" />
-								<rect x="2" y="4" width="2" height="1" />
-								<rect x="7" y="4" width="1" height="1" />
-								<rect x="0" y="5" width="1" height="1" />
-								<rect x="3" y="5" width="2" height="1" />
-								<rect x="7" y="5" width="1" height="1" />
-								<rect x="0" y="6" width="1" height="1" />
-								<rect x="7" y="6" width="1" height="1" />
-								<rect x="0" y="7" width="8" height="1" />
-							</svg>
-							<figcaption>snakegame</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="svelte">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="svelte pixel avatar"
-							>
-								<rect x="2" y="0" width="5" height="1" />
-								<rect x="1" y="1" width="3" height="1" />
-								<rect x="6" y="1" width="1" height="1" />
-								<rect x="0" y="2" width="2" height="1" />
-								<rect x="5" y="2" width="1" height="1" />
-								<rect x="0" y="3" width="8" height="1" />
-								<rect x="0" y="4" width="8" height="1" />
-								<rect x="2" y="5" width="1" height="1" />
-								<rect x="6" y="5" width="2" height="1" />
-								<rect x="1" y="6" width="1" height="1" />
-								<rect x="4" y="6" width="3" height="1" />
-								<rect x="1" y="7" width="4" height="1" />
-							</svg>
-							<figcaption>svelte</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="target">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="target pixel avatar"
-							>
-								<rect x="2" y="0" width="4" height="1" />
-								<rect x="1" y="1" width="1" height="1" />
-								<rect x="6" y="1" width="1" height="1" />
-								<rect x="0" y="2" width="1" height="1" />
-								<rect x="7" y="2" width="1" height="1" />
-								<rect x="0" y="3" width="1" height="1" />
-								<rect x="3" y="3" width="2" height="1" />
-								<rect x="7" y="3" width="1" height="1" />
-								<rect x="0" y="4" width="1" height="1" />
-								<rect x="3" y="4" width="2" height="1" />
-								<rect x="7" y="4" width="1" height="1" />
-								<rect x="0" y="5" width="1" height="1" />
-								<rect x="7" y="5" width="1" height="1" />
-								<rect x="1" y="6" width="1" height="1" />
-								<rect x="6" y="6" width="1" height="1" />
-								<rect x="2" y="7" width="4" height="1" />
-							</svg>
-							<figcaption>target</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="whale">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="whale pixel avatar"
-							>
-								<rect x="4" y="0" width="1" height="1" />
-								<rect x="3" y="1" width="3" height="1" />
-								<rect x="2" y="2" width="4" height="1" />
-								<rect x="7" y="2" width="1" height="1" />
-								<rect x="1" y="3" width="1" height="1" />
-								<rect x="3" y="3" width="4" height="1" />
-								<rect x="0" y="4" width="6" height="1" />
-								<rect x="7" y="4" width="1" height="1" />
-								<rect x="1" y="5" width="5" height="1" />
-								<rect x="2" y="6" width="4" height="1" />
-								<rect x="3" y="7" width="2" height="1" />
-							</svg>
-							<figcaption>whale</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="invader">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="invader pixel avatar"
-							>
-								<rect x="0" y="0" width="1" height="1" />
-								<rect x="7" y="0" width="1" height="1" />
-								<rect x="1" y="1" width="1" height="1" />
-								<rect x="6" y="1" width="1" height="1" />
-								<rect x="0" y="2" width="8" height="1" />
-								<rect x="0" y="3" width="2" height="1" />
-								<rect x="3" y="3" width="2" height="1" />
-								<rect x="6" y="3" width="2" height="1" />
-								<rect x="0" y="4" width="8" height="1" />
-								<rect x="2" y="5" width="4" height="1" />
-								<rect x="1" y="6" width="2" height="1" />
-								<rect x="5" y="6" width="2" height="1" />
-								<rect x="0" y="7" width="1" height="1" />
-								<rect x="2" y="7" width="1" height="1" />
-								<rect x="5" y="7" width="1" height="1" />
-								<rect x="7" y="7" width="1" height="1" />
-							</svg>
-							<figcaption>invader</figcaption>
-						</figure>
-						<figure class="avatar-tile" title="kangaroo">
-							<svg
-								class="sprite"
-								viewBox="0 0 8 8"
-								shape-rendering="crispEdges"
-								role="img"
-								aria-label="kangaroo pixel avatar"
-							>
-								<rect x="2" y="0" width="1" height="1" />
-								<rect x="4" y="0" width="1" height="1" />
-								<rect x="2" y="1" width="3" height="1" />
-								<rect x="1" y="2" width="4" height="1" />
-								<rect x="3" y="3" width="2" height="1" />
-								<rect x="2" y="4" width="5" height="1" />
-								<rect x="3" y="5" width="4" height="1" />
-								<rect x="3" y="6" width="2" height="1" />
-								<rect x="6" y="6" width="1" height="1" />
-								<rect x="2" y="7" width="3" height="1" />
-								<rect x="7" y="7" width="1" height="1" />
-							</svg>
-							<figcaption>kangaroo</figcaption>
-						</figure>
+					<div class="avatar-carousel">
+						<div class="avatar-track">
+							<figure class="avatar-tile" title="anchor">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="anchor pixel avatar"
+								>
+									<rect x="3" y="0" width="2" height="1" />
+									<rect x="2" y="1" width="1" height="1" />
+									<rect x="5" y="1" width="1" height="1" />
+									<rect x="2" y="2" width="1" height="1" />
+									<rect x="5" y="2" width="1" height="1" />
+									<rect x="1" y="3" width="6" height="1" />
+									<rect x="3" y="4" width="2" height="1" />
+									<rect x="0" y="5" width="1" height="1" />
+									<rect x="3" y="5" width="2" height="1" />
+									<rect x="7" y="5" width="1" height="1" />
+									<rect x="0" y="6" width="8" height="1" />
+									<rect x="1" y="7" width="6" height="1" />
+								</svg>
+								<figcaption>anchor</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="bee">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="bee pixel avatar"
+								>
+									<rect x="1" y="0" width="1" height="1" />
+									<rect x="6" y="0" width="1" height="1" />
+									<rect x="0" y="1" width="2" height="1" />
+									<rect x="3" y="1" width="2" height="1" />
+									<rect x="6" y="1" width="2" height="1" />
+									<rect x="0" y="2" width="1" height="1" />
+									<rect x="2" y="2" width="4" height="1" />
+									<rect x="7" y="2" width="1" height="1" />
+									<rect x="1" y="3" width="6" height="1" />
+									<rect x="1" y="4" width="6" height="1" />
+									<rect x="1" y="6" width="6" height="1" />
+									<rect x="2" y="7" width="4" height="1" />
+								</svg>
+								<figcaption>bee</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="rocket">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="rocket pixel avatar"
+								>
+									<rect x="3" y="0" width="2" height="1" />
+									<rect x="2" y="1" width="4" height="1" />
+									<rect x="2" y="2" width="1" height="1" />
+									<rect x="5" y="2" width="1" height="1" />
+									<rect x="2" y="3" width="4" height="1" />
+									<rect x="1" y="4" width="6" height="1" />
+									<rect x="0" y="5" width="2" height="1" />
+									<rect x="3" y="5" width="2" height="1" />
+									<rect x="6" y="5" width="2" height="1" />
+									<rect x="2" y="6" width="1" height="1" />
+									<rect x="5" y="6" width="1" height="1" />
+									<rect x="3" y="7" width="2" height="1" />
+								</svg>
+								<figcaption>rocket</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="owl">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="owl pixel avatar"
+								>
+									<rect x="0" y="0" width="1" height="1" />
+									<rect x="7" y="0" width="1" height="1" />
+									<rect x="0" y="1" width="2" height="1" />
+									<rect x="6" y="1" width="2" height="1" />
+									<rect x="1" y="2" width="6" height="1" />
+									<rect x="1" y="3" width="1" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="6" y="3" width="1" height="1" />
+									<rect x="1" y="4" width="1" height="1" />
+									<rect x="3" y="4" width="2" height="1" />
+									<rect x="6" y="4" width="1" height="1" />
+									<rect x="1" y="5" width="6" height="1" />
+									<rect x="1" y="6" width="6" height="1" />
+									<rect x="2" y="7" width="1" height="1" />
+									<rect x="5" y="7" width="1" height="1" />
+								</svg>
+								<figcaption>owl</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="fox">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="fox pixel avatar"
+								>
+									<rect x="0" y="0" width="2" height="1" />
+									<rect x="6" y="0" width="2" height="1" />
+									<rect x="0" y="1" width="2" height="1" />
+									<rect x="6" y="1" width="2" height="1" />
+									<rect x="0" y="2" width="8" height="1" />
+									<rect x="0" y="3" width="3" height="1" />
+									<rect x="5" y="3" width="3" height="1" />
+									<rect x="0" y="4" width="8" height="1" />
+									<rect x="0" y="5" width="8" height="1" />
+									<rect x="1" y="6" width="6" height="1" />
+									<rect x="2" y="7" width="4" height="1" />
+								</svg>
+								<figcaption>fox</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="robot">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="robot pixel avatar"
+								>
+									<rect x="3" y="0" width="2" height="1" />
+									<rect x="3" y="1" width="1" height="1" />
+									<rect x="1" y="2" width="6" height="1" />
+									<rect x="0" y="3" width="1" height="1" />
+									<rect x="2" y="3" width="4" height="1" />
+									<rect x="7" y="3" width="1" height="1" />
+									<rect x="0" y="4" width="1" height="1" />
+									<rect x="3" y="4" width="2" height="1" />
+									<rect x="7" y="4" width="1" height="1" />
+									<rect x="1" y="5" width="6" height="1" />
+									<rect x="1" y="6" width="5" height="1" />
+									<rect x="1" y="7" width="6" height="1" />
+								</svg>
+								<figcaption>robot</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="crown">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="crown pixel avatar"
+								>
+									<rect x="0" y="0" width="1" height="1" />
+									<rect x="7" y="0" width="1" height="1" />
+									<rect x="0" y="1" width="1" height="1" />
+									<rect x="3" y="1" width="2" height="1" />
+									<rect x="7" y="1" width="1" height="1" />
+									<rect x="0" y="2" width="2" height="1" />
+									<rect x="3" y="2" width="2" height="1" />
+									<rect x="6" y="2" width="2" height="1" />
+									<rect x="0" y="3" width="2" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="6" y="3" width="2" height="1" />
+									<rect x="0" y="4" width="8" height="1" />
+									<rect x="0" y="5" width="1" height="1" />
+									<rect x="2" y="5" width="1" height="1" />
+									<rect x="4" y="5" width="1" height="1" />
+									<rect x="6" y="5" width="1" height="1" />
+									<rect x="0" y="6" width="8" height="1" />
+									<rect x="0" y="7" width="8" height="1" />
+								</svg>
+								<figcaption>crown</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="key">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="key pixel avatar"
+								>
+									<rect x="1" y="0" width="4" height="1" />
+									<rect x="0" y="1" width="2" height="1" />
+									<rect x="4" y="1" width="2" height="1" />
+									<rect x="0" y="2" width="2" height="1" />
+									<rect x="4" y="2" width="2" height="1" />
+									<rect x="0" y="3" width="2" height="1" />
+									<rect x="4" y="3" width="2" height="1" />
+									<rect x="1" y="4" width="4" height="1" />
+									<rect x="2" y="5" width="2" height="1" />
+									<rect x="2" y="6" width="4" height="1" />
+									<rect x="2" y="7" width="2" height="1" />
+									<rect x="5" y="7" width="2" height="1" />
+								</svg>
+								<figcaption>key</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="diamond">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="diamond pixel avatar"
+								>
+									<rect x="1" y="0" width="6" height="1" />
+									<rect x="0" y="1" width="1" height="1" />
+									<rect x="2" y="1" width="1" height="1" />
+									<rect x="5" y="1" width="1" height="1" />
+									<rect x="7" y="1" width="1" height="1" />
+									<rect x="0" y="2" width="8" height="1" />
+									<rect x="0" y="3" width="2" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="6" y="3" width="2" height="1" />
+									<rect x="1" y="4" width="1" height="1" />
+									<rect x="3" y="4" width="2" height="1" />
+									<rect x="6" y="4" width="1" height="1" />
+									<rect x="1" y="5" width="2" height="1" />
+									<rect x="5" y="5" width="2" height="1" />
+									<rect x="2" y="6" width="4" height="1" />
+									<rect x="3" y="7" width="2" height="1" />
+								</svg>
+								<figcaption>diamond</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="ghost">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="ghost pixel avatar"
+								>
+									<rect x="2" y="0" width="4" height="1" />
+									<rect x="1" y="1" width="6" height="1" />
+									<rect x="0" y="2" width="2" height="1" />
+									<rect x="3" y="2" width="2" height="1" />
+									<rect x="6" y="2" width="2" height="1" />
+									<rect x="0" y="3" width="2" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="6" y="3" width="2" height="1" />
+									<rect x="0" y="4" width="8" height="1" />
+									<rect x="0" y="5" width="8" height="1" />
+									<rect x="0" y="6" width="8" height="1" />
+									<rect x="0" y="7" width="1" height="1" />
+									<rect x="2" y="7" width="2" height="1" />
+									<rect x="5" y="7" width="2" height="1" />
+								</svg>
+								<figcaption>ghost</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="octopus">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="octopus pixel avatar"
+								>
+									<rect x="2" y="0" width="4" height="1" />
+									<rect x="1" y="1" width="6" height="1" />
+									<rect x="0" y="2" width="3" height="1" />
+									<rect x="5" y="2" width="3" height="1" />
+									<rect x="0" y="3" width="8" height="1" />
+									<rect x="0" y="4" width="8" height="1" />
+									<rect x="0" y="5" width="8" height="1" />
+									<rect x="1" y="6" width="6" height="1" />
+									<rect x="0" y="7" width="1" height="1" />
+									<rect x="2" y="7" width="1" height="1" />
+									<rect x="4" y="7" width="1" height="1" />
+									<rect x="6" y="7" width="1" height="1" />
+								</svg>
+								<figcaption>octopus</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="penguin">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="penguin pixel avatar"
+								>
+									<rect x="2" y="0" width="4" height="1" />
+									<rect x="1" y="1" width="6" height="1" />
+									<rect x="1" y="2" width="2" height="1" />
+									<rect x="5" y="2" width="2" height="1" />
+									<rect x="1" y="3" width="1" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="6" y="3" width="1" height="1" />
+									<rect x="0" y="4" width="2" height="1" />
+									<rect x="5" y="4" width="2" height="1" />
+									<rect x="0" y="5" width="2" height="1" />
+									<rect x="5" y="5" width="2" height="1" />
+									<rect x="0" y="6" width="7" height="1" />
+									<rect x="1" y="7" width="1" height="1" />
+									<rect x="6" y="7" width="1" height="1" />
+								</svg>
+								<figcaption>penguin</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="snakegame">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="snakegame pixel avatar"
+								>
+									<rect x="0" y="0" width="8" height="1" />
+									<rect x="0" y="1" width="1" height="1" />
+									<rect x="7" y="1" width="1" height="1" />
+									<rect x="0" y="2" width="1" height="1" />
+									<rect x="2" y="2" width="2" height="1" />
+									<rect x="7" y="2" width="1" height="1" />
+									<rect x="0" y="3" width="1" height="1" />
+									<rect x="2" y="3" width="1" height="1" />
+									<rect x="5" y="3" width="1" height="1" />
+									<rect x="7" y="3" width="1" height="1" />
+									<rect x="0" y="4" width="1" height="1" />
+									<rect x="2" y="4" width="2" height="1" />
+									<rect x="7" y="4" width="1" height="1" />
+									<rect x="0" y="5" width="1" height="1" />
+									<rect x="3" y="5" width="2" height="1" />
+									<rect x="7" y="5" width="1" height="1" />
+									<rect x="0" y="6" width="1" height="1" />
+									<rect x="7" y="6" width="1" height="1" />
+									<rect x="0" y="7" width="8" height="1" />
+								</svg>
+								<figcaption>snakegame</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="svelte">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="svelte pixel avatar"
+								>
+									<rect x="2" y="0" width="5" height="1" />
+									<rect x="1" y="1" width="3" height="1" />
+									<rect x="6" y="1" width="1" height="1" />
+									<rect x="0" y="2" width="2" height="1" />
+									<rect x="5" y="2" width="1" height="1" />
+									<rect x="0" y="3" width="8" height="1" />
+									<rect x="0" y="4" width="8" height="1" />
+									<rect x="2" y="5" width="1" height="1" />
+									<rect x="6" y="5" width="2" height="1" />
+									<rect x="1" y="6" width="1" height="1" />
+									<rect x="4" y="6" width="3" height="1" />
+									<rect x="1" y="7" width="4" height="1" />
+								</svg>
+								<figcaption>svelte</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="target">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="target pixel avatar"
+								>
+									<rect x="2" y="0" width="4" height="1" />
+									<rect x="1" y="1" width="1" height="1" />
+									<rect x="6" y="1" width="1" height="1" />
+									<rect x="0" y="2" width="1" height="1" />
+									<rect x="7" y="2" width="1" height="1" />
+									<rect x="0" y="3" width="1" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="7" y="3" width="1" height="1" />
+									<rect x="0" y="4" width="1" height="1" />
+									<rect x="3" y="4" width="2" height="1" />
+									<rect x="7" y="4" width="1" height="1" />
+									<rect x="0" y="5" width="1" height="1" />
+									<rect x="7" y="5" width="1" height="1" />
+									<rect x="1" y="6" width="1" height="1" />
+									<rect x="6" y="6" width="1" height="1" />
+									<rect x="2" y="7" width="4" height="1" />
+								</svg>
+								<figcaption>target</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="whale">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="whale pixel avatar"
+								>
+									<rect x="4" y="0" width="1" height="1" />
+									<rect x="3" y="1" width="3" height="1" />
+									<rect x="2" y="2" width="4" height="1" />
+									<rect x="7" y="2" width="1" height="1" />
+									<rect x="1" y="3" width="1" height="1" />
+									<rect x="3" y="3" width="4" height="1" />
+									<rect x="0" y="4" width="6" height="1" />
+									<rect x="7" y="4" width="1" height="1" />
+									<rect x="1" y="5" width="5" height="1" />
+									<rect x="2" y="6" width="4" height="1" />
+									<rect x="3" y="7" width="2" height="1" />
+								</svg>
+								<figcaption>whale</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="invader">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="invader pixel avatar"
+								>
+									<rect x="0" y="0" width="1" height="1" />
+									<rect x="7" y="0" width="1" height="1" />
+									<rect x="1" y="1" width="1" height="1" />
+									<rect x="6" y="1" width="1" height="1" />
+									<rect x="0" y="2" width="8" height="1" />
+									<rect x="0" y="3" width="2" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="6" y="3" width="2" height="1" />
+									<rect x="0" y="4" width="8" height="1" />
+									<rect x="2" y="5" width="4" height="1" />
+									<rect x="1" y="6" width="2" height="1" />
+									<rect x="5" y="6" width="2" height="1" />
+									<rect x="0" y="7" width="1" height="1" />
+									<rect x="2" y="7" width="1" height="1" />
+									<rect x="5" y="7" width="1" height="1" />
+									<rect x="7" y="7" width="1" height="1" />
+								</svg>
+								<figcaption>invader</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="kangaroo">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="kangaroo pixel avatar"
+								>
+									<rect x="2" y="0" width="1" height="1" />
+									<rect x="4" y="0" width="1" height="1" />
+									<rect x="2" y="1" width="3" height="1" />
+									<rect x="1" y="2" width="4" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="2" y="4" width="5" height="1" />
+									<rect x="3" y="5" width="4" height="1" />
+									<rect x="3" y="6" width="2" height="1" />
+									<rect x="6" y="6" width="1" height="1" />
+									<rect x="2" y="7" width="3" height="1" />
+									<rect x="7" y="7" width="1" height="1" />
+								</svg>
+								<figcaption>kangaroo</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="anchor">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="anchor pixel avatar"
+								>
+									<rect x="3" y="0" width="2" height="1" />
+									<rect x="2" y="1" width="1" height="1" />
+									<rect x="5" y="1" width="1" height="1" />
+									<rect x="2" y="2" width="1" height="1" />
+									<rect x="5" y="2" width="1" height="1" />
+									<rect x="1" y="3" width="6" height="1" />
+									<rect x="3" y="4" width="2" height="1" />
+									<rect x="0" y="5" width="1" height="1" />
+									<rect x="3" y="5" width="2" height="1" />
+									<rect x="7" y="5" width="1" height="1" />
+									<rect x="0" y="6" width="8" height="1" />
+									<rect x="1" y="7" width="6" height="1" />
+								</svg>
+								<figcaption>anchor</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="bee">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="bee pixel avatar"
+								>
+									<rect x="1" y="0" width="1" height="1" />
+									<rect x="6" y="0" width="1" height="1" />
+									<rect x="0" y="1" width="2" height="1" />
+									<rect x="3" y="1" width="2" height="1" />
+									<rect x="6" y="1" width="2" height="1" />
+									<rect x="0" y="2" width="1" height="1" />
+									<rect x="2" y="2" width="4" height="1" />
+									<rect x="7" y="2" width="1" height="1" />
+									<rect x="1" y="3" width="6" height="1" />
+									<rect x="1" y="4" width="6" height="1" />
+									<rect x="1" y="6" width="6" height="1" />
+									<rect x="2" y="7" width="4" height="1" />
+								</svg>
+								<figcaption>bee</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="rocket">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="rocket pixel avatar"
+								>
+									<rect x="3" y="0" width="2" height="1" />
+									<rect x="2" y="1" width="4" height="1" />
+									<rect x="2" y="2" width="1" height="1" />
+									<rect x="5" y="2" width="1" height="1" />
+									<rect x="2" y="3" width="4" height="1" />
+									<rect x="1" y="4" width="6" height="1" />
+									<rect x="0" y="5" width="2" height="1" />
+									<rect x="3" y="5" width="2" height="1" />
+									<rect x="6" y="5" width="2" height="1" />
+									<rect x="2" y="6" width="1" height="1" />
+									<rect x="5" y="6" width="1" height="1" />
+									<rect x="3" y="7" width="2" height="1" />
+								</svg>
+								<figcaption>rocket</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="owl">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="owl pixel avatar"
+								>
+									<rect x="0" y="0" width="1" height="1" />
+									<rect x="7" y="0" width="1" height="1" />
+									<rect x="0" y="1" width="2" height="1" />
+									<rect x="6" y="1" width="2" height="1" />
+									<rect x="1" y="2" width="6" height="1" />
+									<rect x="1" y="3" width="1" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="6" y="3" width="1" height="1" />
+									<rect x="1" y="4" width="1" height="1" />
+									<rect x="3" y="4" width="2" height="1" />
+									<rect x="6" y="4" width="1" height="1" />
+									<rect x="1" y="5" width="6" height="1" />
+									<rect x="1" y="6" width="6" height="1" />
+									<rect x="2" y="7" width="1" height="1" />
+									<rect x="5" y="7" width="1" height="1" />
+								</svg>
+								<figcaption>owl</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="fox">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="fox pixel avatar"
+								>
+									<rect x="0" y="0" width="2" height="1" />
+									<rect x="6" y="0" width="2" height="1" />
+									<rect x="0" y="1" width="2" height="1" />
+									<rect x="6" y="1" width="2" height="1" />
+									<rect x="0" y="2" width="8" height="1" />
+									<rect x="0" y="3" width="3" height="1" />
+									<rect x="5" y="3" width="3" height="1" />
+									<rect x="0" y="4" width="8" height="1" />
+									<rect x="0" y="5" width="8" height="1" />
+									<rect x="1" y="6" width="6" height="1" />
+									<rect x="2" y="7" width="4" height="1" />
+								</svg>
+								<figcaption>fox</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="robot">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="robot pixel avatar"
+								>
+									<rect x="3" y="0" width="2" height="1" />
+									<rect x="3" y="1" width="1" height="1" />
+									<rect x="1" y="2" width="6" height="1" />
+									<rect x="0" y="3" width="1" height="1" />
+									<rect x="2" y="3" width="4" height="1" />
+									<rect x="7" y="3" width="1" height="1" />
+									<rect x="0" y="4" width="1" height="1" />
+									<rect x="3" y="4" width="2" height="1" />
+									<rect x="7" y="4" width="1" height="1" />
+									<rect x="1" y="5" width="6" height="1" />
+									<rect x="1" y="6" width="5" height="1" />
+									<rect x="1" y="7" width="6" height="1" />
+								</svg>
+								<figcaption>robot</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="crown">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="crown pixel avatar"
+								>
+									<rect x="0" y="0" width="1" height="1" />
+									<rect x="7" y="0" width="1" height="1" />
+									<rect x="0" y="1" width="1" height="1" />
+									<rect x="3" y="1" width="2" height="1" />
+									<rect x="7" y="1" width="1" height="1" />
+									<rect x="0" y="2" width="2" height="1" />
+									<rect x="3" y="2" width="2" height="1" />
+									<rect x="6" y="2" width="2" height="1" />
+									<rect x="0" y="3" width="2" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="6" y="3" width="2" height="1" />
+									<rect x="0" y="4" width="8" height="1" />
+									<rect x="0" y="5" width="1" height="1" />
+									<rect x="2" y="5" width="1" height="1" />
+									<rect x="4" y="5" width="1" height="1" />
+									<rect x="6" y="5" width="1" height="1" />
+									<rect x="0" y="6" width="8" height="1" />
+									<rect x="0" y="7" width="8" height="1" />
+								</svg>
+								<figcaption>crown</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="key">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="key pixel avatar"
+								>
+									<rect x="1" y="0" width="4" height="1" />
+									<rect x="0" y="1" width="2" height="1" />
+									<rect x="4" y="1" width="2" height="1" />
+									<rect x="0" y="2" width="2" height="1" />
+									<rect x="4" y="2" width="2" height="1" />
+									<rect x="0" y="3" width="2" height="1" />
+									<rect x="4" y="3" width="2" height="1" />
+									<rect x="1" y="4" width="4" height="1" />
+									<rect x="2" y="5" width="2" height="1" />
+									<rect x="2" y="6" width="4" height="1" />
+									<rect x="2" y="7" width="2" height="1" />
+									<rect x="5" y="7" width="2" height="1" />
+								</svg>
+								<figcaption>key</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="diamond">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="diamond pixel avatar"
+								>
+									<rect x="1" y="0" width="6" height="1" />
+									<rect x="0" y="1" width="1" height="1" />
+									<rect x="2" y="1" width="1" height="1" />
+									<rect x="5" y="1" width="1" height="1" />
+									<rect x="7" y="1" width="1" height="1" />
+									<rect x="0" y="2" width="8" height="1" />
+									<rect x="0" y="3" width="2" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="6" y="3" width="2" height="1" />
+									<rect x="1" y="4" width="1" height="1" />
+									<rect x="3" y="4" width="2" height="1" />
+									<rect x="6" y="4" width="1" height="1" />
+									<rect x="1" y="5" width="2" height="1" />
+									<rect x="5" y="5" width="2" height="1" />
+									<rect x="2" y="6" width="4" height="1" />
+									<rect x="3" y="7" width="2" height="1" />
+								</svg>
+								<figcaption>diamond</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="ghost">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="ghost pixel avatar"
+								>
+									<rect x="2" y="0" width="4" height="1" />
+									<rect x="1" y="1" width="6" height="1" />
+									<rect x="0" y="2" width="2" height="1" />
+									<rect x="3" y="2" width="2" height="1" />
+									<rect x="6" y="2" width="2" height="1" />
+									<rect x="0" y="3" width="2" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="6" y="3" width="2" height="1" />
+									<rect x="0" y="4" width="8" height="1" />
+									<rect x="0" y="5" width="8" height="1" />
+									<rect x="0" y="6" width="8" height="1" />
+									<rect x="0" y="7" width="1" height="1" />
+									<rect x="2" y="7" width="2" height="1" />
+									<rect x="5" y="7" width="2" height="1" />
+								</svg>
+								<figcaption>ghost</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="octopus">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="octopus pixel avatar"
+								>
+									<rect x="2" y="0" width="4" height="1" />
+									<rect x="1" y="1" width="6" height="1" />
+									<rect x="0" y="2" width="3" height="1" />
+									<rect x="5" y="2" width="3" height="1" />
+									<rect x="0" y="3" width="8" height="1" />
+									<rect x="0" y="4" width="8" height="1" />
+									<rect x="0" y="5" width="8" height="1" />
+									<rect x="1" y="6" width="6" height="1" />
+									<rect x="0" y="7" width="1" height="1" />
+									<rect x="2" y="7" width="1" height="1" />
+									<rect x="4" y="7" width="1" height="1" />
+									<rect x="6" y="7" width="1" height="1" />
+								</svg>
+								<figcaption>octopus</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="penguin">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="penguin pixel avatar"
+								>
+									<rect x="2" y="0" width="4" height="1" />
+									<rect x="1" y="1" width="6" height="1" />
+									<rect x="1" y="2" width="2" height="1" />
+									<rect x="5" y="2" width="2" height="1" />
+									<rect x="1" y="3" width="1" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="6" y="3" width="1" height="1" />
+									<rect x="0" y="4" width="2" height="1" />
+									<rect x="5" y="4" width="2" height="1" />
+									<rect x="0" y="5" width="2" height="1" />
+									<rect x="5" y="5" width="2" height="1" />
+									<rect x="0" y="6" width="7" height="1" />
+									<rect x="1" y="7" width="1" height="1" />
+									<rect x="6" y="7" width="1" height="1" />
+								</svg>
+								<figcaption>penguin</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="snakegame">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="snakegame pixel avatar"
+								>
+									<rect x="0" y="0" width="8" height="1" />
+									<rect x="0" y="1" width="1" height="1" />
+									<rect x="7" y="1" width="1" height="1" />
+									<rect x="0" y="2" width="1" height="1" />
+									<rect x="2" y="2" width="2" height="1" />
+									<rect x="7" y="2" width="1" height="1" />
+									<rect x="0" y="3" width="1" height="1" />
+									<rect x="2" y="3" width="1" height="1" />
+									<rect x="5" y="3" width="1" height="1" />
+									<rect x="7" y="3" width="1" height="1" />
+									<rect x="0" y="4" width="1" height="1" />
+									<rect x="2" y="4" width="2" height="1" />
+									<rect x="7" y="4" width="1" height="1" />
+									<rect x="0" y="5" width="1" height="1" />
+									<rect x="3" y="5" width="2" height="1" />
+									<rect x="7" y="5" width="1" height="1" />
+									<rect x="0" y="6" width="1" height="1" />
+									<rect x="7" y="6" width="1" height="1" />
+									<rect x="0" y="7" width="8" height="1" />
+								</svg>
+								<figcaption>snakegame</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="svelte">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="svelte pixel avatar"
+								>
+									<rect x="2" y="0" width="5" height="1" />
+									<rect x="1" y="1" width="3" height="1" />
+									<rect x="6" y="1" width="1" height="1" />
+									<rect x="0" y="2" width="2" height="1" />
+									<rect x="5" y="2" width="1" height="1" />
+									<rect x="0" y="3" width="8" height="1" />
+									<rect x="0" y="4" width="8" height="1" />
+									<rect x="2" y="5" width="1" height="1" />
+									<rect x="6" y="5" width="2" height="1" />
+									<rect x="1" y="6" width="1" height="1" />
+									<rect x="4" y="6" width="3" height="1" />
+									<rect x="1" y="7" width="4" height="1" />
+								</svg>
+								<figcaption>svelte</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="target">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="target pixel avatar"
+								>
+									<rect x="2" y="0" width="4" height="1" />
+									<rect x="1" y="1" width="1" height="1" />
+									<rect x="6" y="1" width="1" height="1" />
+									<rect x="0" y="2" width="1" height="1" />
+									<rect x="7" y="2" width="1" height="1" />
+									<rect x="0" y="3" width="1" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="7" y="3" width="1" height="1" />
+									<rect x="0" y="4" width="1" height="1" />
+									<rect x="3" y="4" width="2" height="1" />
+									<rect x="7" y="4" width="1" height="1" />
+									<rect x="0" y="5" width="1" height="1" />
+									<rect x="7" y="5" width="1" height="1" />
+									<rect x="1" y="6" width="1" height="1" />
+									<rect x="6" y="6" width="1" height="1" />
+									<rect x="2" y="7" width="4" height="1" />
+								</svg>
+								<figcaption>target</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="whale">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="whale pixel avatar"
+								>
+									<rect x="4" y="0" width="1" height="1" />
+									<rect x="3" y="1" width="3" height="1" />
+									<rect x="2" y="2" width="4" height="1" />
+									<rect x="7" y="2" width="1" height="1" />
+									<rect x="1" y="3" width="1" height="1" />
+									<rect x="3" y="3" width="4" height="1" />
+									<rect x="0" y="4" width="6" height="1" />
+									<rect x="7" y="4" width="1" height="1" />
+									<rect x="1" y="5" width="5" height="1" />
+									<rect x="2" y="6" width="4" height="1" />
+									<rect x="3" y="7" width="2" height="1" />
+								</svg>
+								<figcaption>whale</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="invader">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="invader pixel avatar"
+								>
+									<rect x="0" y="0" width="1" height="1" />
+									<rect x="7" y="0" width="1" height="1" />
+									<rect x="1" y="1" width="1" height="1" />
+									<rect x="6" y="1" width="1" height="1" />
+									<rect x="0" y="2" width="8" height="1" />
+									<rect x="0" y="3" width="2" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="6" y="3" width="2" height="1" />
+									<rect x="0" y="4" width="8" height="1" />
+									<rect x="2" y="5" width="4" height="1" />
+									<rect x="1" y="6" width="2" height="1" />
+									<rect x="5" y="6" width="2" height="1" />
+									<rect x="0" y="7" width="1" height="1" />
+									<rect x="2" y="7" width="1" height="1" />
+									<rect x="5" y="7" width="1" height="1" />
+									<rect x="7" y="7" width="1" height="1" />
+								</svg>
+								<figcaption>invader</figcaption>
+							</figure>
+							<figure class="avatar-tile" title="kangaroo">
+								<svg
+									class="sprite"
+									viewBox="0 0 8 8"
+									shape-rendering="crispEdges"
+									role="img"
+									aria-label="kangaroo pixel avatar"
+								>
+									<rect x="2" y="0" width="1" height="1" />
+									<rect x="4" y="0" width="1" height="1" />
+									<rect x="2" y="1" width="3" height="1" />
+									<rect x="1" y="2" width="4" height="1" />
+									<rect x="3" y="3" width="2" height="1" />
+									<rect x="2" y="4" width="5" height="1" />
+									<rect x="3" y="5" width="4" height="1" />
+									<rect x="3" y="6" width="2" height="1" />
+									<rect x="6" y="6" width="1" height="1" />
+									<rect x="2" y="7" width="3" height="1" />
+									<rect x="7" y="7" width="1" height="1" />
+								</svg>
+								<figcaption>kangaroo</figcaption>
+							</figure>
+						</div>
 					</div>
 				</div>
 			</section>
@@ -930,7 +1352,7 @@
 				<div class="stage">
 					<div class="section-head">
 						<h2>Get started</h2>
-						<p>No install script, no config file — one command and you're live.</p>
+						<p>One command and you're live.</p>
 					</div>
 					<div class="install-panel panel">
 						<div class="code-chip">
@@ -954,10 +1376,11 @@
 								<span class="btn-label">Copy</span>
 							</button>
 						</div>
+						<p class="requirements-label">Requirements</p>
 						<ul class="requirements">
-							<li>Bun ≥ 1.3.14 — Node.js is not supported</li>
+							<li>Bun ≥ 1.3.14</li>
 							<li>A running Docker daemon (Docker Desktop, Colima, OrbStack…)</li>
-							<li>macOS or Linux (Windows untested)</li>
+							<li>macOS or Linux</li>
 						</ul>
 						<a
 							class="doc-link"
