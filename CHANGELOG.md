@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/khromov/codebay/compare/codebay-v0.2.1...codebay-v0.3.0) (2026-07-30)
+
+
+### Features
+
+* **cli:** add --help and --version flags ([#61](https://github.com/khromov/codebay/issues/61)) ([ea431a4](https://github.com/khromov/codebay/commit/ea431a4799d779a061cbf3ea360095ff3d6ae737))
+
 ## [0.2.1](https://github.com/khromov/codebay/compare/codebay-v0.2.0...codebay-v0.2.1) (2026-07-30)
 
 ### Bug Fixes
