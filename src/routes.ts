@@ -164,6 +164,10 @@ export const routes: Record<string, MochiRouteValue> = {
 				// An explicit empty string (as opposed to unset) means "copy everything".
 				copyIgnorePatterns: getOption('copy_ignore_patterns') ?? DEFAULT_COPY_IGNORE,
 				builtinCopyIgnore: DEFAULT_COPY_IGNORE,
+				// Not secrets, so the actual values (not just a "set" flag) go to the client.
+				// Blank means "no override" — fall back to the host's git config.
+				gitIdentityName: getOption('git_identity_name') ?? '',
+				gitIdentityEmail: getOption('git_identity_email') ?? '',
 				dockerArch: await dockerArch(),
 				// Only whether each token is set — the page renders a placeholder from that.
 				manualTokensEnabled: getOption('manual_tokens_enabled') === '1',
@@ -208,6 +212,15 @@ export const routes: Record<string, MochiRouteValue> = {
 				const patterns = str(formData, 'patterns');
 				setOption('copy_ignore_patterns', patterns);
 				return success({ patterns });
+			},
+
+			// Both fields must be saved together — a lone name or email is treated as not configured.
+			gitIdentityOverride: ({ formData }) => {
+				const name = str(formData, 'name');
+				const email = str(formData, 'email');
+				setOption('git_identity_name', name);
+				setOption('git_identity_email', email);
+				return success({ name, email });
 			},
 
 			// Tokens are stored plaintext in the options table and never sent back to the client.

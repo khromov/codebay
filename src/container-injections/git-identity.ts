@@ -1,5 +1,6 @@
 import { checkPresence, execInContainer } from '../lib/exec.server.ts';
 import { spawnCapture } from '../lib/spawn.server.ts';
+import { getOption } from '../lib/db.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
 
 interface GitIdentity {
@@ -11,8 +12,17 @@ function readGitConfig(key: string): Promise<string | null> {
 	return spawnCapture(['git', 'config', '--global', '--get', key]);
 }
 
-/** `--global` so this reads the host user's identity, not the manager checkout's override. */
-async function readGitIdentity(): Promise<GitIdentity | null> {
+/** Both fields are required together — a lone name or email is treated as not configured. */
+function overrideIdentity(): GitIdentity | null {
+	const name = getOption('git_identity_name')?.trim() || '';
+	const email = getOption('git_identity_email')?.trim() || '';
+	return name && email ? { name, email } : null;
+}
+
+/** `--global` so the host fallback reads the host user's identity, not the manager checkout's. */
+export async function readGitIdentity(): Promise<GitIdentity | null> {
+	const override = overrideIdentity();
+	if (override) return override;
 	const [name, email] = await Promise.all([
 		readGitConfig('user.name'),
 		readGitConfig('user.email')
@@ -30,7 +40,12 @@ export const gitIdentity: Injection = {
 		async status() {
 			const identity = await readGitIdentity();
 			return identity
-				? { available: true, source: `git config — ${identity.name}` }
+				? {
+						available: true,
+						source: overrideIdentity()
+							? `Settings override — ${identity.name}`
+							: `git config — ${identity.name}`
+					}
 				: { available: false, source: null };
 		}
 	},

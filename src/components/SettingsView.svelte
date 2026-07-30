@@ -11,6 +11,7 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Hammer from '@lucide/svelte/icons/hammer';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import UserCog from '@lucide/svelte/icons/user-cog';
 	import Variable from '@lucide/svelte/icons/variable';
 	import Plus from '@lucide/svelte/icons/plus';
 	import X from '@lucide/svelte/icons/x';
@@ -32,6 +33,8 @@
 		disableBuildCache,
 		copyIgnorePatterns,
 		builtinCopyIgnore,
+		gitIdentityName,
+		gitIdentityEmail,
 		dockerArch,
 		manualTokensEnabled,
 		githubTokenSet,
@@ -54,6 +57,8 @@
 		disableBuildCache: boolean;
 		copyIgnorePatterns: string;
 		builtinCopyIgnore: string;
+		gitIdentityName: string;
+		gitIdentityEmail: string;
 		dockerArch: string | null;
 		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
@@ -185,6 +190,26 @@
 		flushSync(() => (copyIgnore = builtinCopyIgnore));
 		copyIgnoreFormEl?.requestSubmit();
 	}
+
+	// Both fields must be saved together — a lone name or email doesn't count as an override.
+	// svelte-ignore state_referenced_locally
+	let gitName = $state(gitIdentityName);
+	// svelte-ignore state_referenced_locally
+	let gitEmail = $state(gitIdentityEmail);
+	let savingGitIdentity = $state(false);
+	let gitIdentityError = $state<string | null>(null);
+	let gitIdentitySaved = $state(false);
+
+	const gitIdentityOpts = saveOpts<{ name: string; email: string }>({
+		setSaving: (v) => (savingGitIdentity = v),
+		setError: (v) => (gitIdentityError = v),
+		setMsg: (v) => (gitIdentitySaved = !!v),
+		onSuccess: (data) => {
+			gitName = data?.name ?? gitName;
+			gitEmail = data?.email ?? gitEmail;
+			gitIdentitySaved = true;
+		}
+	});
 
 	// DB-backed rather than localStorage, so it initializes from the prop.
 	// svelte-ignore state_referenced_locally
@@ -569,6 +594,63 @@
 				{#if copyIgnoreError}
 					<div class="msg error">{copyIgnoreError}</div>
 				{:else if copyIgnoreSaved}
+					<div class="msg ok">Saved.</div>
+				{/if}
+			</form>
+		</section>
+
+		<section class="card">
+			<form
+				class="row divided token-row"
+				method="POST"
+				action="?/gitIdentityOverride"
+				{@attach enhance(gitIdentityOpts)}
+			>
+				<div class="label">
+					<UserCog size={18} />
+					<div class="text">
+						<div class="name">Git identity</div>
+						<div class="desc">
+							Name and email injected as <code>git config --global user.name/user.email</code> in every
+							new container. When both are set here, they always take precedence over the host's own git
+							config. Leave either blank to fall back to the host's identity.
+						</div>
+					</div>
+				</div>
+				<div class="model-fields">
+					<label class="model-row">
+						<span class="model-label">Name</span>
+						<input
+							type="text"
+							name="name"
+							class="image-input"
+							bind:value={gitName}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							placeholder="Jane Doe"
+						/>
+					</label>
+					<label class="model-row">
+						<span class="model-label">Email</span>
+						<input
+							type="text"
+							name="email"
+							class="image-input"
+							bind:value={gitEmail}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							placeholder="jane@example.com"
+						/>
+					</label>
+					<div class="model-save-row">
+						<Button type="submit" disabled={savingGitIdentity}>Save</Button>
+					</div>
+				</div>
+				{#if gitIdentityError}
+					<div class="msg error">{gitIdentityError}</div>
+				{:else if gitIdentitySaved}
 					<div class="msg ok">Saved.</div>
 				{/if}
 			</form>

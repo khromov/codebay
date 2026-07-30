@@ -9,6 +9,8 @@
 		disableBuildCache,
 		copyIgnorePatterns,
 		builtinCopyIgnore,
+		gitIdentityName,
+		gitIdentityEmail,
 		dockerArch,
 		manualTokensEnabled,
 		githubTokenSet,
@@ -31,6 +33,8 @@
 		disableBuildCache: boolean;
 		copyIgnorePatterns: string;
 		builtinCopyIgnore: string;
+		gitIdentityName: string;
+		gitIdentityEmail: string;
 		dockerArch: string | null;
 		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
@@ -56,6 +60,8 @@
 	{disableBuildCache}
 	{copyIgnorePatterns}
 	{builtinCopyIgnore}
+	{gitIdentityName}
+	{gitIdentityEmail}
 	{dockerArch}
 	{manualTokensEnabled}
 	{githubTokenSet}

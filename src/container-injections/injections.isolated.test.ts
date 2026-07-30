@@ -7,6 +7,7 @@ import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings } from './attention-hooks.ts';
 import { isValid, LIVE_CREDENTIALS_TEST, tokenCredentials } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
+import { gitIdentity, readGitIdentity } from './git-identity.ts';
 import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
 import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
 import { extractScriptPath } from './claude-statusline.ts';
@@ -237,6 +238,51 @@ describe('customEndpointConfig', () => {
 		const config = customEndpointConfig()!;
 		expect(config.opusModel).toBe('my-custom-opus');
 		setOption('custom_endpoint_opus_model', ''); // cleanup
+	});
+});
+
+describe('git identity override', () => {
+	beforeEach(() => {
+		setOption('git_identity_name', '');
+		setOption('git_identity_email', '');
+	});
+
+	afterEach(() => {
+		setOption('git_identity_name', '');
+		setOption('git_identity_email', '');
+	});
+
+	test('wins over host git config when both name and email are set', async () => {
+		setOption('git_identity_name', 'Jane Doe');
+		setOption('git_identity_email', 'jane@example.com');
+		const identity = await readGitIdentity();
+		expect(identity).toEqual({ name: 'Jane Doe', email: 'jane@example.com' });
+	});
+
+	test('a lone name with no email is not treated as an override', async () => {
+		setOption('git_identity_name', 'Jane Doe');
+		const identity = await readGitIdentity();
+		expect(identity?.name).not.toBe('Jane Doe');
+	});
+
+	test('a lone email with no name is not treated as an override', async () => {
+		setOption('git_identity_email', 'jane@example.com');
+		const identity = await readGitIdentity();
+		expect(identity?.email).not.toBe('jane@example.com');
+	});
+
+	test('blank strings are treated the same as unset', async () => {
+		setOption('git_identity_name', '  ');
+		setOption('git_identity_email', '  ');
+		const identity = await readGitIdentity();
+		expect(identity?.name).not.toBe('  ');
+	});
+
+	test('auth.status() reports the Settings override as the source', async () => {
+		setOption('git_identity_name', 'Jane Doe');
+		setOption('git_identity_email', 'jane@example.com');
+		const status = await gitIdentity.auth!.status();
+		expect(status).toEqual({ available: true, source: 'Settings override — Jane Doe' });
 	});
 });
 
