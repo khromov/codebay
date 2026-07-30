@@ -182,6 +182,14 @@ export const routes: Record<string, MochiRouteValue> = {
 				customEndpointSmallFastModel:
 					getOption('custom_endpoint_small_fast_model') ?? DEFAULT_SMALL_FAST_MODEL,
 				customEndpointModel: getOption('custom_endpoint_model') ?? DEFAULT_MODEL,
+				// Manual model override (standard subscription path): toggle + five blank-by-default
+				// model IDs — only the ones the user fills get injected, so no Bedrock-default seeding.
+				manualModelOverrideEnabled: getOption('manual_model_override_enabled') === '1',
+				manualOpusModel: getOption('manual_opus_model') ?? '',
+				manualSonnetModel: getOption('manual_sonnet_model') ?? '',
+				manualHaikuModel: getOption('manual_haiku_model') ?? '',
+				manualSmallFastModel: getOption('manual_small_fast_model') ?? '',
+				manualModel: getOption('manual_model') ?? '',
 				hostEnvVarsEnabled: getOption('host_env_vars_enabled') === '1',
 				hostEnvVarNames,
 				hostEnvVarPresence: hostEnvVarPresence(hostEnvVarNames),
@@ -230,6 +238,8 @@ export const routes: Record<string, MochiRouteValue> = {
 			customEndpointToggle: ({ formData }) => {
 				const enabled = onChecked(formData, 'enabled');
 				setOption('custom_endpoint_enabled', enabled ? '1' : '0');
+				// LiteLLM and the manual model override own the same env vars — never both.
+				if (enabled) setOption('manual_model_override_enabled', '0');
 				return success({ enabled });
 			},
 			customBaseUrl: ({ formData }) => {
@@ -248,6 +258,22 @@ export const routes: Record<string, MochiRouteValue> = {
 				setOption('custom_endpoint_haiku_model', str(formData, 'haikuModel'));
 				setOption('custom_endpoint_small_fast_model', str(formData, 'smallFastModel'));
 				setOption('custom_endpoint_model', str(formData, 'defaultModel'));
+				return success({});
+			},
+
+			manualModelToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('manual_model_override_enabled', enabled ? '1' : '0');
+				// Reciprocal of customEndpointToggle — the two can't both drive model env vars.
+				if (enabled) setOption('custom_endpoint_enabled', '0');
+				return success({ enabled });
+			},
+			manualModels: ({ formData }) => {
+				setOption('manual_opus_model', str(formData, 'opusModel'));
+				setOption('manual_sonnet_model', str(formData, 'sonnetModel'));
+				setOption('manual_haiku_model', str(formData, 'haikuModel'));
+				setOption('manual_small_fast_model', str(formData, 'smallFastModel'));
+				setOption('manual_model', str(formData, 'defaultModel'));
 				return success({});
 			},
 
