@@ -22,6 +22,7 @@
 	import { playChime, unlockAudio } from '../sound.ts';
 	import Button from './Button.svelte';
 	import CoinButton from './CoinButton.svelte';
+	import { installPopupBackTrap } from '../lib/popup-nav.ts';
 
 	/** Every settings form action fails with the same `{ error }` shape. */
 	type ActionFailure = { error: string };
@@ -76,6 +77,8 @@
 	let sound = $state(soundEnabled());
 
 	let shuttingDown = $state(false);
+
+	$effect(() => installPopupBackTrap());
 
 	/** Reused by every plain save form below; only the per-control state setters differ. */
 	function saveOpts<Success extends Record<string, unknown> = Record<string, unknown>>(handlers: {
