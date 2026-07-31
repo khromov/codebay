@@ -16,3 +16,7 @@ document.querySelectorAll('[data-copy]').forEach((button) => {
 		}, 1500);
 	});
 });
+
+document.querySelectorAll('img.screenshot').forEach((img) => {
+	img.addEventListener('error', () => img.remove(), { once: true });
+});

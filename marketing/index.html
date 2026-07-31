@@ -13,11 +13,27 @@
 		<meta property="og:title" content="Codebay — the devcontainer manager" />
 		<meta
 			property="og:description"
-			content="Isolated devcontainers, one command away. Browser-based VS Code, per instance. Built for parallel Claude Code workflows."
+			content="Isolated workspaces for your Claude and Codex agents. Browser-based VS Code, per instance. Built for parallel agent workflows."
 		/>
 		<meta property="og:type" content="website" />
-		<meta name="twitter:card" content="summary" />
+		<meta property="og:url" content="https://khromov.github.io/codebay/" />
+		<meta property="og:image" content="https://khromov.github.io/codebay/assets/og-image.png" />
+		<meta property="og:image:width" content="2400" />
+		<meta property="og:image:height" content="1256" />
+		<meta property="og:image:alt" content="Codebay — isolated workspaces for your agents" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content="Codebay — the devcontainer manager" />
+		<meta
+			name="twitter:description"
+			content="Isolated workspaces for your Claude and Codex agents. Browser-based VS Code, per instance."
+		/>
+		<meta name="twitter:image" content="https://khromov.github.io/codebay/assets/og-image.png" />
 		<link rel="stylesheet" href="./styles.css" />
+		<script
+			defer
+			src="https://u.khromov.se/u.js"
+			data-website-id="1ed2d617-36f8-4c75-8ab0-621f5b94f36e"
+		></script>
 	</head>
 	<body>
 		<header class="site-header">
@@ -67,7 +83,15 @@
 		<main id="top">
 			<section class="hero">
 				<div class="stage">
-					<h1 class="headline">Isolated workspaces for your agents.</h1>
+					<h1 class="headline">
+						Isolated workspaces for your
+						<span class="word-rotator" aria-hidden="true">
+							<span class="word">Claude</span>
+							<span class="word">Codex</span>
+						</span>
+						<span class="sr-only">Claude / Codex</span>
+						agents.
+					</h1>
 					<p class="subhead">
 						Point Codebay at a local folder or a Git repo URL and it spins up a fully isolated
 						devcontainer with its own browser-based VS Code — built for running parallel
@@ -90,7 +114,7 @@
 					</div>
 
 					<div class="cta-row">
-						<div class="code-chip">
+						<div class="code-chip lg">
 							<span><span class="prompt">$</span> bunx codebay@latest</span>
 							<button
 								type="button"
@@ -112,7 +136,7 @@
 							</button>
 						</div>
 						<a
-							class="btn ghost lg"
+							class="btn ghost"
 							href="https://github.com/khromov/codebay"
 							target="_blank"
 							rel="noopener"
@@ -236,6 +260,62 @@
 				</div>
 			</section>
 
+			<section id="balance">
+				<div class="stage">
+					<div class="section-head">
+						<h2>Unsupervised agents… almost</h2>
+						<p>
+							Agents have become great at working autonomously, but sometimes you want to jump in
+							and help them out. Codebay provides this through a full VS Code experience in addition
+							to Claude Code.
+						</p>
+					</div>
+					<div class="scale">
+						<div class="scale-track">
+							<span class="tick start"></span>
+							<span class="tick mid"></span>
+							<span class="tick end"></span>
+							<div class="scale-marker">
+								<span class="scale-marker-label">Codebay</span>
+								<span class="scale-marker-arrow"></span>
+							</div>
+						</div>
+						<div class="scale-labels">
+							<span>Fully manual</span>
+							<span>Fully autonomous</span>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section id="control-pane">
+				<div class="stage">
+					<div class="section-head">
+						<h2>The control pane for your agents</h2>
+						<p>
+							Every agent visible from one dashboard, with live status and notifications built in.
+						</p>
+					</div>
+					<div class="dashboard-frame panel">
+						<div class="panel-bar">
+							<span class="panel-bar-dots"><span></span><span></span><span></span></span>
+							<span>Codebay — Dashboard</span>
+							<span class="panel-bar-dots spacer" aria-hidden="true"
+								><span></span><span></span><span></span
+							></span>
+						</div>
+						<div class="dashboard-screen">
+							<img
+								class="screenshot"
+								src="./assets/dashboard-screenshot.png"
+								alt="Codebay dashboard showing running agent instances"
+								loading="lazy"
+							/>
+						</div>
+					</div>
+				</div>
+			</section>
+
 			<section id="features">
 				<div class="stage">
 					<div class="section-head">
@@ -313,10 +393,10 @@
 										d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"
 									/></svg
 							></span>
-							<h3>Attention pulses</h3>
+							<h3>Notifications</h3>
 							<p>
-								Containers signal <em>done</em> or <em>waiting</em>, so you know which tab needs
-								you.
+								Agents ping you when <em>done</em> or <em>waiting</em> — a pulsing tab plus an
+								optional chime.
 							</p>
 						</article>
 						<article class="feature-card panel">
@@ -410,6 +490,27 @@
 							<p>
 								<code>bunx codebay@latest</code> and you're live at <code>localhost:6969</code>.
 							</p>
+						</article>
+						<article class="feature-card panel">
+							<span class="icon-badge"
+								><svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path d="M12 2v2" />
+									<path
+										d="M14.837 16.385a6 6 0 1 1-7.223-7.222c.624-.147.97.66.715 1.248a4 4 0 0 0 5.26 5.259c.589-.255 1.396.09 1.248.715"
+									/>
+									<path d="M16 12a4 4 0 0 0-4-4" />
+									<path d="m19 5-1.256 1.256" />
+									<path d="M20 12h2" /></svg
+							></span>
+							<h3>Light &amp; dark mode</h3>
+							<p>Pick a theme — the dashboard and every code-server tab follow along.</p>
 						</article>
 					</div>
 				</div>
@@ -1427,8 +1528,18 @@
 						</svg>
 						khromov/codebay
 					</a>
-					<span>MIT License © 2026 Stanislav Khromov</span>
-					<span>Built with Bun + Mochi</span>
+					<span
+						>MIT License © 2026
+						<a class="inline-link" href="https://stanislav.garden" target="_blank" rel="noopener"
+							>Stanislav Khromov</a
+						></span
+					>
+					<span
+						>Built with Bun +
+						<a class="inline-link" href="https://mochi.fast" target="_blank" rel="noopener"
+							>Mochi</a
+						></span
+					>
 				</div>
 			</div>
 		</footer>

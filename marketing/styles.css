@@ -287,6 +287,62 @@ h1.headline {
 	margin: 0 auto 18px;
 	max-width: 900px;
 }
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+.word-rotator {
+	position: relative;
+	display: inline-grid;
+	vertical-align: baseline;
+	text-align: left;
+}
+.word-rotator .word {
+	grid-area: 1 / 1;
+	white-space: nowrap;
+	color: var(--ok-line);
+	opacity: 0;
+	animation: word-cycle 6s ease-in-out infinite;
+}
+.word-rotator .word:nth-child(1) {
+	animation-delay: 0s;
+}
+.word-rotator .word:nth-child(2) {
+	animation-delay: 3s;
+}
+@keyframes word-cycle {
+	0%,
+	4% {
+		opacity: 0;
+		transform: translateY(0.2em) rotate(-3deg);
+	}
+	10%,
+	42% {
+		opacity: 1;
+		transform: translateY(0) rotate(0deg);
+	}
+	48%,
+	100% {
+		opacity: 0;
+		transform: translateY(-0.2em) rotate(3deg);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.word-rotator .word {
+		animation: none;
+		opacity: 1;
+	}
+	.word-rotator .word:nth-child(2) {
+		display: none;
+	}
+}
 .subhead {
 	font-size: 16px;
 	color: var(--ink-soft);
@@ -317,10 +373,9 @@ h1.headline {
 
 .cta-row {
 	display: flex;
-	flex-wrap: wrap;
+	flex-direction: column;
 	align-items: center;
-	justify-content: center;
-	gap: 12px;
+	gap: 14px;
 	margin-top: 30px;
 }
 .code-chip {
@@ -334,6 +389,20 @@ h1.headline {
 	font-family: var(--font-mono);
 	font-size: 14px;
 	font-weight: 600;
+}
+.code-chip.lg {
+	padding: 16px 12px 16px 22px;
+	font-size: clamp(14px, 4.2vw, 19px);
+	gap: 18px;
+	max-width: 100%;
+}
+.code-chip.lg button {
+	font-size: 12px;
+	padding: 9px 13px;
+}
+.code-chip.lg button svg {
+	width: 15px;
+	height: 15px;
 }
 .code-chip .prompt {
 	color: var(--attn-done);
@@ -385,6 +454,97 @@ section {
 	color: var(--ink-soft);
 	margin: 0;
 	line-height: 1.6;
+}
+
+/* ---- manual / autonomous balance scale ---- */
+.scale {
+	max-width: 560px;
+	margin: 44px auto 0;
+}
+.scale-track {
+	position: relative;
+	height: 2px;
+	background: var(--ink);
+	margin: 0 1px;
+}
+.scale-track .tick {
+	position: absolute;
+	top: 50%;
+	width: 2px;
+	height: 14px;
+	background: var(--ink);
+	transform: translate(-50%, -50%);
+}
+.scale-track .tick.start {
+	left: 0%;
+}
+.scale-track .tick.mid {
+	left: 50%;
+	width: 3px;
+	height: 22px;
+}
+.scale-track .tick.end {
+	left: 100%;
+}
+.scale-marker {
+	position: absolute;
+	left: 50%;
+	bottom: 100%;
+	transform: translateX(-50%);
+	margin-bottom: 3px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+}
+.scale-marker-label {
+	background: var(--ink);
+	color: var(--bg);
+	font-family: var(--font-display);
+	font-weight: 700;
+	font-size: 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	padding: 5px 10px;
+	white-space: nowrap;
+}
+.scale-marker-arrow {
+	width: 0;
+	height: 0;
+	border-left: 6px solid transparent;
+	border-right: 6px solid transparent;
+	border-top: 7px solid var(--ink);
+}
+.scale-labels {
+	display: flex;
+	justify-content: space-between;
+	margin-top: 16px;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--ink-soft);
+}
+
+/* ---- control pane screenshot ---- */
+.dashboard-frame {
+	max-width: 1000px;
+	margin: 0 auto;
+	text-align: left;
+}
+.dashboard-screen {
+	position: relative;
+	aspect-ratio: 16 / 10;
+	background: #d7d8d2 center / cover no-repeat url('./assets/dashboard-poster.svg');
+	overflow: hidden;
+}
+.dashboard-screen img.screenshot {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	object-position: top;
 }
 
 /* ---- what makes Codebay different ---- */
@@ -643,6 +803,11 @@ footer .stage {
 .footer-meta svg {
 	width: 14px;
 	height: 14px;
+}
+.footer-meta a.inline-link {
+	display: inline;
+	text-decoration: underline;
+	text-underline-offset: 2px;
 }
 
 @media (max-width: 640px) {
