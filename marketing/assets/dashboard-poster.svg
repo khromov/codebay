@@ -1,11 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" width="1280" height="800">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 600" width="1280" height="600">
 	<defs>
 		<pattern id="grid" width="6" height="6" patternUnits="userSpaceOnUse">
 			<rect width="6" height="1" fill="rgba(0,0,0,0.035)" />
 		</pattern>
 	</defs>
-	<rect width="1280" height="800" fill="#d7d8d2" />
-	<rect width="1280" height="800" fill="url(#grid)" />
+	<rect width="1280" height="600" fill="#d7d8d2" />
+	<rect width="1280" height="600" fill="url(#grid)" />
 
 	<!-- top bar -->
 	<rect x="0" y="0" width="1280" height="72" fill="#d7d8d2" />
@@ -77,27 +77,4 @@
 		<rect x="744" y="372" width="60" height="18" fill="none" stroke="#7d7e74" stroke-width="1" />
 		<rect x="472" y="428" width="328" height="8" fill="#b9bab2" />
 	</g>
-
-	<text
-		x="640"
-		y="700"
-		text-anchor="middle"
-		font-family="ui-monospace, Menlo, Consolas, monospace"
-		font-size="16"
-		letter-spacing="1"
-		fill="#45463e"
-	>
-		DASHBOARD SCREENSHOT GOES HERE
-	</text>
-	<text
-		x="640"
-		y="726"
-		text-anchor="middle"
-		font-family="ui-monospace, Menlo, Consolas, monospace"
-		font-size="13"
-		letter-spacing="1"
-		fill="#7d7e74"
-	>
-		drop it at marketing/assets/dashboard-screenshot.png
-	</text>
 </svg>
