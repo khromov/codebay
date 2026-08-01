@@ -1,0 +1,25 @@
+{
+	"name": "Codebay",
+	"image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+	"features": {
+		"ghcr.io/shyim/devcontainers-features/bun:0": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {}
+	},
+	"forwardPorts": [6969],
+	"portsAttributes": {
+		"6969": {
+			"label": "codebay",
+			"onAutoForward": "notify"
+		}
+	},
+	"postCreateCommand": "bun install",
+	"customizations": {
+		"vscode": {
+			"extensions": ["svelte.svelte-vscode", "dbaeumer.vscode-eslint", "esbenp.prettier-vscode"],
+			"settings": {
+				"editor.formatOnSave": true,
+				"editor.defaultFormatter": "esbenp.prettier-vscode"
+			}
+		}
+	}
+}
