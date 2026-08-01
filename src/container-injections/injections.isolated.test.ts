@@ -14,6 +14,7 @@ import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './h
 import { expandTilde, extractScriptPath } from './claude-statusline.ts';
 import { hostClaudeModel } from './claude-model.ts';
 import { NO_COAUTHOR_SETTINGS } from './claude-no-coauthor.ts';
+import { claudeTrustConfig } from './claude-trust.ts';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
 
@@ -68,6 +69,13 @@ describe('injection registry', () => {
 		expect(noCoauthor).toBeDefined();
 		expect(typeof noCoauthor!.check).toBe('function');
 		expect(noCoauthor!.auth).toBeUndefined();
+	});
+
+	test('claude-trust is registered with a health check', () => {
+		const trust = injections.find((i) => i.id === 'claude-trust');
+		expect(trust).toBeDefined();
+		expect(typeof trust!.check).toBe('function');
+		expect(trust!.auth).toBeUndefined();
 	});
 
 	test('claude-statusline is registered with an auth chip and a health check', () => {
@@ -400,6 +408,29 @@ describe('NO_COAUTHOR_SETTINGS', () => {
 			commit: '',
 			pr: '',
 			includeCoAuthoredBy: false
+		});
+	});
+});
+
+describe('claudeTrustConfig', () => {
+	test('always pre-accepts onboarding and the bypass-permissions warning at root', () => {
+		const cfg = claudeTrustConfig(null);
+		expect(cfg.hasCompletedOnboarding).toBe(true);
+		expect(cfg.bypassPermissionsModeAccepted).toBe(true);
+	});
+
+	test('omits the projects block when no workspace path is known', () => {
+		expect(claudeTrustConfig(null).projects).toBeUndefined();
+	});
+
+	test('nests trust + MCP auto-accept under the workspace path', () => {
+		const cfg = claudeTrustConfig('/workspaces/my-repo');
+		expect(cfg.projects).toEqual({
+			'/workspaces/my-repo': {
+				hasTrustDialogAccepted: true,
+				hasCompletedProjectOnboarding: true,
+				enableAllProjectMcpServers: true
+			}
 		});
 	});
 });

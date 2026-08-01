@@ -1,5 +1,5 @@
 import { PORT } from '../lib/config.server.ts';
-import { checkPresence, execInContainer } from '../lib/exec.server.ts';
+import { checkPresence, execInContainer, mergeJsonFileScript } from '../lib/exec.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 function bridgeUrl(): string {
@@ -65,13 +65,8 @@ async function writeBridgeHeader(
 
 /** Merging rather than overwriting is what lets the settings.json injections compose in any order. */
 export function mergeClaudeSettingsScript(): string {
-	return (
-		'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; mkdir -p "$d"; ' +
-		'f="$d/settings.json"; new="$CODEBAY_STDIN"; ' +
-		'if command -v jq >/dev/null 2>&1 && [ -s "$f" ] && ' +
-		'merged=$(printf \'%s\' "$new" | jq -s \'.[0] * .[1]\' "$f" - 2>/dev/null); then ' +
-		'printf \'%s\' "$merged" > "$f"; else printf \'%s\' "$new" > "$f"; fi; ' +
-		'chmod 644 "$f"'
+	return mergeJsonFileScript(
+		'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; mkdir -p "$d"; f="$d/settings.json"; '
 	);
 }
 
