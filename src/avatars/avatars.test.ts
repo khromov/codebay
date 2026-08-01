@@ -22,8 +22,7 @@ describe('avatar catalog', () => {
 		expect(new Set(names).size).toBe(names.length);
 	});
 
-	// The `robot` flag marks the original AI-generated batch (commit fda8e80) so the UI can
-	// surface them and we can redraw them by hand; this pins the exact set against drift.
+	// Pins the flagged set to the original AI batch (commit fda8e80) so the mapping can't drift.
 	test('robot flag marks exactly the original AI-generated sprites', () => {
 		const original = [
 			'anchor',

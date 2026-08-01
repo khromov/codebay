@@ -121,7 +121,6 @@
 		letter-spacing: 0.08em;
 		color: var(--ink-soft);
 	}
-	/* Flags the original AI-generated sprites, which are slated to be redrawn by hand. */
 	.robot-mark {
 		display: inline-flex;
 		color: var(--ink-faint);
