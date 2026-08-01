@@ -11,6 +11,7 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Hammer from '@lucide/svelte/icons/hammer';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import UserCog from '@lucide/svelte/icons/user-cog';
 	import Cpu from '@lucide/svelte/icons/cpu';
 	import Variable from '@lucide/svelte/icons/variable';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -34,6 +35,9 @@
 		disableBuildCache,
 		copyIgnorePatterns,
 		builtinCopyIgnore,
+		gitIdentityEnabled,
+		gitIdentityName,
+		gitIdentityEmail,
 		dockerArch,
 		manualTokensEnabled,
 		githubTokenSet,
@@ -62,6 +66,9 @@
 		disableBuildCache: boolean;
 		copyIgnorePatterns: string;
 		builtinCopyIgnore: string;
+		gitIdentityEnabled: boolean;
+		gitIdentityName: string;
+		gitIdentityEmail: string;
 		dockerArch: string | null;
 		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
@@ -201,6 +208,37 @@
 		flushSync(() => (copyIgnore = builtinCopyIgnore));
 		copyIgnoreFormEl?.requestSubmit();
 	}
+
+	// svelte-ignore state_referenced_locally
+	let gitIdentity = $state(gitIdentityEnabled);
+	let savingGitToggle = $state(false);
+	let gitToggleError = $state<string | null>(null);
+
+	const gitIdentityToggleOpts = toggleOpts({
+		set: (v) => (gitIdentity = v),
+		setSaving: (v) => (savingGitToggle = v),
+		setError: (v) => (gitToggleError = v)
+	});
+
+	// Both fields must be saved together — a lone name or email doesn't count as an override.
+	// svelte-ignore state_referenced_locally
+	let gitName = $state(gitIdentityName);
+	// svelte-ignore state_referenced_locally
+	let gitEmail = $state(gitIdentityEmail);
+	let savingGitIdentity = $state(false);
+	let gitIdentityError = $state<string | null>(null);
+	let gitIdentitySaved = $state(false);
+
+	const gitIdentityOpts = saveOpts<{ name: string; email: string }>({
+		setSaving: (v) => (savingGitIdentity = v),
+		setError: (v) => (gitIdentityError = v),
+		setMsg: (v) => (gitIdentitySaved = !!v),
+		onSuccess: (data) => {
+			gitName = data?.name ?? gitName;
+			gitEmail = data?.email ?? gitEmail;
+			gitIdentitySaved = true;
+		}
+	});
 
 	// DB-backed rather than localStorage, so it initializes from the prop.
 	// svelte-ignore state_referenced_locally
@@ -537,7 +575,7 @@
 				{@attach enhance(imageOpts)}
 			>
 				<div class="label">
-					<Container size={18} />
+					<Container size={20} />
 					<div class="text">
 						<div class="name">
 							Default container image
@@ -598,7 +636,7 @@
 				{@attach enhance(copyIgnoreOpts)}
 			>
 				<div class="label">
-					<FolderMinus size={18} />
+					<FolderMinus size={20} />
 					<div class="text">
 						<div class="name">Skip when copying a local folder</div>
 						<div class="desc">
@@ -641,11 +679,103 @@
 			<form
 				class="row"
 				method="POST"
+				action="?/gitIdentityToggle"
+				{@attach enhance(gitIdentityToggleOpts)}
+			>
+				<div class="label">
+					<UserCog size={20} />
+					<div class="text">
+						<div class="name">Override git identity</div>
+						<div class="desc">
+							Inject a name and email as <code>git config --global user.name/user.email</code> in every
+							new container, taking precedence over the host's own git config. When off, each container
+							falls back to the host's identity.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={gitIdentity}
+						disabled={savingGitToggle}
+						onchange={(e) => {
+							gitIdentity = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if gitToggleError}
+				<div class="sub"><div class="msg error">{gitToggleError}</div></div>
+			{/if}
+
+			{#if gitIdentity}
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/gitIdentityOverride"
+					{@attach enhance(gitIdentityOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Identity</div>
+							<div class="desc">
+								Both fields are required — leave either blank and the container falls back to the
+								host's identity.
+							</div>
+						</div>
+					</div>
+					<div class="model-fields">
+						<label class="model-row">
+							<span class="model-label">Name</span>
+							<input
+								type="text"
+								name="name"
+								class="image-input"
+								bind:value={gitName}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								placeholder="Jane Doe"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Email</span>
+							<input
+								type="text"
+								name="email"
+								class="image-input"
+								bind:value={gitEmail}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								placeholder="jane@example.com"
+							/>
+						</label>
+						<div class="model-save-row">
+							<Button type="submit" disabled={savingGitIdentity}>Save</Button>
+						</div>
+					</div>
+					{#if gitIdentityError}
+						<div class="msg error">{gitIdentityError}</div>
+					{:else if gitIdentitySaved}
+						<div class="msg ok">Saved.</div>
+					{/if}
+				</form>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
 				action="?/disableBuildCache"
 				{@attach enhance(buildCacheToggleOpts)}
 			>
 				<div class="label">
-					<Layers size={18} />
+					<Layers size={20} />
 					<div class="text">
 						<div class="name">Disable build cache</div>
 						<div class="desc">
@@ -679,7 +809,7 @@
 				{@attach enhance(clearCacheOpts)}
 			>
 				<div class="label">
-					<Trash2 size={18} />
+					<Trash2 size={20} />
 					<div class="text">
 						<div class="name">Clear build cache</div>
 						<div class="desc">
@@ -705,7 +835,7 @@
 				{@attach enhance(rebuildAllOpts)}
 			>
 				<div class="label">
-					<Hammer size={18} />
+					<Hammer size={20} />
 					<div class="text">
 						<div class="name">Rebuild running containers (no cache)</div>
 						<div class="desc">
@@ -733,7 +863,7 @@
 				{@attach enhance(manualTokensToggleOpts)}
 			>
 				<div class="label">
-					<KeyRound size={18} />
+					<KeyRound size={20} />
 					<div class="text">
 						<div class="name">
 							Set tokens manually
@@ -862,7 +992,7 @@
 				{@attach enhance(customEndpointToggleOpts)}
 			>
 				<div class="label">
-					<KeyRound size={18} />
+					<KeyRound size={20} />
 					<div class="text">
 						<div class="name">
 							LiteLLM + Bedrock
@@ -1219,7 +1349,7 @@
 				{@attach enhance(hostEnvVarsToggleOpts)}
 			>
 				<div class="label">
-					<Variable size={18} />
+					<Variable size={20} />
 					<div class="text">
 						<div class="name">Host environment variables</div>
 						<div class="desc">
@@ -1317,7 +1447,7 @@
 		<section class="card">
 			<div class="row">
 				<div class="label">
-					<SunMoon size={18} />
+					<SunMoon size={20} />
 					<div class="text">
 						<div class="name">Theme</div>
 						<div class="desc">
@@ -1332,7 +1462,7 @@
 		<section class="card">
 			<div class="row">
 				<div class="label">
-					<Volume2 size={18} />
+					<Volume2 size={20} />
 					<div class="text">
 						<div class="name">Attention sound</div>
 						<div class="desc">
@@ -1354,7 +1484,7 @@
 		<section class="card danger-card">
 			<form class="row" method="POST" action="?/shutdown" {@attach enhance(shutdownOpts)}>
 				<div class="label">
-					<Power size={18} />
+					<Power size={20} />
 					<div class="text">
 						<div class="name">Delete database, containers, and shut down</div>
 						<div class="desc">
@@ -1475,6 +1605,10 @@
 		gap: 12px;
 		color: var(--ink);
 		min-width: 0;
+	}
+	/* Keep the leading icon at its intrinsic size; the flex row would otherwise shrink busier glyphs below 18px. */
+	.label > :global(svg) {
+		flex: none;
 	}
 	.text {
 		min-width: 0;

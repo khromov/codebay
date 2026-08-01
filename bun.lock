@@ -94,7 +94,7 @@
 
     "@js-sdsl/ordered-map": ["@js-sdsl/ordered-map@4.4.2", "", {}, "sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw=="],
 
-    "@lucide/svelte": ["@lucide/svelte@1.27.0", "", { "peerDependencies": { "svelte": "^5" } }, "sha512-qzNBHdqy/MKp2qxuy/DcYELuep6h19fjo+4ech8fZsS4GtZeBtg5jgCTRQvLvwhppt0mhRN6qt8Nt8rPb/J4Ag=="],
+    "@lucide/svelte": ["@lucide/svelte@1.28.0", "", { "peerDependencies": { "svelte": "^5" } }, "sha512-C1Ge84KW2z4q44/WDIEo/2KC2jby5u6mSlta7q+p6g7u0ld8sC/w1fMBiSswF+4bxAl9jlzzaVTpp79qqkiy5g=="],
 
     "@noble/ciphers": ["@noble/ciphers@2.2.0", "", {}, "sha512-Z6pjIZ/8IJcCGzb2S/0Px5J81yij85xASuk1teLNeg75bfT07MV3a/O2Mtn1I2se43k3lkVEcFaR10N4cgQcZA=="],
 
@@ -336,7 +336,7 @@
 
     "mkdirp-classic": ["mkdirp-classic@0.5.3", "", {}, "sha512-gKLcREMhtuZRwRAfqP3RFW+TK4JqApVBtOIftVgjuABpAtpxhPGaDcfvbhNvD0B8iD1oUr/txX35NjcaY6Ns/A=="],
 
-    "mochi-framework": ["mochi-framework@0.9.0", "", { "dependencies": { "@css-inline/css-inline-wasm": "^0.21.0", "@joint-ops/hitlimit-bun": "1.5.0", "@noble/ciphers": "2.2.0", "@noble/hashes": "2.2.0", "bunqueue": "^2.8.44", "chokidar": "^5.0.0", "deepmerge": "^4.3.1", "devalue": "^5.8.2", "html-entities": "^2.6.0", "ipaddr.js": "2.4.0", "magic-string": "^1.0.0", "mitt": "^3.0.1", "negotiator": "^1.0.0", "nodemailer": "^9.0.3", "svelte-shaker": ">=0.18.1", "zimmerframe": "^1.1.4" }, "peerDependencies": { "@mochi-framework/rsvelte": ">=0.0.1", "@tailwindcss/node": "^4.3.0", "@tailwindcss/oxide": "^4.3.0", "svelte": "^5.56.6" }, "optionalPeers": ["@mochi-framework/rsvelte", "@tailwindcss/node", "@tailwindcss/oxide"], "bin": { "mochi-framework": "src/cli/cli.js" } }, "sha512-hzY5AqRjdi19I21CWhY7IRKPvvaGvV5NLlMC5GNcbkJ57Le5LGTbQQ888bfXOcIbBZl24V3coa3ojJGqCc7bXQ=="],
+    "mochi-framework": ["mochi-framework@0.9.1", "", { "dependencies": { "@css-inline/css-inline-wasm": "^0.21.0", "@joint-ops/hitlimit-bun": "1.5.0", "@noble/ciphers": "2.2.0", "@noble/hashes": "2.2.0", "bunqueue": "^2.8.44", "chokidar": "^5.0.0", "deepmerge": "^4.3.1", "devalue": "^5.8.2", "html-entities": "^2.6.0", "ipaddr.js": "2.4.0", "magic-string": "^1.0.0", "mitt": "^3.0.1", "negotiator": "^1.0.0", "nodemailer": "^9.0.3", "svelte-shaker": ">=0.18.1", "zimmerframe": "^1.1.4" }, "peerDependencies": { "@mochi-framework/rsvelte": ">=0.0.1", "@tailwindcss/node": "^4.3.0", "@tailwindcss/oxide": "^4.3.0", "svelte": "^5.56.6" }, "optionalPeers": ["@mochi-framework/rsvelte", "@tailwindcss/node", "@tailwindcss/oxide"], "bin": { "mochi-framework": "src/cli/cli.js" } }, "sha512-bw1khr5FXPqC4Cf23IdjNYBoMTUClZ5KGtjMTgCdedldHF4HVXIaUKvEHXt6cTewAauVFTg1CoI/NHh0QrA5BA=="],
 
     "mri": ["mri@1.2.0", "", {}, "sha512-tzzskb3bG8LvYGFF/mDTpq3jpI6Q9wc3LEmBaghu+DdCssd1FakN7Bc0hVNmEyGq1bq3RgfkCb3cmQLpNPOroA=="],
 
