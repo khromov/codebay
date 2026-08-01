@@ -5,7 +5,10 @@ import { join } from 'node:path';
 import {
 	appendLinesScript,
 	deepMerge,
+	linesPresentScript,
+	parseJsonRead,
 	readFileScript,
+	shellSingleQuote,
 	writeFileScript
 } from './container-files.server.ts';
 
@@ -33,6 +36,46 @@ describe('deepMerge (jq `.[0] * .[1]` semantics)', () => {
 		const base = { a: { b: 1 } };
 		deepMerge(base, { a: { c: 2 } });
 		expect(base).toEqual({ a: { b: 1 } });
+	});
+
+	test('drops a __proto__ key instead of polluting Object.prototype', () => {
+		const merged = deepMerge({}, JSON.parse('{"__proto__":{"polluted":true},"a":1}'));
+		expect(merged).toEqual({ a: 1 });
+		expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+	});
+});
+
+describe('parseJsonRead', () => {
+	test('absent or empty content starts fresh (ok, null)', () => {
+		expect(parseJsonRead(null, 'settings.json')).toEqual({ ok: true, data: null });
+		expect(parseJsonRead('', 'settings.json')).toEqual({ ok: true, data: null });
+	});
+
+	test('parses a JSON object', () => {
+		expect(parseJsonRead('{"model":"opus"}', 'settings.json')).toEqual({
+			ok: true,
+			data: { model: 'opus' }
+		});
+	});
+
+	test('non-empty unparseable content errors so edits refuse to overwrite it', () => {
+		const res = parseJsonRead('motd noise{"model":"opus"}', 'settings.json');
+		expect(res.ok).toBe(false);
+		if (!res.ok) expect(res.error).toContain('settings.json');
+	});
+
+	test('valid JSON that is not an object errors too', () => {
+		expect(parseJsonRead('[1,2]', 'f').ok).toBe(false);
+		expect(parseJsonRead('"str"', 'f').ok).toBe(false);
+	});
+});
+
+describe('shellSingleQuote', () => {
+	test('values survive sourcing verbatim, including quotes and expansions', () => {
+		const value = `sp ace;$(echo pwned) 'quoted' $HOME`;
+		const out = Bun.spawnSync(['bash', '-c', `V=${shellSingleQuote(value)}; printf '%s' "$V"`]);
+		expect(out.exitCode).toBe(0);
+		expect(out.stdout.toString()).toBe(value);
 	});
 });
 
@@ -104,6 +147,24 @@ describe('appendLinesScript', () => {
 			Bun.spawnSync(['bash', '-c', appendLinesScript(files), 'append-lines', 'shared']);
 			expect(readFileSync(join(dir, '.bashrc'), 'utf8')).toContain('shared');
 			expect(readFileSync(join(dir, '.zshrc'), 'utf8')).toContain('shared');
+		});
+	});
+});
+
+describe('linesPresentScript', () => {
+	test('1 when every line is in at least one file, 0 when any is missing everywhere', () => {
+		runInTmp((dir) => {
+			const files = [
+				{ dir, name: '.bashrc' },
+				{ dir, name: '.zshrc' }
+			];
+			writeFileSync(join(dir, '.bashrc'), 'line-a\n');
+			writeFileSync(join(dir, '.zshrc'), 'line-b\n');
+			const script = linesPresentScript(files);
+			const split = Bun.spawnSync(['bash', '-c', script, 'lines-present', 'line-a', 'line-b']);
+			expect(split.stdout.toString().trim()).toBe('1');
+			const missing = Bun.spawnSync(['bash', '-c', script, 'lines-present', 'line-a', 'line-c']);
+			expect(missing.stdout.toString().trim()).toBe('0');
 		});
 	});
 });

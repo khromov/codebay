@@ -1,4 +1,4 @@
-import { execInContainer, type ExecTarget } from './exec.server.ts';
+import { checkPresence, execInContainer, type ExecTarget } from './exec.server.ts';
 
 /** A file inside a container, addressed by a shell expr for its dir (`$h` = the exec user's home) + name. */
 export interface ContainerFile {
@@ -29,6 +29,9 @@ export function writeFileScript(file: ContainerFile): string {
 		`printf '%s' "$CODEBAY_STDIN" > "$f"; chmod ${mode} "$f"`
 	);
 }
+
+/** Single-quotes a value for a sourced shell file so whatever it contains stays literal. */
+export const shellSingleQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
 /** Lines arrive as `$@` so none is interpolated into the loop body; each file gets a `grep -qF` guard. */
 export function appendLinesScript(files: ContainerFile[]): string {
@@ -75,6 +78,21 @@ export async function appendLinesIfAbsent(
 	return res.ok ? { ok: true } : { ok: false, error: res.error };
 }
 
+/** A line counts as present when any listed file carries it — the either-rc-file check the injections have always used. */
+export function linesPresentScript(files: ContainerFile[]): string {
+	const greps = files.map((f) => `grep -qF "$line" "${filePath(f)}" 2>/dev/null`).join(' || ');
+	return `${HOME_PRELUDE}for line in "$@"; do ${greps} || { echo 0; exit 0; }; done; echo 1`;
+}
+
+/** The `check()` counterpart of `appendLinesIfAbsent`. */
+export function linesPresent(
+	target: ExecTarget,
+	files: ContainerFile[],
+	lines: string[]
+): Promise<boolean> {
+	return checkPresence(target, linesPresentScript(files), ['lines-present', ...lines]);
+}
+
 /** True when the file exists and is non-empty — a content-free probe for `check()`. */
 export async function containerFileExists(
 	target: ExecTarget,
@@ -111,10 +129,26 @@ export function deepMerge<T extends Record<string, unknown> = Record<string, unk
 ): T {
 	const out: Record<string, unknown> = { ...base };
 	for (const [key, value] of Object.entries(patch)) {
+		// A `__proto__` key in parsed JSON would pollute Object.prototype via plain assignment.
+		if (key === '__proto__') continue;
 		const current = out[key];
 		out[key] = isPlainObject(value) && isPlainObject(current) ? deepMerge(current, value) : value;
 	}
 	return out as T;
+}
+
+type JsonRead = { ok: true; data: Record<string, unknown> | null } | { ok: false; error: string };
+
+/** Absent/empty means "start fresh"; anything else must parse to an object, so callers can refuse destructive fallbacks. */
+export function parseJsonRead(raw: string | null, name: string): JsonRead {
+	if (raw === null || raw === '') return { ok: true, data: null };
+	try {
+		const data: unknown = JSON.parse(raw);
+		if (!isPlainObject(data)) return { ok: false, error: `${name} is not a JSON object` };
+		return { ok: true, data };
+	} catch {
+		return { ok: false, error: `${name} exists but is not valid JSON` };
+	}
 }
 
 /** Parses the container file, treating an absent or invalid file as "no JSON" (null). */
@@ -122,13 +156,8 @@ export async function readJsonFile<T = Record<string, unknown>>(
 	target: ExecTarget,
 	file: ContainerFile
 ): Promise<T | null> {
-	const raw = await readContainerFile(target, file);
-	if (raw === null) return null;
-	try {
-		return JSON.parse(raw) as T;
-	} catch {
-		return null;
-	}
+	const parsed = parseJsonRead(await readContainerFile(target, file), file.name);
+	return parsed.ok ? (parsed.data as T | null) : null;
 }
 
 export async function writeJsonFile(
@@ -139,13 +168,20 @@ export async function writeJsonFile(
 	return writeContainerFile(target, file, JSON.stringify(data, null, 2));
 }
 
-/** Read-modify-write: an absent/invalid file starts from `{}`, matching the old jq overwrite fallback. */
+/**
+ * Read-modify-write: an absent/empty file starts from `{}`, but a failed read or unparseable
+ * existing content aborts the edit — overwriting what we couldn't read would silently destroy it.
+ */
 export async function editJsonFile(
 	target: ExecTarget,
 	file: ContainerFile,
 	edit: (current: Record<string, unknown>) => Record<string, unknown> | void
 ): Promise<{ ok: boolean; error?: string }> {
-	const current = (await readJsonFile(target, file)) ?? {};
+	const read = await execInContainer(target, { script: readFileScript(file), capture: true });
+	if (!read.ok) return { ok: false, error: `read before edit failed: ${read.error}` };
+	const parsed = parseJsonRead(read.stdout, file.name);
+	if (!parsed.ok) return { ok: false, error: parsed.error };
+	const current = parsed.data ?? {};
 	const next = edit(current) ?? current;
 	return writeJsonFile(target, file, next);
 }

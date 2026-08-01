@@ -164,6 +164,10 @@ describe('hasAttentionHook', () => {
 		expect(hasAttentionHook({}, 'inst-abc')).toBe(false);
 		expect(hasAttentionHook(null, 'inst-abc')).toBe(false);
 	});
+
+	test('an id that is a prefix of the installed one does not match', () => {
+		expect(hasAttentionHook(attentionHookSettings('inst-abcdef'), 'inst-abc')).toBe(false);
+	});
 });
 
 describe('resolveInjections — custom endpoint toggle', () => {

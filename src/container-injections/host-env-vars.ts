@@ -1,5 +1,9 @@
 import { getOption } from '../lib/db.server.ts';
-import { containerFileExists, installShellEnvFile } from '../lib/container-files.server.ts';
+import {
+	containerFileExists,
+	installShellEnvFile,
+	shellSingleQuote
+} from '../lib/container-files.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 const ENV_FILE_NAME = '.codebay-host-env';
@@ -53,9 +57,8 @@ function injectHostEnvVars(
 ): Promise<{ ok: boolean; error?: string }> {
 	// Every interactive shell sources this file, so values must be single-quoted to stay literal.
 	const content =
-		resolved
-			.map(({ name, value }) => `export ${name}='${value.replaceAll("'", "'\\''")}'`)
-			.join('\n') + '\n';
+		resolved.map(({ name, value }) => `export ${name}=${shellSingleQuote(value)}`).join('\n') +
+		'\n';
 	return installShellEnvFile(target, ENV_FILE_NAME, content);
 }
 

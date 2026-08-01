@@ -1,5 +1,5 @@
 import { getOption } from '../lib/db.server.ts';
-import { installShellEnvFile } from '../lib/container-files.server.ts';
+import { installShellEnvFile, shellSingleQuote } from '../lib/container-files.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 /** The option key → Claude env var mapping; order is the field order in Settings. */
@@ -34,7 +34,7 @@ function injectModels(
 ): Promise<{ ok: boolean; error?: string }> {
 	const content =
 		Object.entries(config)
-			.map(([env, value]) => `export ${env}=${value}`)
+			.map(([env, value]) => `export ${env}=${shellSingleQuote(value)}`)
 			.join('\n') + '\n';
 	return installShellEnvFile(target, ENV_FILE_NAME, content);
 }

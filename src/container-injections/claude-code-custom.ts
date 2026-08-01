@@ -3,7 +3,8 @@ import {
 	containerFileExists,
 	deepMerge,
 	editJsonFile,
-	installShellEnvFile
+	installShellEnvFile,
+	shellSingleQuote
 } from '../lib/container-files.server.ts';
 import { CLAUDE_JSON_FILE } from '../lib/claude-settings.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
@@ -50,13 +51,13 @@ function envFileContent(config: NonNullable<ReturnType<typeof customEndpointConf
 			'export DISABLE_AUTOUPDATER=1',
 			'export CLAUDE_CODE_USE_BEDROCK=1',
 			'export CLAUDE_CODE_SKIP_BEDROCK_AUTH=1',
-			`export ANTHROPIC_BEDROCK_BASE_URL=${config.baseUrl}`,
-			`export ANTHROPIC_AUTH_TOKEN=${config.token}`,
-			`export ANTHROPIC_DEFAULT_OPUS_MODEL=${config.opusModel}`,
-			`export ANTHROPIC_DEFAULT_SONNET_MODEL=${config.sonnetModel}`,
-			`export ANTHROPIC_DEFAULT_HAIKU_MODEL=${config.haikuModel}`,
-			`export ANTHROPIC_SMALL_FAST_MODEL=${config.smallFastModel}`,
-			`export ANTHROPIC_MODEL=${config.defaultModel}`
+			`export ANTHROPIC_BEDROCK_BASE_URL=${shellSingleQuote(config.baseUrl)}`,
+			`export ANTHROPIC_AUTH_TOKEN=${shellSingleQuote(config.token)}`,
+			`export ANTHROPIC_DEFAULT_OPUS_MODEL=${shellSingleQuote(config.opusModel)}`,
+			`export ANTHROPIC_DEFAULT_SONNET_MODEL=${shellSingleQuote(config.sonnetModel)}`,
+			`export ANTHROPIC_DEFAULT_HAIKU_MODEL=${shellSingleQuote(config.haikuModel)}`,
+			`export ANTHROPIC_SMALL_FAST_MODEL=${shellSingleQuote(config.smallFastModel)}`,
+			`export ANTHROPIC_MODEL=${shellSingleQuote(config.defaultModel)}`
 		].join('\n') + '\n'
 	);
 }

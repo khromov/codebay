@@ -67,9 +67,10 @@ function writeBridgeHeader(
 	);
 }
 
-/** True when settings.json carries this instance's attention hooks (the id rides the curl URL). */
+/** Matches the delimited `id=<id>&state=` fragment of the hook's curl URL, so no other instance id can match by substring. */
 export function hasAttentionHook(settings: Record<string, unknown> | null, id: string): boolean {
-	return settings !== null && JSON.stringify(settings.hooks ?? null).includes(id);
+	if (settings === null) return false;
+	return JSON.stringify(settings.hooks ?? null).includes(`id=${encodeURIComponent(id)}&state=`);
 }
 
 export const attentionHooks: Injection = {
