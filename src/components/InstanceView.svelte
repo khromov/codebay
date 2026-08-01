@@ -25,8 +25,7 @@
 	// Pin to the newest output whenever logs grow — but only while following.
 	// tick() lets the <pre> text node grow before we scroll, so we reach the true bottom.
 	$effect(() => {
-		logs; // track appended chunks
-		if (!following) return;
+		if (!following || logs.length === 0) return; // reading logs.length tracks appended chunks
 		tick().then(() => {
 			if (following) logEl?.scrollTo(0, logEl.scrollHeight);
 		});
