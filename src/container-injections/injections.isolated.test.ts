@@ -11,7 +11,8 @@ import { gitIdentity, gitIdentityEnabled, readGitIdentity } from './git-identity
 import { manualModelConfig } from './claude-code-models.ts';
 import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
 import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
-import { extractScriptPath } from './claude-statusline.ts';
+import { expandTilde, extractScriptPath } from './claude-statusline.ts';
+import { homedir } from 'node:os';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
 
 describe('injection registry', () => {
@@ -531,6 +532,17 @@ describe('ghHostBlock', () => {
 	});
 });
 
+describe('expandTilde', () => {
+	test('expands a leading ~/ against the home directory', () => {
+		expect(expandTilde('~/statusline.sh')).toBe(join(homedir(), 'statusline.sh'));
+	});
+
+	test('leaves absolute and non-tilde paths untouched', () => {
+		expect(expandTilde('/abs/path')).toBe('/abs/path');
+		expect(expandTilde('relative/path')).toBe('relative/path');
+	});
+});
+
 describe('extractScriptPath', () => {
 	test('returns null for a bare package-runner command with no file reference', () => {
 		expect(extractScriptPath('npx ccstatusline@latest')).toBeNull();
@@ -543,6 +555,24 @@ describe('extractScriptPath', () => {
 	test('finds an existing absolute-path token amid other arguments', () => {
 		// Use a file guaranteed to exist without depending on codebay-specific state.
 		expect(extractScriptPath(`bash ${import.meta.path} --flag`)).toBe(import.meta.path);
+	});
+
+	// jq's `//` operator and a bare `/` resolve to the root dir with existsSync — but they're
+	// not files, so an inline command must not be mistaken for a script-file reference.
+	test('ignores jq operators and division in an inline command', () => {
+		const inline =
+			`input=$(cat); model=$(echo "$input" | jq -r '.model.display_name // "Unknown model"'); ` +
+			`cost=$(echo "$input" | jq -r '(.cost.total_cost_usd // 0) | . * 100 | round / 100')`;
+		expect(extractScriptPath(inline)).toBeNull();
+	});
+
+	test('ignores a root or directory token that is not a regular file', () => {
+		expect(extractScriptPath('cat / done')).toBeNull();
+		expect(extractScriptPath('x // y')).toBeNull();
+	});
+
+	test('returns null for a missing ~/ script path', () => {
+		expect(extractScriptPath('~/definitely-missing-xyz.sh')).toBeNull();
 	});
 });
 
