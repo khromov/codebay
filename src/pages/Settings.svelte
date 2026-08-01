@@ -21,6 +21,12 @@
 		customEndpointHaikuModel,
 		customEndpointSmallFastModel,
 		customEndpointModel,
+		manualModelOverrideEnabled,
+		manualOpusModel,
+		manualSonnetModel,
+		manualHaikuModel,
+		manualSmallFastModel,
+		manualModel,
 		hostEnvVarsEnabled,
 		hostEnvVarNames,
 		hostEnvVarPresence,
@@ -43,6 +49,12 @@
 		customEndpointHaikuModel: string;
 		customEndpointSmallFastModel: string;
 		customEndpointModel: string;
+		manualModelOverrideEnabled: boolean;
+		manualOpusModel: string;
+		manualSonnetModel: string;
+		manualHaikuModel: string;
+		manualSmallFastModel: string;
+		manualModel: string;
 		hostEnvVarsEnabled: boolean;
 		hostEnvVarNames: string[];
 		hostEnvVarPresence: Record<string, boolean>;
@@ -68,6 +80,12 @@
 	{customEndpointHaikuModel}
 	{customEndpointSmallFastModel}
 	{customEndpointModel}
+	{manualModelOverrideEnabled}
+	{manualOpusModel}
+	{manualSonnetModel}
+	{manualHaikuModel}
+	{manualSmallFastModel}
+	{manualModel}
 	{hostEnvVarsEnabled}
 	{hostEnvVarNames}
 	{hostEnvVarPresence}

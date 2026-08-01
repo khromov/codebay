@@ -11,6 +11,7 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Hammer from '@lucide/svelte/icons/hammer';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import Cpu from '@lucide/svelte/icons/cpu';
 	import Variable from '@lucide/svelte/icons/variable';
 	import Plus from '@lucide/svelte/icons/plus';
 	import X from '@lucide/svelte/icons/x';
@@ -45,6 +46,12 @@
 		customEndpointHaikuModel,
 		customEndpointSmallFastModel,
 		customEndpointModel,
+		manualModelOverrideEnabled,
+		manualOpusModel,
+		manualSonnetModel,
+		manualHaikuModel,
+		manualSmallFastModel,
+		manualModel,
 		hostEnvVarsEnabled,
 		hostEnvVarNames,
 		hostEnvVarPresence,
@@ -67,6 +74,12 @@
 		customEndpointHaikuModel: string;
 		customEndpointSmallFastModel: string;
 		customEndpointModel: string;
+		manualModelOverrideEnabled: boolean;
+		manualOpusModel: string;
+		manualSonnetModel: string;
+		manualHaikuModel: string;
+		manualSmallFastModel: string;
+		manualModel: string;
 		hostEnvVarsEnabled: boolean;
 		hostEnvVarNames: string[];
 		hostEnvVarPresence: Record<string, boolean>;
@@ -294,7 +307,11 @@
 	const customEndpointToggleOpts = toggleOpts({
 		set: (v) => (customEndpoint = v),
 		setSaving: (v) => (savingCustomToggle = v),
-		setError: (v) => (customToggleError = v)
+		setError: (v) => (customToggleError = v),
+		// Enabling LiteLLM disables the manual override server-side; keep the UI in sync.
+		onSuccess: (data) => {
+			if ((data as { enabled?: boolean } | undefined)?.enabled) manualModelOverride = false;
+		}
 	});
 
 	// svelte-ignore state_referenced_locally
@@ -352,6 +369,49 @@
 			customModelsMsg = 'Saved.';
 		}
 	});
+
+	// svelte-ignore state_referenced_locally
+	let manualModelOverride = $state(manualModelOverrideEnabled);
+	let savingManualModelToggle = $state(false);
+	let manualModelToggleError = $state<string | null>(null);
+
+	const manualModelToggleOpts = toggleOpts({
+		set: (v) => (manualModelOverride = v),
+		setSaving: (v) => (savingManualModelToggle = v),
+		setError: (v) => (manualModelToggleError = v),
+		// Enabling this disables LiteLLM server-side; mirror that here so the UI stays consistent.
+		onSuccess: (data) => {
+			if ((data as { enabled?: boolean } | undefined)?.enabled) customEndpoint = false;
+		}
+	});
+
+	// svelte-ignore state_referenced_locally
+	let manualOpus = $state(manualOpusModel);
+	// svelte-ignore state_referenced_locally
+	let manualSonnet = $state(manualSonnetModel);
+	// svelte-ignore state_referenced_locally
+	let manualHaiku = $state(manualHaikuModel);
+	// svelte-ignore state_referenced_locally
+	let manualSmallFast = $state(manualSmallFastModel);
+	// svelte-ignore state_referenced_locally
+	let manualDefault = $state(manualModel);
+	let savingManualModels = $state(false);
+	let manualModelsMsg = $state<string | null>(null);
+	let manualModelsError = $state<string | null>(null);
+
+	const manualModelsOpts = saveOpts({
+		setSaving: (v) => (savingManualModels = v),
+		setError: (v) => (manualModelsError = v),
+		setMsg: (v) => (manualModelsMsg = v),
+		onSuccess: () => {
+			manualModelsMsg = 'Saved.';
+		}
+	});
+
+	// LiteLLM is incompatible with both manual tokens and the manual model override.
+	let litellmBlocker = $derived(
+		manualTokens ? 'Set tokens manually' : manualModelOverride ? 'Override models manually' : null
+	);
 
 	// Only names round-trip; `hostEnvPresence` is refreshed from each save response so a
 	// newly-added name doesn't read as "missing" until the next full page load.
@@ -794,7 +854,7 @@
 			{/if}
 		</section>
 
-		<section class="card" class:disabled-card={manualTokens}>
+		<section class="card" class:disabled-card={litellmBlocker}>
 			<form
 				class="row"
 				method="POST"
@@ -806,13 +866,13 @@
 					<div class="text">
 						<div class="name">
 							LiteLLM + Bedrock
-							{#if manualTokens}
-								<span class="arch" title="Disabled while Set tokens manually is on">disabled</span>
+							{#if litellmBlocker}
+								<span class="arch" title="Disabled while {litellmBlocker} is on">disabled</span>
 							{/if}
 						</div>
 						<div class="desc">
-							{#if manualTokens}
-								Not available while "Set tokens manually" is enabled — these modes are mutually
+							{#if litellmBlocker}
+								Not available while "{litellmBlocker}" is enabled — these modes are mutually
 								incompatible.
 							{:else}
 								Route <code>claude</code> through a LiteLLM proxy fronting AWS Bedrock instead of Anthropic's
@@ -827,7 +887,7 @@
 						type="checkbox"
 						name="enabled"
 						checked={customEndpoint}
-						disabled={savingCustomToggle || manualTokens}
+						disabled={savingCustomToggle || !!litellmBlocker}
 						onchange={(e) => {
 							customEndpoint = e.currentTarget.checked;
 							e.currentTarget.form?.requestSubmit();
@@ -1003,6 +1063,149 @@
 						<div class="msg error">{customModelsError}</div>
 					{:else if customModelsMsg}
 						<div class="msg ok">{customModelsMsg}</div>
+					{/if}
+				</form>
+			{/if}
+		</section>
+
+		<section class="card" class:disabled-card={customEndpoint}>
+			<form
+				class="row"
+				method="POST"
+				action="?/manualModelToggle"
+				{@attach enhance(manualModelToggleOpts)}
+			>
+				<div class="label">
+					<Cpu size={18} />
+					<div class="text">
+						<div class="name">
+							Override models manually
+							{#if customEndpoint}
+								<span class="arch" title="Disabled while LiteLLM + Bedrock is on">disabled</span>
+							{/if}
+						</div>
+						<div class="desc">
+							{#if customEndpoint}
+								Not available while "LiteLLM + Bedrock" is enabled — these modes are mutually
+								incompatible.
+							{:else}
+								Pin which model <code>claude</code> uses on the standard (subscription) path. Only
+								the fields you fill are injected into new containers as
+								<code>ANTHROPIC_*_MODEL</code>
+								variables; blanks fall through to Claude Code's own defaults.
+							{/if}
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={manualModelOverride}
+						disabled={savingManualModelToggle || customEndpoint}
+						onchange={(e) => {
+							manualModelOverride = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if manualModelToggleError}
+				<div class="sub"><div class="msg error">{manualModelToggleError}</div></div>
+			{/if}
+
+			{#if manualModelOverride}
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/manualModels"
+					{@attach enhance(manualModelsOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Model IDs</div>
+							<div class="desc">
+								A model name or alias per tier, e.g. <code>opusplan</code>, <code>opus</code>,
+								<code>sonnet</code>, or a full
+								<code>claude-…</code> id. Leave a field blank to skip it.
+							</div>
+						</div>
+					</div>
+					<div class="model-fields">
+						<label class="model-row">
+							<span class="model-label">Opus</span>
+							<input
+								type="text"
+								name="opusModel"
+								class="image-input"
+								bind:value={manualOpus}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Sonnet</span>
+							<input
+								type="text"
+								name="sonnetModel"
+								class="image-input"
+								bind:value={manualSonnet}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Haiku</span>
+							<input
+								type="text"
+								name="haikuModel"
+								class="image-input"
+								bind:value={manualHaiku}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Small/fast</span>
+							<input
+								type="text"
+								name="smallFastModel"
+								class="image-input"
+								bind:value={manualSmallFast}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Default</span>
+							<input
+								type="text"
+								name="defaultModel"
+								class="image-input"
+								bind:value={manualDefault}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<div class="model-save-row">
+							<Button type="submit" disabled={savingManualModels}>Save models</Button>
+						</div>
+					</div>
+					{#if manualModelsError}
+						<div class="msg error">{manualModelsError}</div>
+					{:else if manualModelsMsg}
+						<div class="msg ok">{manualModelsMsg}</div>
 					{/if}
 				</form>
 			{/if}
