@@ -11,6 +11,7 @@
 	import { enhance } from 'mochi-framework';
 	import type { MochiEnhanceOptions } from 'mochi-framework';
 	import { onBackLinkClick, installPopupBackTrap } from '../lib/popup-nav.ts';
+	import { tick } from 'svelte';
 
 	let { id, injectionChecks = 0 }: { id: string; injectionChecks?: number } = $props();
 
@@ -18,11 +19,30 @@
 	let health = $state<InstanceHealth | null>(null);
 	let lastFetchedAt = $state<number | null>(null);
 	let logs = $state('');
+	let logEl = $state<HTMLDivElement | null>(null);
+	let following = $state(true);
 
-	// Runs after the DOM updates, so scrollHeight is fresh without a tick().
-	function autoscroll(node: HTMLDivElement) {
-		void logs; // the dependency this effect exists for
-		node.scrollTop = node.scrollHeight;
+	// Pin to the newest output whenever logs grow — but only while following.
+	// tick() lets the <pre> text node grow before we scroll, so we reach the true bottom.
+	$effect(() => {
+		logs; // track appended chunks
+		if (!following) return;
+		tick().then(() => {
+			if (following) logEl?.scrollTo(0, logEl.scrollHeight);
+		});
+	});
+
+	// A user scrolling up pauses following; programmatic scroll-to-bottom keeps the
+	// gap ~0, so it never trips this — only re-clicking "Follow log" resumes.
+	function onLogScroll() {
+		if (!logEl) return;
+		const gap = logEl.scrollHeight - logEl.clientHeight - logEl.scrollTop;
+		if (gap > 40) following = false;
+	}
+
+	function toggleFollow() {
+		following = !following;
+		if (following) logEl?.scrollTo(0, logEl.scrollHeight);
 	}
 
 	$effect(() => installPopupBackTrap());
@@ -234,11 +254,16 @@
 	<div class="logwrap panel">
 		<div class="log-bar panel-bar">
 			<span>Boot log</span>
-			<button class="copy" onclick={copyLogs} disabled={!logs}>
-				{copied ? 'Copied!' : 'Copy logs'}
-			</button>
+			<div class="log-actions">
+				<button class="copy" class:active={following} onclick={toggleFollow}>
+					{following ? 'Following' : 'Follow log'}
+				</button>
+				<button class="copy" onclick={copyLogs} disabled={!logs}>
+					{copied ? 'Copied!' : 'Copy logs'}
+				</button>
+			</div>
 		</div>
-		<div class="logs" {@attach autoscroll}>
+		<div class="logs" bind:this={logEl} onscroll={onLogScroll}>
 			<pre>{logs || 'Waiting for output…'}<span class="caret"></span></pre>
 		</div>
 		{#if instance?.status === 'error' && instance.error}
@@ -504,6 +529,11 @@
 		align-items: center;
 		justify-content: space-between;
 	}
+	.log-actions {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
 	.copy {
 		font-family: var(--font-mono);
 		font-weight: 600;
@@ -517,6 +547,10 @@
 		cursor: pointer;
 	}
 	.copy:hover:not(:disabled) {
+		background: transparent;
+		color: var(--bg);
+	}
+	.copy.active {
 		background: transparent;
 		color: var(--bg);
 	}
