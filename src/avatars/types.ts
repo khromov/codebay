@@ -5,6 +5,7 @@
 export type AvatarArt = {
 	name: string; // also the uniqueness key
 	pixels: string[];
+	robot?: boolean; // true for the original AI-generated sprites, slated to be redrawn by hand
 };
 
 export const OFF = 0;

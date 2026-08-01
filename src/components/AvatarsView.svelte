@@ -3,6 +3,7 @@
 	import AppBar from './AppBar.svelte';
 	import Avatar from './Avatar.svelte';
 	import AvatarEditor from './AvatarEditor.svelte';
+	import Bot from '@lucide/svelte/icons/bot';
 	import { avatars } from '../avatars/index.ts';
 
 	let { namePlaceholder }: { namePlaceholder: string } = $props();
@@ -25,7 +26,12 @@
 				{#each avatars as art (art.name)}
 					<li>
 						<Avatar {art} name={art.name} scale={8} interactive />
-						<span class="label">{art.name}</span>
+						<span class="label">
+							{art.name}
+							{#if art.robot}
+								<span class="robot-mark" title="AI-generated"><Bot size={11} /></span>
+							{/if}
+						</span>
 					</li>
 				{/each}
 			</ul>
@@ -106,10 +112,18 @@
 		gap: 8px;
 	}
 	.label {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 		font-family: var(--font-mono);
 		font-size: 11px;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		color: var(--ink-soft);
+	}
+	/* Flags the original AI-generated sprites, which are slated to be redrawn by hand. */
+	.robot-mark {
+		display: inline-flex;
+		color: var(--ink-faint);
 	}
 </style>

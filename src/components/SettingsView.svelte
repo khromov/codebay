@@ -5,6 +5,7 @@
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import Volume2 from '@lucide/svelte/icons/volume-2';
 	import PawPrint from '@lucide/svelte/icons/paw-print';
+	import Bot from '@lucide/svelte/icons/bot';
 	import SunMoon from '@lucide/svelte/icons/sun-moon';
 	import ThemePicker from './ThemePicker.svelte';
 	import Layers from '@lucide/svelte/icons/layers';
@@ -1553,11 +1554,14 @@
 								class="pet"
 								class:selected={art.name === petArt.name}
 								disabled={savingPet}
-								title={art.name}
-								aria-label={art.name}
+								title={art.robot ? `${art.name} (AI-generated)` : art.name}
+								aria-label={art.robot ? `${art.name} (AI-generated)` : art.name}
 								aria-pressed={art.name === petArt.name}
 							>
 								<Avatar {art} name={art.name} scale={4} />
+								{#if art.robot}
+									<span class="robot-badge"><Bot size={12} /></span>
+								{/if}
 							</button>
 						</form>
 					{/each}
@@ -1789,6 +1793,7 @@
 		cursor: progress;
 	}
 	.pet {
+		position: relative;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -1797,6 +1802,15 @@
 		background: transparent;
 		border: 1px solid transparent;
 		cursor: pointer;
+	}
+	/* Marks the original AI-generated sprites so we can tell them apart while redrawing. */
+	.robot-badge {
+		position: absolute;
+		top: 1px;
+		right: 1px;
+		display: flex;
+		color: var(--ink-faint);
+		pointer-events: none;
 	}
 	.pet:hover {
 		border-color: var(--rule);
