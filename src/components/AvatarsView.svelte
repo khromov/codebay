@@ -27,10 +27,10 @@
 					<li>
 						<Avatar {art} name={art.name} scale={8} interactive />
 						<span class="label">
-							{art.name}
 							{#if art.robot}
 								<span class="robot-mark" title="AI-generated"><Bot size={11} /></span>
 							{/if}
+							{art.name}
 						</span>
 					</li>
 				{/each}
