@@ -35,6 +35,8 @@ bun run dev        # dev server, local ./.codebay DATA_DIR, no browser launch
 bun run checks     # format + typecheck + tests
 ```
 
+The repo also ships a minimal Bun devcontainer (`.devcontainer/`) for a containerized setup. New to authoring devcontainers? See the general [Devcontainer guide](./DEVCONTAINER_GUIDE.md).
+
 ## License
 
 MIT

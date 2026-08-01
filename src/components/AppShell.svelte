@@ -114,6 +114,19 @@
 		return () => window.removeEventListener('popstate', onPop);
 	});
 
+	// Native unsaved-changes guard: a reload/close/external-nav tears down the code-server
+	// iframes and loses in-editor state. In-app /↔/ide transitions are pushState (no unload)
+	// and Settings/Details links open in new tabs, so this only fires on a true teardown.
+	$effect(() => {
+		if (running.length === 0) return;
+		function onBeforeUnload(e: BeforeUnloadEvent) {
+			e.preventDefault();
+			e.returnValue = '';
+		}
+		window.addEventListener('beforeunload', onBeforeUnload);
+		return () => window.removeEventListener('beforeunload', onBeforeUnload);
+	});
+
 	// Mounted lazily, then kept mounted (hidden via CSS) so the editor survives tab switches.
 	const visited = new SvelteSet<string>();
 	$effect(() => {

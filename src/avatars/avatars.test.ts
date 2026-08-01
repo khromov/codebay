@@ -21,6 +21,49 @@ describe('avatar catalog', () => {
 		expect(names.every((n) => n.length > 0)).toBe(true);
 		expect(new Set(names).size).toBe(names.length);
 	});
+
+	// Pins the flagged set to the original AI batch (commit fda8e80) so the mapping can't drift.
+	test('robot flag marks exactly the original AI-generated sprites', () => {
+		const original = [
+			'anchor',
+			'bear',
+			'bee',
+			'cat',
+			'cherry',
+			'crab',
+			'crown',
+			'diamond',
+			'dog',
+			'fish',
+			'flower',
+			'fox',
+			'frog',
+			'ghost',
+			'heart',
+			'invader',
+			'key',
+			'lightning',
+			'mushroom',
+			'octopus',
+			'owl',
+			'penguin',
+			'planet',
+			'rabbit',
+			'robot',
+			'rocket',
+			'skull',
+			'snail',
+			'star',
+			'target',
+			'tree',
+			'whale'
+		].sort();
+		const flagged = avatars
+			.filter((a) => a.robot)
+			.map((a) => a.name)
+			.sort();
+		expect(flagged).toEqual(original);
+	});
 });
 
 describe('findAvatar', () => {
