@@ -4,6 +4,7 @@
 	import Power from '@lucide/svelte/icons/power';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import Volume2 from '@lucide/svelte/icons/volume-2';
+	import PawPrint from '@lucide/svelte/icons/paw-print';
 	import SunMoon from '@lucide/svelte/icons/sun-moon';
 	import ThemePicker from './ThemePicker.svelte';
 	import Layers from '@lucide/svelte/icons/layers';
@@ -11,6 +12,8 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Hammer from '@lucide/svelte/icons/hammer';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import UserCog from '@lucide/svelte/icons/user-cog';
+	import Cpu from '@lucide/svelte/icons/cpu';
 	import Variable from '@lucide/svelte/icons/variable';
 	import Plus from '@lucide/svelte/icons/plus';
 	import X from '@lucide/svelte/icons/x';
@@ -22,16 +25,23 @@
 	import { playChime, unlockAudio } from '../sound.ts';
 	import Button from './Button.svelte';
 	import CoinButton from './CoinButton.svelte';
+	import Avatar from './Avatar.svelte';
+	import { avatars, findAvatar, type AvatarArt } from '../avatars/index.ts';
+	import { installPopupBackTrap } from '../lib/popup-nav.ts';
 
 	/** Every settings form action fails with the same `{ error }` shape. */
 	type ActionFailure = { error: string };
 
 	let {
+		pet,
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
 		copyIgnorePatterns,
 		builtinCopyIgnore,
+		gitIdentityEnabled,
+		gitIdentityName,
+		gitIdentityEmail,
 		dockerArch,
 		manualTokensEnabled,
 		githubTokenSet,
@@ -44,16 +54,26 @@
 		customEndpointHaikuModel,
 		customEndpointSmallFastModel,
 		customEndpointModel,
+		manualModelOverrideEnabled,
+		manualOpusModel,
+		manualSonnetModel,
+		manualHaikuModel,
+		manualSmallFastModel,
+		manualModel,
 		hostEnvVarsEnabled,
 		hostEnvVarNames,
 		hostEnvVarPresence,
 		version
 	}: {
+		pet?: AvatarArt;
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
 		copyIgnorePatterns: string;
 		builtinCopyIgnore: string;
+		gitIdentityEnabled: boolean;
+		gitIdentityName: string;
+		gitIdentityEmail: string;
 		dockerArch: string | null;
 		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
@@ -66,6 +86,12 @@
 		customEndpointHaikuModel: string;
 		customEndpointSmallFastModel: string;
 		customEndpointModel: string;
+		manualModelOverrideEnabled: boolean;
+		manualOpusModel: string;
+		manualSonnetModel: string;
+		manualHaikuModel: string;
+		manualSmallFastModel: string;
+		manualModel: string;
 		hostEnvVarsEnabled: boolean;
 		hostEnvVarNames: string[];
 		hostEnvVarPresence: Record<string, boolean>;
@@ -75,7 +101,15 @@
 	// Defaults to on during SSR, where localStorage doesn't exist.
 	let sound = $state(soundEnabled());
 
+	// DB-backed, so it initializes from the prop. Undefined is the off state — the header keeps its box logo.
+	// svelte-ignore state_referenced_locally
+	let petArt = $state(pet);
+	let savingPet = $state(false);
+	let petError = $state<string | null>(null);
+
 	let shuttingDown = $state(false);
+
+	$effect(() => installPopupBackTrap());
 
 	/** Reused by every plain save form below; only the per-control state setters differ. */
 	function saveOpts<Success extends Record<string, unknown> = Record<string, unknown>>(handlers: {
@@ -186,6 +220,37 @@
 		copyIgnoreFormEl?.requestSubmit();
 	}
 
+	// svelte-ignore state_referenced_locally
+	let gitIdentity = $state(gitIdentityEnabled);
+	let savingGitToggle = $state(false);
+	let gitToggleError = $state<string | null>(null);
+
+	const gitIdentityToggleOpts = toggleOpts({
+		set: (v) => (gitIdentity = v),
+		setSaving: (v) => (savingGitToggle = v),
+		setError: (v) => (gitToggleError = v)
+	});
+
+	// Both fields must be saved together — a lone name or email doesn't count as an override.
+	// svelte-ignore state_referenced_locally
+	let gitName = $state(gitIdentityName);
+	// svelte-ignore state_referenced_locally
+	let gitEmail = $state(gitIdentityEmail);
+	let savingGitIdentity = $state(false);
+	let gitIdentityError = $state<string | null>(null);
+	let gitIdentitySaved = $state(false);
+
+	const gitIdentityOpts = saveOpts<{ name: string; email: string }>({
+		setSaving: (v) => (savingGitIdentity = v),
+		setError: (v) => (gitIdentityError = v),
+		setMsg: (v) => (gitIdentitySaved = !!v),
+		onSuccess: (data) => {
+			gitName = data?.name ?? gitName;
+			gitEmail = data?.email ?? gitEmail;
+			gitIdentitySaved = true;
+		}
+	});
+
 	// DB-backed rather than localStorage, so it initializes from the prop.
 	// svelte-ignore state_referenced_locally
 	let noCache = $state(disableBuildCache);
@@ -291,7 +356,11 @@
 	const customEndpointToggleOpts = toggleOpts({
 		set: (v) => (customEndpoint = v),
 		setSaving: (v) => (savingCustomToggle = v),
-		setError: (v) => (customToggleError = v)
+		setError: (v) => (customToggleError = v),
+		// Enabling LiteLLM disables the manual override server-side; keep the UI in sync.
+		onSuccess: (data) => {
+			if ((data as { enabled?: boolean } | undefined)?.enabled) manualModelOverride = false;
+		}
 	});
 
 	// svelte-ignore state_referenced_locally
@@ -349,6 +418,49 @@
 			customModelsMsg = 'Saved.';
 		}
 	});
+
+	// svelte-ignore state_referenced_locally
+	let manualModelOverride = $state(manualModelOverrideEnabled);
+	let savingManualModelToggle = $state(false);
+	let manualModelToggleError = $state<string | null>(null);
+
+	const manualModelToggleOpts = toggleOpts({
+		set: (v) => (manualModelOverride = v),
+		setSaving: (v) => (savingManualModelToggle = v),
+		setError: (v) => (manualModelToggleError = v),
+		// Enabling this disables LiteLLM server-side; mirror that here so the UI stays consistent.
+		onSuccess: (data) => {
+			if ((data as { enabled?: boolean } | undefined)?.enabled) customEndpoint = false;
+		}
+	});
+
+	// svelte-ignore state_referenced_locally
+	let manualOpus = $state(manualOpusModel);
+	// svelte-ignore state_referenced_locally
+	let manualSonnet = $state(manualSonnetModel);
+	// svelte-ignore state_referenced_locally
+	let manualHaiku = $state(manualHaikuModel);
+	// svelte-ignore state_referenced_locally
+	let manualSmallFast = $state(manualSmallFastModel);
+	// svelte-ignore state_referenced_locally
+	let manualDefault = $state(manualModel);
+	let savingManualModels = $state(false);
+	let manualModelsMsg = $state<string | null>(null);
+	let manualModelsError = $state<string | null>(null);
+
+	const manualModelsOpts = saveOpts({
+		setSaving: (v) => (savingManualModels = v),
+		setError: (v) => (manualModelsError = v),
+		setMsg: (v) => (manualModelsMsg = v),
+		onSuccess: () => {
+			manualModelsMsg = 'Saved.';
+		}
+	});
+
+	// LiteLLM is incompatible with both manual tokens and the manual model override.
+	let litellmBlocker = $derived(
+		manualTokens ? 'Set tokens manually' : manualModelOverride ? 'Override models manually' : null
+	);
 
 	// Only names round-trip; `hostEnvPresence` is refreshed from each save response so a
 	// newly-added name doesn't read as "missing" until the next full page load.
@@ -443,6 +555,34 @@
 		if (on) playChime('done');
 	}
 
+	// State is object-shaped (the chosen sprite), so this can't reuse the boolean `toggleOpts`.
+	const petToggleOpts: MochiEnhanceOptions<{ enabled: boolean; name?: string }, ActionFailure> = {
+		onPending: (v) => (savingPet = v),
+		submit: () => {
+			petError = null;
+			return ({ result }) => {
+				if (result.type === 'success') {
+					petArt = result.data?.name ? findAvatar(result.data.name) : undefined;
+					return;
+				}
+				petError =
+					result.type === 'failure'
+						? (result.data?.error ?? 'Request failed')
+						: 'Network error. Try again.';
+			};
+		}
+	};
+
+	function petChooseOpts(art: AvatarArt) {
+		return saveOpts<{ name: string }>({
+			setSaving: (v) => (savingPet = v),
+			setError: (v) => (petError = v),
+			onSuccess: (data) => {
+				petArt = (data?.name ? findAvatar(data.name) : undefined) ?? art;
+			}
+		});
+	}
+
 	// The server exits mid-flight, so a dropped connection means success here too.
 	const shutdownOpts: MochiEnhanceOptions<Record<string, never>, ActionFailure> = {
 		submit: ({ cancel }) => {
@@ -474,7 +614,7 @@
 				{@attach enhance(imageOpts)}
 			>
 				<div class="label">
-					<Container size={18} />
+					<Container size={20} />
 					<div class="text">
 						<div class="name">
 							Default container image
@@ -535,7 +675,7 @@
 				{@attach enhance(copyIgnoreOpts)}
 			>
 				<div class="label">
-					<FolderMinus size={18} />
+					<FolderMinus size={20} />
 					<div class="text">
 						<div class="name">Skip when copying a local folder</div>
 						<div class="desc">
@@ -578,11 +718,103 @@
 			<form
 				class="row"
 				method="POST"
+				action="?/gitIdentityToggle"
+				{@attach enhance(gitIdentityToggleOpts)}
+			>
+				<div class="label">
+					<UserCog size={20} />
+					<div class="text">
+						<div class="name">Override git identity</div>
+						<div class="desc">
+							Inject a name and email as <code>git config --global user.name/user.email</code> in every
+							new container, taking precedence over the host's own git config. When off, each container
+							falls back to the host's identity.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={gitIdentity}
+						disabled={savingGitToggle}
+						onchange={(e) => {
+							gitIdentity = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if gitToggleError}
+				<div class="sub"><div class="msg error">{gitToggleError}</div></div>
+			{/if}
+
+			{#if gitIdentity}
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/gitIdentityOverride"
+					{@attach enhance(gitIdentityOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Identity</div>
+							<div class="desc">
+								Both fields are required — leave either blank and the container falls back to the
+								host's identity.
+							</div>
+						</div>
+					</div>
+					<div class="model-fields">
+						<label class="model-row">
+							<span class="model-label">Name</span>
+							<input
+								type="text"
+								name="name"
+								class="image-input"
+								bind:value={gitName}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								placeholder="Jane Doe"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Email</span>
+							<input
+								type="text"
+								name="email"
+								class="image-input"
+								bind:value={gitEmail}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								placeholder="jane@example.com"
+							/>
+						</label>
+						<div class="model-save-row">
+							<Button type="submit" disabled={savingGitIdentity}>Save</Button>
+						</div>
+					</div>
+					{#if gitIdentityError}
+						<div class="msg error">{gitIdentityError}</div>
+					{:else if gitIdentitySaved}
+						<div class="msg ok">Saved.</div>
+					{/if}
+				</form>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
 				action="?/disableBuildCache"
 				{@attach enhance(buildCacheToggleOpts)}
 			>
 				<div class="label">
-					<Layers size={18} />
+					<Layers size={20} />
 					<div class="text">
 						<div class="name">Disable build cache</div>
 						<div class="desc">
@@ -616,7 +848,7 @@
 				{@attach enhance(clearCacheOpts)}
 			>
 				<div class="label">
-					<Trash2 size={18} />
+					<Trash2 size={20} />
 					<div class="text">
 						<div class="name">Clear build cache</div>
 						<div class="desc">
@@ -642,7 +874,7 @@
 				{@attach enhance(rebuildAllOpts)}
 			>
 				<div class="label">
-					<Hammer size={18} />
+					<Hammer size={20} />
 					<div class="text">
 						<div class="name">Rebuild running containers (no cache)</div>
 						<div class="desc">
@@ -670,7 +902,7 @@
 				{@attach enhance(manualTokensToggleOpts)}
 			>
 				<div class="label">
-					<KeyRound size={18} />
+					<KeyRound size={20} />
 					<div class="text">
 						<div class="name">
 							Set tokens manually
@@ -791,7 +1023,7 @@
 			{/if}
 		</section>
 
-		<section class="card" class:disabled-card={manualTokens}>
+		<section class="card" class:disabled-card={litellmBlocker}>
 			<form
 				class="row"
 				method="POST"
@@ -799,17 +1031,17 @@
 				{@attach enhance(customEndpointToggleOpts)}
 			>
 				<div class="label">
-					<KeyRound size={18} />
+					<KeyRound size={20} />
 					<div class="text">
 						<div class="name">
 							LiteLLM + Bedrock
-							{#if manualTokens}
-								<span class="arch" title="Disabled while Set tokens manually is on">disabled</span>
+							{#if litellmBlocker}
+								<span class="arch" title="Disabled while {litellmBlocker} is on">disabled</span>
 							{/if}
 						</div>
 						<div class="desc">
-							{#if manualTokens}
-								Not available while "Set tokens manually" is enabled — these modes are mutually
+							{#if litellmBlocker}
+								Not available while "{litellmBlocker}" is enabled — these modes are mutually
 								incompatible.
 							{:else}
 								Route <code>claude</code> through a LiteLLM proxy fronting AWS Bedrock instead of Anthropic's
@@ -824,7 +1056,7 @@
 						type="checkbox"
 						name="enabled"
 						checked={customEndpoint}
-						disabled={savingCustomToggle || manualTokens}
+						disabled={savingCustomToggle || !!litellmBlocker}
 						onchange={(e) => {
 							customEndpoint = e.currentTarget.checked;
 							e.currentTarget.form?.requestSubmit();
@@ -1005,6 +1237,149 @@
 			{/if}
 		</section>
 
+		<section class="card" class:disabled-card={customEndpoint}>
+			<form
+				class="row"
+				method="POST"
+				action="?/manualModelToggle"
+				{@attach enhance(manualModelToggleOpts)}
+			>
+				<div class="label">
+					<Cpu size={18} />
+					<div class="text">
+						<div class="name">
+							Override models manually
+							{#if customEndpoint}
+								<span class="arch" title="Disabled while LiteLLM + Bedrock is on">disabled</span>
+							{/if}
+						</div>
+						<div class="desc">
+							{#if customEndpoint}
+								Not available while "LiteLLM + Bedrock" is enabled — these modes are mutually
+								incompatible.
+							{:else}
+								Pin which model <code>claude</code> uses on the standard (subscription) path. Only
+								the fields you fill are injected into new containers as
+								<code>ANTHROPIC_*_MODEL</code>
+								variables; blanks fall through to Claude Code's own defaults.
+							{/if}
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={manualModelOverride}
+						disabled={savingManualModelToggle || customEndpoint}
+						onchange={(e) => {
+							manualModelOverride = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if manualModelToggleError}
+				<div class="sub"><div class="msg error">{manualModelToggleError}</div></div>
+			{/if}
+
+			{#if manualModelOverride}
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/manualModels"
+					{@attach enhance(manualModelsOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Model IDs</div>
+							<div class="desc">
+								A model name or alias per tier, e.g. <code>opusplan</code>, <code>opus</code>,
+								<code>sonnet</code>, or a full
+								<code>claude-…</code> id. Leave a field blank to skip it.
+							</div>
+						</div>
+					</div>
+					<div class="model-fields">
+						<label class="model-row">
+							<span class="model-label">Opus</span>
+							<input
+								type="text"
+								name="opusModel"
+								class="image-input"
+								bind:value={manualOpus}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Sonnet</span>
+							<input
+								type="text"
+								name="sonnetModel"
+								class="image-input"
+								bind:value={manualSonnet}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Haiku</span>
+							<input
+								type="text"
+								name="haikuModel"
+								class="image-input"
+								bind:value={manualHaiku}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Small/fast</span>
+							<input
+								type="text"
+								name="smallFastModel"
+								class="image-input"
+								bind:value={manualSmallFast}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Default</span>
+							<input
+								type="text"
+								name="defaultModel"
+								class="image-input"
+								bind:value={manualDefault}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<div class="model-save-row">
+							<Button type="submit" disabled={savingManualModels}>Save models</Button>
+						</div>
+					</div>
+					{#if manualModelsError}
+						<div class="msg error">{manualModelsError}</div>
+					{:else if manualModelsMsg}
+						<div class="msg ok">{manualModelsMsg}</div>
+					{/if}
+				</form>
+			{/if}
+		</section>
+
 		<section class="card">
 			<form
 				class="row"
@@ -1013,7 +1388,7 @@
 				{@attach enhance(hostEnvVarsToggleOpts)}
 			>
 				<div class="label">
-					<Variable size={18} />
+					<Variable size={20} />
 					<div class="text">
 						<div class="name">Host environment variables</div>
 						<div class="desc">
@@ -1111,7 +1486,7 @@
 		<section class="card">
 			<div class="row">
 				<div class="label">
-					<SunMoon size={18} />
+					<SunMoon size={20} />
 					<div class="text">
 						<div class="name">Theme</div>
 						<div class="desc">
@@ -1126,7 +1501,7 @@
 		<section class="card">
 			<div class="row">
 				<div class="label">
-					<Volume2 size={18} />
+					<Volume2 size={20} />
 					<div class="text">
 						<div class="name">Attention sound</div>
 						<div class="desc">
@@ -1145,10 +1520,55 @@
 			</div>
 		</section>
 
+		<section class="card">
+			<form class="row" method="POST" action="?/petToggle" {@attach enhance(petToggleOpts)}>
+				<div class="label">
+					<PawPrint size={18} />
+					<div class="text">
+						<div class="name">Pet logo</div>
+						<div class="desc">Swap the box in the header for a pixel pet.</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={!!petArt}
+						disabled={savingPet}
+						onchange={(e) => e.currentTarget.form?.requestSubmit()}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if petError}
+				<div class="sub"><div class="msg error">{petError}</div></div>
+			{/if}
+			{#if petArt}
+				<div class="sub pets">
+					{#each avatars as art (art.name)}
+						<form method="POST" action="?/petChoose" {@attach enhance(petChooseOpts(art))}>
+							<input type="hidden" name="name" value={art.name} />
+							<button
+								type="submit"
+								class="pet"
+								class:selected={art.name === petArt.name}
+								disabled={savingPet}
+								title={art.name}
+								aria-label={art.name}
+								aria-pressed={art.name === petArt.name}
+							>
+								<Avatar {art} name={art.name} scale={4} />
+							</button>
+						</form>
+					{/each}
+				</div>
+			{/if}
+		</section>
+
 		<section class="card danger-card">
 			<form class="row" method="POST" action="?/shutdown" {@attach enhance(shutdownOpts)}>
 				<div class="label">
-					<Power size={18} />
+					<Power size={20} />
 					<div class="text">
 						<div class="name">Delete database, containers, and shut down</div>
 						<div class="desc">
@@ -1270,6 +1690,10 @@
 		color: var(--ink);
 		min-width: 0;
 	}
+	/* Keep the leading icon at its intrinsic size; the flex row would otherwise shrink busier glyphs below 18px. */
+	.label > :global(svg) {
+		flex: none;
+	}
 	.text {
 		min-width: 0;
 	}
@@ -1350,6 +1774,40 @@
 	}
 	.msg.ok {
 		color: var(--ink-soft);
+	}
+	/* auto-fill so the grid reflows as the catalog grows, with no column count to keep in sync. */
+	.pets {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+		gap: 6px;
+	}
+	/* Each pet is wrapped in its own form; let the button stay the grid item. */
+	.pets form {
+		display: contents;
+	}
+	.pet:disabled {
+		cursor: progress;
+	}
+	.pet {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 4px;
+		appearance: none;
+		background: transparent;
+		border: 1px solid transparent;
+		cursor: pointer;
+	}
+	.pet:hover {
+		border-color: var(--rule);
+	}
+	.pet.selected {
+		border-color: var(--attn-done);
+		background: var(--switch-on-bg);
+	}
+	.pet:focus-visible {
+		outline: 2px solid var(--ink);
+		outline-offset: 1px;
 	}
 	.switch {
 		position: relative;

@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -15,7 +15,7 @@ interface StatusLineConfig {
 	script?: string;
 }
 
-async function readHostClaudeSettings(): Promise<Record<string, unknown> | null> {
+export async function readHostClaudeSettings(): Promise<Record<string, unknown> | null> {
 	const file = join(homedir(), '.claude', 'settings.json');
 	if (!existsSync(file)) return null;
 	try {
@@ -25,9 +25,23 @@ async function readHostClaudeSettings(): Promise<Record<string, unknown> | null>
 	}
 }
 
-/** A heuristic: a statusLine command is either a script path or a package runner with no file. */
+export const expandTilde = (p: string): string =>
+	p.startsWith('~/') ? join(homedir(), p.slice(2)) : p;
+
+/** Only a real file counts — else jq's `//` operator and a bare `/` resolve to the root dir. */
+const isExistingFile = (p: string): boolean => {
+	try {
+		return statSync(p).isFile();
+	} catch {
+		return false;
+	}
+};
+
+/** A heuristic: a statusLine command is either a script path or an inline snippet with no file. */
 export function extractScriptPath(command: string): string | null {
-	const token = command.split(/\s+/).find((t) => t.startsWith('/') && existsSync(t));
+	const token = command
+		.split(/\s+/)
+		.find((t) => (t.startsWith('/') || t.startsWith('~/')) && isExistingFile(expandTilde(t)));
 	return token ?? null;
 }
 
@@ -37,16 +51,17 @@ export async function readStatusLineConfig(): Promise<StatusLineConfig | null> {
 	const statusLine = settings?.statusLine as { type?: string; command?: string } | undefined;
 	if (!statusLine || statusLine.type !== 'command' || !statusLine.command) return null;
 
-	const hostPath = extractScriptPath(statusLine.command);
-	if (!hostPath) return { statusLine };
+	const token = extractScriptPath(statusLine.command);
+	if (!token) return { statusLine };
 
 	let script: string;
 	try {
-		script = await readFile(hostPath, 'utf8');
+		script = await readFile(expandTilde(token), 'utf8');
 	} catch {
-		return null;
+		// A false-positive match must not disable the feature — inject the command verbatim.
+		return { statusLine };
 	}
-	const command = statusLine.command.replaceAll(hostPath, CONTAINER_SCRIPT_PATH);
+	const command = statusLine.command.replaceAll(token, CONTAINER_SCRIPT_PATH);
 	return { statusLine: { ...statusLine, command }, script };
 }
 

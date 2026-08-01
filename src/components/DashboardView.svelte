@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { type Instance, type Preflight } from '../types.ts';
+	import type { AvatarArt } from '../avatars/index.ts';
 	import FolderBrowser from './FolderBrowser.svelte';
 	import InstanceCard from './InstanceCard.svelte';
 	import TopBar from './TopBar.svelte';
@@ -11,8 +12,9 @@
 	let {
 		preflight,
 		instances,
-		loaded
-	}: { preflight: Preflight; instances: Instance[]; loaded: boolean } = $props();
+		loaded,
+		pet
+	}: { preflight: Preflight; instances: Instance[]; loaded: boolean; pet?: AvatarArt } = $props();
 
 	let browserOpen = $state(false);
 	let creating = $state(false);
@@ -99,6 +101,7 @@
 
 <TopBar
 	auth={preflight.auth}
+	{pet}
 	canDelete={instances.length > 0}
 	{ready}
 	{creating}
