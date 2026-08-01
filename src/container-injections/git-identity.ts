@@ -12,8 +12,20 @@ function readGitConfig(key: string): Promise<string | null> {
 	return spawnCapture(['git', 'config', '--global', '--get', key]);
 }
 
+/**
+ * The toggle is the source of truth, but predates the option: an unset value falls
+ * back to "on when both fields are already filled" so existing overrides keep working.
+ */
+export function gitIdentityEnabled(): boolean {
+	const explicit = getOption('git_identity_enabled');
+	if (explicit === '1') return true;
+	if (explicit === '0') return false;
+	return !!(getOption('git_identity_name')?.trim() && getOption('git_identity_email')?.trim());
+}
+
 /** Both fields are required together — a lone name or email is treated as not configured. */
 function overrideIdentity(): GitIdentity | null {
+	if (!gitIdentityEnabled()) return null;
 	const name = getOption('git_identity_name')?.trim() || '';
 	const email = getOption('git_identity_email')?.trim() || '';
 	return name && email ? { name, email } : null;

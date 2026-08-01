@@ -7,7 +7,7 @@ import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings } from './attention-hooks.ts';
 import { isValid, LIVE_CREDENTIALS_TEST, tokenCredentials } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
-import { gitIdentity, readGitIdentity } from './git-identity.ts';
+import { gitIdentity, gitIdentityEnabled, readGitIdentity } from './git-identity.ts';
 import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
 import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
 import { extractScriptPath } from './claude-statusline.ts';
@@ -243,11 +243,13 @@ describe('customEndpointConfig', () => {
 
 describe('git identity override', () => {
 	beforeEach(() => {
+		setOption('git_identity_enabled', '');
 		setOption('git_identity_name', '');
 		setOption('git_identity_email', '');
 	});
 
 	afterEach(() => {
+		setOption('git_identity_enabled', '');
 		setOption('git_identity_name', '');
 		setOption('git_identity_email', '');
 	});
@@ -257,6 +259,21 @@ describe('git identity override', () => {
 		setOption('git_identity_email', 'jane@example.com');
 		const identity = await readGitIdentity();
 		expect(identity).toEqual({ name: 'Jane Doe', email: 'jane@example.com' });
+	});
+
+	test('an explicit off toggle falls back to the host even with both fields set', async () => {
+		setOption('git_identity_enabled', '0');
+		setOption('git_identity_name', 'Jane Doe');
+		setOption('git_identity_email', 'jane@example.com');
+		expect(gitIdentityEnabled()).toBe(false);
+		const identity = await readGitIdentity();
+		expect(identity?.name).not.toBe('Jane Doe');
+	});
+
+	test('the toggle defaults on when both fields are already filled', () => {
+		setOption('git_identity_name', 'Jane Doe');
+		setOption('git_identity_email', 'jane@example.com');
+		expect(gitIdentityEnabled()).toBe(true);
 	});
 
 	test('a lone name with no email is not treated as an override', async () => {

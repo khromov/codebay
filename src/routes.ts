@@ -19,6 +19,7 @@ import {
 	DEFAULT_SONNET_MODEL
 } from './container-injections/claude-code-custom.ts';
 import { hostEnvVarPresence, parseHostEnvVarNames } from './container-injections/host-env-vars.ts';
+import { gitIdentityEnabled } from './container-injections/git-identity.ts';
 import { browse } from './lib/picker.server.ts';
 import { pickNamePrompt } from './avatars/name-prompts.ts';
 import {
@@ -166,6 +167,7 @@ export const routes: Record<string, MochiRouteValue> = {
 				builtinCopyIgnore: DEFAULT_COPY_IGNORE,
 				// Not secrets, so the actual values (not just a "set" flag) go to the client.
 				// Blank means "no override" — fall back to the host's git config.
+				gitIdentityEnabled: gitIdentityEnabled(),
 				gitIdentityName: getOption('git_identity_name') ?? '',
 				gitIdentityEmail: getOption('git_identity_email') ?? '',
 				dockerArch: await dockerArch(),
@@ -214,10 +216,19 @@ export const routes: Record<string, MochiRouteValue> = {
 				return success({ patterns });
 			},
 
-			// Both fields must be saved together — a lone name or email is treated as not configured.
+			gitIdentityToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('git_identity_enabled', enabled ? '1' : '0');
+				return success({ enabled });
+			},
+			// Both fields are required — the toggle governs whether the override applies, so a
+			// half-filled or empty identity is never a valid saved state.
 			gitIdentityOverride: ({ formData }) => {
 				const name = str(formData, 'name');
 				const email = str(formData, 'email');
+				if (!name || !email) {
+					return fail(400, { error: 'Both name and email are required.' });
+				}
 				setOption('git_identity_name', name);
 				setOption('git_identity_email', email);
 				return success({ name, email });
