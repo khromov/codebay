@@ -42,7 +42,7 @@ export function appendLinesScript(files: ContainerFile[]): string {
 	);
 }
 
-/** Returns the file's contents, or null when it's absent or empty. */
+/** Returns the file's contents, or null when it's absent or empty. Note: `execInContainer` trims captured output, so leading/trailing whitespace (incl. trailing newlines) is stripped and a whitespace-only file reads as null — fine for JSON callers, but don't use this where exact bytes matter. */
 export async function readContainerFile(
 	target: ExecTarget,
 	file: ContainerFile
