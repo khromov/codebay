@@ -321,6 +321,13 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			error: null
 		});
 
+		// updateInstance writes the DB, not `row`; mirror the fields so `target.instance`
+		// (e.g. remote_workspace_folder, which claude-trust keys on) isn't the stale pre-boot row.
+		row.container_id = result.containerId;
+		row.remote_workspace_folder = result.remoteWorkspaceFolder ?? null;
+		row.remote_user = result.remoteUser ?? null;
+		row.status = 'running';
+
 		const target = {
 			containerId: result.containerId,
 			remoteUser: result.remoteUser,
