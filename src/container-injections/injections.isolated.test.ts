@@ -8,6 +8,7 @@ import { attentionHookSettings } from './attention-hooks.ts';
 import { isValid, LIVE_CREDENTIALS_TEST, tokenCredentials } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
 import { gitIdentity, gitIdentityEnabled, readGitIdentity } from './git-identity.ts';
+import { manualModelConfig } from './claude-code-models.ts';
 import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
 import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
 import { extractScriptPath } from './claude-statusline.ts';
@@ -300,6 +301,87 @@ describe('git identity override', () => {
 		setOption('git_identity_email', 'jane@example.com');
 		const status = await gitIdentity.auth!.status();
 		expect(status).toEqual({ available: true, source: 'Settings override — Jane Doe' });
+	});
+});
+
+describe('manualModelConfig', () => {
+	const MODEL_KEYS = [
+		'manual_opus_model',
+		'manual_sonnet_model',
+		'manual_haiku_model',
+		'manual_small_fast_model',
+		'manual_model'
+	];
+	function reset() {
+		setOption('manual_model_override_enabled', '0');
+		setOption('custom_endpoint_enabled', '0');
+		for (const k of MODEL_KEYS) setOption(k, '');
+	}
+	beforeEach(reset);
+	afterEach(reset);
+
+	test('returns null when the override is disabled', () => {
+		setOption('manual_model', 'opus');
+		expect(manualModelConfig()).toBeNull();
+	});
+
+	test('returns null when LiteLLM is enabled (mutually exclusive)', () => {
+		setOption('manual_model_override_enabled', '1');
+		setOption('custom_endpoint_enabled', '1');
+		setOption('manual_model', 'opus');
+		expect(manualModelConfig()).toBeNull();
+	});
+
+	test('returns null when enabled but every field is blank', () => {
+		setOption('manual_model_override_enabled', '1');
+		expect(manualModelConfig()).toBeNull();
+	});
+
+	test('exports only the filled fields, mapped to their env vars', () => {
+		setOption('manual_model_override_enabled', '1');
+		setOption('manual_model', 'opusplan');
+		setOption('manual_small_fast_model', 'haiku');
+		expect(manualModelConfig()).toEqual({
+			ANTHROPIC_MODEL: 'opusplan',
+			ANTHROPIC_SMALL_FAST_MODEL: 'haiku'
+		});
+	});
+
+	test('maps all five tiers when fully filled', () => {
+		setOption('manual_model_override_enabled', '1');
+		setOption('manual_opus_model', 'o');
+		setOption('manual_sonnet_model', 's');
+		setOption('manual_haiku_model', 'h');
+		setOption('manual_small_fast_model', 'sf');
+		setOption('manual_model', 'd');
+		expect(manualModelConfig()).toEqual({
+			ANTHROPIC_DEFAULT_OPUS_MODEL: 'o',
+			ANTHROPIC_DEFAULT_SONNET_MODEL: 's',
+			ANTHROPIC_DEFAULT_HAIKU_MODEL: 'h',
+			ANTHROPIC_SMALL_FAST_MODEL: 'sf',
+			ANTHROPIC_MODEL: 'd'
+		});
+	});
+});
+
+describe('claude-code-models registry', () => {
+	test('is present regardless of the custom-endpoint toggle (self-guards at apply time)', () => {
+		setOption('custom_endpoint_enabled', '0');
+		expect(resolveInjections().map((i) => i.id)).toContain('claude-code-models');
+		setOption('custom_endpoint_enabled', '1');
+		setOption('custom_endpoint_base_url', 'https://litellm.example.com/bedrock');
+		setOption('custom_endpoint_token', 'sk-test');
+		expect(resolveInjections().map((i) => i.id)).toContain('claude-code-models');
+		setOption('custom_endpoint_enabled', '0');
+		setOption('custom_endpoint_base_url', '');
+		setOption('custom_endpoint_token', '');
+	});
+
+	test('carries no auth chip and no health check', () => {
+		const models = injections.find((i) => i.id === 'claude-code-models');
+		expect(models).toBeDefined();
+		expect(models!.auth).toBeUndefined();
+		expect(models!.check).toBeUndefined();
 	});
 });
 
