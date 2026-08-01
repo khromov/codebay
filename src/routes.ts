@@ -19,10 +19,13 @@ import {
 	DEFAULT_SONNET_MODEL
 } from './container-injections/claude-code-custom.ts';
 import { hostEnvVarPresence, parseHostEnvVarNames } from './container-injections/host-env-vars.ts';
+import { gitIdentityEnabled } from './container-injections/git-identity.ts';
 import { browse } from './lib/picker.server.ts';
 import { pickNamePrompt } from './avatars/name-prompts.ts';
+import { avatars, findAvatar } from './avatars/index.ts';
 import {
 	addForwardedPort,
+	broadcastPet,
 	createInstance,
 	deleteAllInstances,
 	deleteDatabaseAndShutdown,
@@ -75,6 +78,11 @@ async function preflight() {
 	return { docker, cli, auth };
 }
 
+/** The header pet logo, resolved from the DB option. A name that left the catalog reads as "off". */
+function currentPet() {
+	return findAvatar(getOption('pet') ?? undefined);
+}
+
 /** Lets a route handler just `throw` for both validation and business-logic failures. */
 async function mutate(fn: () => Promise<unknown> | unknown): Promise<Response> {
 	try {
@@ -111,7 +119,8 @@ export const routes: Record<string, MochiRouteValue> = {
 		serverProps: async () => ({
 			preflight: await preflight(),
 			initialPath: '/',
-			snapshot: await listInstances()
+			snapshot: await listInstances(),
+			pet: currentPet()
 		})
 	}),
 
@@ -121,7 +130,8 @@ export const routes: Record<string, MochiRouteValue> = {
 			return {
 				preflight: await preflight(),
 				initialPath: `/ide/${params.id}`,
-				snapshot: await listInstances()
+				snapshot: await listInstances(),
+				pet: currentPet()
 			};
 		}
 	}),
@@ -158,12 +168,18 @@ export const routes: Record<string, MochiRouteValue> = {
 			// Only names ever reach the client; presence is sent separately, values never.
 			const hostEnvVarNames = parseHostEnvVarNames(getOption('host_env_var_names'));
 			return {
+				pet: currentPet(),
 				defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
 				builtinImage: DEFAULT_IMAGE,
 				disableBuildCache: getOption('disable_build_cache') === '1',
 				// An explicit empty string (as opposed to unset) means "copy everything".
 				copyIgnorePatterns: getOption('copy_ignore_patterns') ?? DEFAULT_COPY_IGNORE,
 				builtinCopyIgnore: DEFAULT_COPY_IGNORE,
+				// Not secrets, so the actual values (not just a "set" flag) go to the client.
+				// Blank means "no override" — fall back to the host's git config.
+				gitIdentityEnabled: gitIdentityEnabled(),
+				gitIdentityName: getOption('git_identity_name') ?? '',
+				gitIdentityEmail: getOption('git_identity_email') ?? '',
 				dockerArch: await dockerArch(),
 				// Only whether each token is set — the page renders a placeholder from that.
 				manualTokensEnabled: getOption('manual_tokens_enabled') === '1',
@@ -182,6 +198,14 @@ export const routes: Record<string, MochiRouteValue> = {
 				customEndpointSmallFastModel:
 					getOption('custom_endpoint_small_fast_model') ?? DEFAULT_SMALL_FAST_MODEL,
 				customEndpointModel: getOption('custom_endpoint_model') ?? DEFAULT_MODEL,
+				// Manual model override (standard subscription path): toggle + five blank-by-default
+				// model IDs — only the ones the user fills get injected, so no Bedrock-default seeding.
+				manualModelOverrideEnabled: getOption('manual_model_override_enabled') === '1',
+				manualOpusModel: getOption('manual_opus_model') ?? '',
+				manualSonnetModel: getOption('manual_sonnet_model') ?? '',
+				manualHaikuModel: getOption('manual_haiku_model') ?? '',
+				manualSmallFastModel: getOption('manual_small_fast_model') ?? '',
+				manualModel: getOption('manual_model') ?? '',
 				hostEnvVarsEnabled: getOption('host_env_vars_enabled') === '1',
 				hostEnvVarNames,
 				hostEnvVarPresence: hostEnvVarPresence(hostEnvVarNames),
@@ -203,11 +227,55 @@ export const routes: Record<string, MochiRouteValue> = {
 				return success({ enabled });
 			},
 
+			// Turning the pet on with none chosen lands on a random sprite, so there's always one to adjust.
+			petToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				if (!enabled) {
+					setOption('pet', '');
+					broadcastPet(null);
+					return success({ enabled: false });
+				}
+				const current = getOption('pet');
+				const name =
+					current && findAvatar(current)
+						? current
+						: avatars[Math.floor(Math.random() * avatars.length)]!.name;
+				setOption('pet', name);
+				broadcastPet(name);
+				return success({ enabled: true, name });
+			},
+
+			petChoose: ({ formData }) => {
+				const name = str(formData, 'name');
+				if (!findAvatar(name)) return fail(400, { error: 'Unknown pet' });
+				setOption('pet', name);
+				broadcastPet(name);
+				return success({ name });
+			},
+
 			// Unlike defaultImage, an empty value is valid — it means "copy everything".
 			copyIgnorePatterns: ({ formData }) => {
 				const patterns = str(formData, 'patterns');
 				setOption('copy_ignore_patterns', patterns);
 				return success({ patterns });
+			},
+
+			gitIdentityToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('git_identity_enabled', enabled ? '1' : '0');
+				return success({ enabled });
+			},
+			// Both fields are required — the toggle governs whether the override applies, so a
+			// half-filled or empty identity is never a valid saved state.
+			gitIdentityOverride: ({ formData }) => {
+				const name = str(formData, 'name');
+				const email = str(formData, 'email');
+				if (!name || !email) {
+					return fail(400, { error: 'Both name and email are required.' });
+				}
+				setOption('git_identity_name', name);
+				setOption('git_identity_email', email);
+				return success({ name, email });
 			},
 
 			// Tokens are stored plaintext in the options table and never sent back to the client.
@@ -230,6 +298,8 @@ export const routes: Record<string, MochiRouteValue> = {
 			customEndpointToggle: ({ formData }) => {
 				const enabled = onChecked(formData, 'enabled');
 				setOption('custom_endpoint_enabled', enabled ? '1' : '0');
+				// LiteLLM and the manual model override own the same env vars — never both.
+				if (enabled) setOption('manual_model_override_enabled', '0');
 				return success({ enabled });
 			},
 			customBaseUrl: ({ formData }) => {
@@ -248,6 +318,22 @@ export const routes: Record<string, MochiRouteValue> = {
 				setOption('custom_endpoint_haiku_model', str(formData, 'haikuModel'));
 				setOption('custom_endpoint_small_fast_model', str(formData, 'smallFastModel'));
 				setOption('custom_endpoint_model', str(formData, 'defaultModel'));
+				return success({});
+			},
+
+			manualModelToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('manual_model_override_enabled', enabled ? '1' : '0');
+				// Reciprocal of customEndpointToggle — the two can't both drive model env vars.
+				if (enabled) setOption('custom_endpoint_enabled', '0');
+				return success({ enabled });
+			},
+			manualModels: ({ formData }) => {
+				setOption('manual_opus_model', str(formData, 'opusModel'));
+				setOption('manual_sonnet_model', str(formData, 'sonnetModel'));
+				setOption('manual_haiku_model', str(formData, 'haikuModel'));
+				setOption('manual_small_fast_model', str(formData, 'smallFastModel'));
+				setOption('manual_model', str(formData, 'defaultModel'));
 				return success({});
 			},
 

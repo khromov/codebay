@@ -3,6 +3,7 @@
 	import Component from '@lucide/svelte/icons/component';
 	import { isDev } from 'mochi-framework';
 	import type { AuthProvider } from '../types.ts';
+	import type { AvatarArt } from '../avatars/index.ts';
 	import Brand from './Brand.svelte';
 	import SettingsCog from './SettingsCog.svelte';
 	import CredMenu from './CredMenu.svelte';
@@ -11,6 +12,7 @@
 	// Action state is injected so the bar stays presentational and reusable on /debug.
 	let {
 		auth,
+		pet,
 		canDelete = false,
 		ready = true,
 		creating = false,
@@ -18,6 +20,7 @@
 		onDeleteAll
 	}: {
 		auth: AuthProvider[];
+		pet?: AvatarArt;
 		canDelete?: boolean;
 		ready?: boolean;
 		creating?: boolean;
@@ -27,7 +30,7 @@
 </script>
 
 <header class="topbar">
-	<Brand />
+	<Brand {pet} />
 	<div class="topbar-actions">
 		{#if isDev}
 			<Button variant="default" size="sm" icon={Component} href="/debug">Debug</Button>

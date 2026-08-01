@@ -7,9 +7,14 @@ import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings } from './attention-hooks.ts';
 import { isValid, LIVE_CREDENTIALS_TEST, tokenCredentials } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
+import { gitIdentity, gitIdentityEnabled, readGitIdentity } from './git-identity.ts';
+import { manualModelConfig } from './claude-code-models.ts';
 import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
 import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
-import { extractScriptPath } from './claude-statusline.ts';
+import { expandTilde, extractScriptPath } from './claude-statusline.ts';
+import { hostClaudeModel } from './claude-model.ts';
+import { NO_COAUTHOR_SETTINGS } from './claude-no-coauthor.ts';
+import { homedir } from 'node:os';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
 
 describe('injection registry', () => {
@@ -70,6 +75,13 @@ describe('injection registry', () => {
 		expect(statusline).toBeDefined();
 		expect(statusline!.auth).toBeDefined();
 		expect(typeof statusline!.check).toBe('function');
+	});
+
+	test('claude-model is registered with an auth chip and a health check', () => {
+		const model = injections.find((i) => i.id === 'claude-model');
+		expect(model).toBeDefined();
+		expect(model!.auth).toBeDefined();
+		expect(typeof model!.check).toBe('function');
 	});
 
 	test('host-env-vars is registered with a health check and no auth chip', () => {
@@ -240,6 +252,179 @@ describe('customEndpointConfig', () => {
 	});
 });
 
+describe('git identity override', () => {
+	beforeEach(() => {
+		setOption('git_identity_enabled', '');
+		setOption('git_identity_name', '');
+		setOption('git_identity_email', '');
+	});
+
+	afterEach(() => {
+		setOption('git_identity_enabled', '');
+		setOption('git_identity_name', '');
+		setOption('git_identity_email', '');
+	});
+
+	test('wins over host git config when both name and email are set', async () => {
+		setOption('git_identity_name', 'Jane Doe');
+		setOption('git_identity_email', 'jane@example.com');
+		const identity = await readGitIdentity();
+		expect(identity).toEqual({ name: 'Jane Doe', email: 'jane@example.com' });
+	});
+
+	test('an explicit off toggle falls back to the host even with both fields set', async () => {
+		setOption('git_identity_enabled', '0');
+		setOption('git_identity_name', 'Jane Doe');
+		setOption('git_identity_email', 'jane@example.com');
+		expect(gitIdentityEnabled()).toBe(false);
+		const identity = await readGitIdentity();
+		expect(identity?.name).not.toBe('Jane Doe');
+	});
+
+	test('the toggle defaults on when both fields are already filled', () => {
+		setOption('git_identity_name', 'Jane Doe');
+		setOption('git_identity_email', 'jane@example.com');
+		expect(gitIdentityEnabled()).toBe(true);
+	});
+
+	test('a lone name with no email is not treated as an override', async () => {
+		setOption('git_identity_name', 'Jane Doe');
+		const identity = await readGitIdentity();
+		expect(identity?.name).not.toBe('Jane Doe');
+	});
+
+	test('a lone email with no name is not treated as an override', async () => {
+		setOption('git_identity_email', 'jane@example.com');
+		const identity = await readGitIdentity();
+		expect(identity?.email).not.toBe('jane@example.com');
+	});
+
+	test('blank strings are treated the same as unset', async () => {
+		setOption('git_identity_name', '  ');
+		setOption('git_identity_email', '  ');
+		const identity = await readGitIdentity();
+		expect(identity?.name).not.toBe('  ');
+	});
+
+	test('auth.status() reports the Settings override as the source', async () => {
+		setOption('git_identity_name', 'Jane Doe');
+		setOption('git_identity_email', 'jane@example.com');
+		const status = await gitIdentity.auth!.status();
+		expect(status).toEqual({ available: true, source: 'Settings override — Jane Doe' });
+	});
+});
+
+describe('manualModelConfig', () => {
+	const MODEL_KEYS = [
+		'manual_opus_model',
+		'manual_sonnet_model',
+		'manual_haiku_model',
+		'manual_small_fast_model',
+		'manual_model'
+	];
+	function reset() {
+		setOption('manual_model_override_enabled', '0');
+		setOption('custom_endpoint_enabled', '0');
+		for (const k of MODEL_KEYS) setOption(k, '');
+	}
+	beforeEach(reset);
+	afterEach(reset);
+
+	test('returns null when the override is disabled', () => {
+		setOption('manual_model', 'opus');
+		expect(manualModelConfig()).toBeNull();
+	});
+
+	test('returns null when LiteLLM is enabled (mutually exclusive)', () => {
+		setOption('manual_model_override_enabled', '1');
+		setOption('custom_endpoint_enabled', '1');
+		setOption('manual_model', 'opus');
+		expect(manualModelConfig()).toBeNull();
+	});
+
+	test('returns null when enabled but every field is blank', () => {
+		setOption('manual_model_override_enabled', '1');
+		expect(manualModelConfig()).toBeNull();
+	});
+
+	test('exports only the filled fields, mapped to their env vars', () => {
+		setOption('manual_model_override_enabled', '1');
+		setOption('manual_model', 'opusplan');
+		setOption('manual_small_fast_model', 'haiku');
+		expect(manualModelConfig()).toEqual({
+			ANTHROPIC_MODEL: 'opusplan',
+			ANTHROPIC_SMALL_FAST_MODEL: 'haiku'
+		});
+	});
+
+	test('maps all five tiers when fully filled', () => {
+		setOption('manual_model_override_enabled', '1');
+		setOption('manual_opus_model', 'o');
+		setOption('manual_sonnet_model', 's');
+		setOption('manual_haiku_model', 'h');
+		setOption('manual_small_fast_model', 'sf');
+		setOption('manual_model', 'd');
+		expect(manualModelConfig()).toEqual({
+			ANTHROPIC_DEFAULT_OPUS_MODEL: 'o',
+			ANTHROPIC_DEFAULT_SONNET_MODEL: 's',
+			ANTHROPIC_DEFAULT_HAIKU_MODEL: 'h',
+			ANTHROPIC_SMALL_FAST_MODEL: 'sf',
+			ANTHROPIC_MODEL: 'd'
+		});
+	});
+});
+
+describe('hostClaudeModel', () => {
+	function reset() {
+		setOption('manual_model_override_enabled', '0');
+		setOption('custom_endpoint_enabled', '0');
+	}
+	beforeEach(reset);
+	afterEach(reset);
+
+	test('is null when the manual model override owns the model', async () => {
+		setOption('manual_model_override_enabled', '1');
+		expect(await hostClaudeModel()).toBeNull();
+	});
+
+	test('is null when LiteLLM owns the model', async () => {
+		setOption('custom_endpoint_enabled', '1');
+		expect(await hostClaudeModel()).toBeNull();
+	});
+});
+
+describe('NO_COAUTHOR_SETTINGS', () => {
+	test('suppresses the byline via both the root and nested attribution schemas', () => {
+		expect(NO_COAUTHOR_SETTINGS.includeCoAuthoredBy).toBe(false);
+		expect(NO_COAUTHOR_SETTINGS.attribution).toEqual({
+			commit: '',
+			pr: '',
+			includeCoAuthoredBy: false
+		});
+	});
+});
+
+describe('claude-code-models registry', () => {
+	test('is present regardless of the custom-endpoint toggle (self-guards at apply time)', () => {
+		setOption('custom_endpoint_enabled', '0');
+		expect(resolveInjections().map((i) => i.id)).toContain('claude-code-models');
+		setOption('custom_endpoint_enabled', '1');
+		setOption('custom_endpoint_base_url', 'https://litellm.example.com/bedrock');
+		setOption('custom_endpoint_token', 'sk-test');
+		expect(resolveInjections().map((i) => i.id)).toContain('claude-code-models');
+		setOption('custom_endpoint_enabled', '0');
+		setOption('custom_endpoint_base_url', '');
+		setOption('custom_endpoint_token', '');
+	});
+
+	test('carries no auth chip and no health check', () => {
+		const models = injections.find((i) => i.id === 'claude-code-models');
+		expect(models).toBeDefined();
+		expect(models!.auth).toBeUndefined();
+		expect(models!.check).toBeUndefined();
+	});
+});
+
 describe('parseHostEnvVarNames', () => {
 	test('returns an empty array for null/missing input', () => {
 		expect(parseHostEnvVarNames(null)).toEqual([]);
@@ -386,6 +571,17 @@ describe('ghHostBlock', () => {
 	});
 });
 
+describe('expandTilde', () => {
+	test('expands a leading ~/ against the home directory', () => {
+		expect(expandTilde('~/statusline.sh')).toBe(join(homedir(), 'statusline.sh'));
+	});
+
+	test('leaves absolute and non-tilde paths untouched', () => {
+		expect(expandTilde('/abs/path')).toBe('/abs/path');
+		expect(expandTilde('relative/path')).toBe('relative/path');
+	});
+});
+
 describe('extractScriptPath', () => {
 	test('returns null for a bare package-runner command with no file reference', () => {
 		expect(extractScriptPath('npx ccstatusline@latest')).toBeNull();
@@ -398,6 +594,24 @@ describe('extractScriptPath', () => {
 	test('finds an existing absolute-path token amid other arguments', () => {
 		// Use a file guaranteed to exist without depending on codebay-specific state.
 		expect(extractScriptPath(`bash ${import.meta.path} --flag`)).toBe(import.meta.path);
+	});
+
+	// jq's `//` operator and a bare `/` resolve to the root dir with existsSync — but they're
+	// not files, so an inline command must not be mistaken for a script-file reference.
+	test('ignores jq operators and division in an inline command', () => {
+		const inline =
+			`input=$(cat); model=$(echo "$input" | jq -r '.model.display_name // "Unknown model"'); ` +
+			`cost=$(echo "$input" | jq -r '(.cost.total_cost_usd // 0) | . * 100 | round / 100')`;
+		expect(extractScriptPath(inline)).toBeNull();
+	});
+
+	test('ignores a root or directory token that is not a regular file', () => {
+		expect(extractScriptPath('cat / done')).toBeNull();
+		expect(extractScriptPath('x // y')).toBeNull();
+	});
+
+	test('returns null for a missing ~/ script path', () => {
+		expect(extractScriptPath('~/definitely-missing-xyz.sh')).toBeNull();
 	});
 });
 

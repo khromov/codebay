@@ -1,8 +1,16 @@
 <script lang="ts">
 	import Settings from '@lucide/svelte/icons/settings';
+	import { withPopupMarker } from '../lib/popup-nav.ts';
 </script>
 
-<a class="cog" href="/settings" aria-label="Settings" title="Settings"><Settings size={16} /></a>
+<a
+	class="cog"
+	href={withPopupMarker('/settings')}
+	target="_blank"
+	rel="noopener noreferrer"
+	aria-label="Settings"
+	title="Settings"><Settings size={16} /></a
+>
 
 <style>
 	.cog {

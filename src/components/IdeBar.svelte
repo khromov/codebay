@@ -3,6 +3,7 @@
 	import Settings from '@lucide/svelte/icons/settings';
 	import Avatar from './Avatar.svelte';
 	import AppBar from './AppBar.svelte';
+	import { withPopupMarker } from '../lib/popup-nav.ts';
 
 	let {
 		running,
@@ -69,7 +70,14 @@
 			{/each}
 		</nav>
 	{/if}
-	<a class="cog" href="/settings" title="Settings" aria-label="Settings"><Settings size={18} /></a>
+	<a
+		class="cog"
+		href={withPopupMarker('/settings')}
+		target="_blank"
+		rel="noopener noreferrer"
+		title="Settings"
+		aria-label="Settings"><Settings size={18} /></a
+	>
 </AppBar>
 
 <style>

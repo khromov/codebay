@@ -10,6 +10,7 @@
 	import { apiPost, apiDelete } from '../api.ts';
 	import { enhance } from 'mochi-framework';
 	import type { MochiEnhanceOptions } from 'mochi-framework';
+	import { onBackLinkClick, installPopupBackTrap } from '../lib/popup-nav.ts';
 
 	let { id, injectionChecks = 0 }: { id: string; injectionChecks?: number } = $props();
 
@@ -23,6 +24,8 @@
 		void logs; // the dependency this effect exists for
 		node.scrollTop = node.scrollHeight;
 	}
+
+	$effect(() => installPopupBackTrap());
 
 	// Reset on every connect, because the server replays its whole buffer each time.
 	$effect(() =>
@@ -120,7 +123,7 @@
 </script>
 
 <header class="topbar">
-	<a class="back" href="/"><ArrowLeft size={15} /> All instances</a>
+	<a class="back" href="/" onclick={onBackLinkClick}><ArrowLeft size={15} /> All instances</a>
 	<div class="title">
 		<span class="name">{instance?.name ?? 'Instance'}</span>
 		{#if instance}
