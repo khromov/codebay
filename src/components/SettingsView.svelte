@@ -1123,8 +1123,8 @@
 						<div class="text">
 							<div class="name">Model IDs</div>
 							<div class="desc">
-								A model name or alias per tier, e.g. <code>opus</code>, <code>sonnet</code>, or a
-								full
+								A model name or alias per tier, e.g. <code>opusplan</code>, <code>opus</code>,
+								<code>sonnet</code>, or a full
 								<code>claude-…</code> id. Leave a field blank to skip it.
 							</div>
 						</div>
