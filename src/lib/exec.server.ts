@@ -84,9 +84,3 @@ export async function checkPresence(
 	const res = await execInContainer(target, { script, args, capture: true });
 	return res.ok && res.stdout === '1';
 }
-
-/** Only for secret-only files; injections mixing secret and non-secret content roll their own. */
-export function writeSecretFileScript(dirExpr: string, filename: string, mode = '600'): string {
-	const path = `${dirExpr}/${filename}`;
-	return `mkdir -p "${dirExpr}"; printf '%s' "$CODEBAY_STDIN" > "${path}"; chmod ${mode} "${path}";`;
-}

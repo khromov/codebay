@@ -1,5 +1,11 @@
 import { getOption } from '../lib/db.server.ts';
-import { checkPresence, execInContainer } from '../lib/exec.server.ts';
+import {
+	containerFileExists,
+	deepMerge,
+	editJsonFile,
+	installShellEnvFile
+} from '../lib/container-files.server.ts';
+import { CLAUDE_JSON_FILE } from '../lib/claude-settings.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 /** Mirrors the reference launcher script (claude-code.sh); each is overridable in Settings. */
@@ -35,57 +41,36 @@ export function customEndpointConfig(): {
 	};
 }
 
-const ENV_FILE = '~/.codebay-claude-env';
+const ENV_FILE_NAME = '.codebay-claude-env';
 
-/**
- * Non-secret values ride `args`, so nothing needs hand-quoting; only the token uses `stdin`.
- * The file mixes secret and non-secret content, hence no `writeSecretFileScript`.
- */
+/** The whole file (token included) rides `stdin` inside `installShellEnvFile`, so nothing hits argv. */
+function envFileContent(config: NonNullable<ReturnType<typeof customEndpointConfig>>): string {
+	return (
+		[
+			'export DISABLE_AUTOUPDATER=1',
+			'export CLAUDE_CODE_USE_BEDROCK=1',
+			'export CLAUDE_CODE_SKIP_BEDROCK_AUTH=1',
+			`export ANTHROPIC_BEDROCK_BASE_URL=${config.baseUrl}`,
+			`export ANTHROPIC_AUTH_TOKEN=${config.token}`,
+			`export ANTHROPIC_DEFAULT_OPUS_MODEL=${config.opusModel}`,
+			`export ANTHROPIC_DEFAULT_SONNET_MODEL=${config.sonnetModel}`,
+			`export ANTHROPIC_DEFAULT_HAIKU_MODEL=${config.haikuModel}`,
+			`export ANTHROPIC_SMALL_FAST_MODEL=${config.smallFastModel}`,
+			`export ANTHROPIC_MODEL=${config.defaultModel}`
+		].join('\n') + '\n'
+	);
+}
+
 async function injectCustomEndpoint(
 	target: ContainerTarget,
 	config: NonNullable<ReturnType<typeof customEndpointConfig>>
 ): Promise<{ ok: boolean; error?: string }> {
-	const script =
-		'set -e; f=$(eval echo "' +
-		ENV_FILE +
-		'"); ' +
-		'{ ' +
-		"printf '%s\\n' " +
-		"'export DISABLE_AUTOUPDATER=1' " +
-		"'export CLAUDE_CODE_USE_BEDROCK=1' " +
-		"'export CLAUDE_CODE_SKIP_BEDROCK_AUTH=1'; " +
-		'printf \'export ANTHROPIC_BEDROCK_BASE_URL=%s\\n\' "$1"; ' +
-		'printf \'export ANTHROPIC_AUTH_TOKEN=%s\\n\' "$CODEBAY_STDIN"; ' +
-		'printf \'export ANTHROPIC_DEFAULT_OPUS_MODEL=%s\\n\' "$2"; ' +
-		'printf \'export ANTHROPIC_DEFAULT_SONNET_MODEL=%s\\n\' "$3"; ' +
-		'printf \'export ANTHROPIC_DEFAULT_HAIKU_MODEL=%s\\n\' "$4"; ' +
-		'printf \'export ANTHROPIC_SMALL_FAST_MODEL=%s\\n\' "$5"; ' +
-		'printf \'export ANTHROPIC_MODEL=%s\\n\' "$6"; ' +
-		'} > "$f"; chmod 600 "$f"; ' +
-		// The grep guard keeps a re-apply from stacking duplicate source lines.
-		'h=$(eval echo ~$(id -un)); src="[ -f \\"$f\\" ] && . \\"$f\\""; ' +
-		'for rc in "$h/.bashrc" "$h/.zshrc"; do ' +
-		'grep -qF "$src" "$rc" 2>/dev/null || printf \'%s\\n\' "$src" >> "$rc"; ' +
-		'done; ' +
-		// `hasCompletedOnboarding` is what suppresses `claude`'s first-run wizard.
-		'h=$(eval echo ~$(id -un)); ' +
-		'cfg="${CLAUDE_CONFIG_DIR:+$CLAUDE_CONFIG_DIR/.claude.json}"; cfg="${cfg:-$h/.claude.json}"; ' +
-		'printf \'%s\' \'{"hasCompletedOnboarding":true}\' > "$cfg"; chmod 644 "$cfg"';
-
-	const res = await execInContainer(target, {
-		script,
-		stdin: config.token,
-		args: [
-			'claude-custom',
-			config.baseUrl,
-			config.opusModel,
-			config.sonnetModel,
-			config.haikuModel,
-			config.smallFastModel,
-			config.defaultModel
-		]
-	});
-	return res.ok ? { ok: true } : { ok: false, error: res.error };
+	const env = await installShellEnvFile(target, ENV_FILE_NAME, envFileContent(config));
+	if (!env.ok) return env;
+	// `hasCompletedOnboarding` is what suppresses `claude`'s first-run wizard.
+	return editJsonFile(target, CLAUDE_JSON_FILE, (cur) =>
+		deepMerge(cur, { hasCompletedOnboarding: true })
+	);
 }
 
 /** Replaces `claude-code-credentials` in the registry when the custom-endpoint setting is on. */
@@ -120,6 +105,6 @@ export const claudeCodeCustom: Injection = {
 	},
 
 	async check(target) {
-		return checkPresence(target, `f=$(eval echo "${ENV_FILE}"); [ -s "$f" ] && echo 1 || echo 0`);
+		return containerFileExists(target, { name: ENV_FILE_NAME });
 	}
 };

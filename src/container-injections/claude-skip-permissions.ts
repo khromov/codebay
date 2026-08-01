@@ -1,15 +1,8 @@
-import { checkPresence, execInContainer } from '../lib/exec.server.ts';
+import { checkPresence } from '../lib/exec.server.ts';
+import { appendLinesIfAbsent, SHELL_RC_FILES } from '../lib/container-files.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
 
 const ALIAS_LINE = "alias claude='claude --dangerously-skip-permissions'";
-
-/** Both rc files, since either shell may be the one code-server opens. */
-const APPLY_SCRIPT =
-	'h=$(eval echo ~$(id -un)); ' +
-	`line="${ALIAS_LINE}"; ` +
-	'for f in "$h/.bashrc" "$h/.zshrc"; do ' +
-	'grep -qF "$line" "$f" 2>/dev/null || printf \'%s\\n\' "$line" >> "$f"; ' +
-	'done';
 
 const CHECK_SCRIPT =
 	'h=$(eval echo ~$(id -un)); ' +
@@ -24,7 +17,7 @@ export const claudeSkipPermissions: Injection = {
 
 	async apply(target, log) {
 		log('Installing claude --dangerously-skip-permissions alias…\n');
-		const res = await execInContainer(target, { script: APPLY_SCRIPT });
+		const res = await appendLinesIfAbsent(target, SHELL_RC_FILES, [ALIAS_LINE]);
 		log(
 			res.ok
 				? '✓ claude skip-permissions alias installed\n'
