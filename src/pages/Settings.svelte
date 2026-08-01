@@ -9,6 +9,9 @@
 		disableBuildCache,
 		copyIgnorePatterns,
 		builtinCopyIgnore,
+		gitIdentityEnabled,
+		gitIdentityName,
+		gitIdentityEmail,
 		dockerArch,
 		manualTokensEnabled,
 		githubTokenSet,
@@ -21,6 +24,12 @@
 		customEndpointHaikuModel,
 		customEndpointSmallFastModel,
 		customEndpointModel,
+		manualModelOverrideEnabled,
+		manualOpusModel,
+		manualSonnetModel,
+		manualHaikuModel,
+		manualSmallFastModel,
+		manualModel,
 		hostEnvVarsEnabled,
 		hostEnvVarNames,
 		hostEnvVarPresence,
@@ -31,6 +40,9 @@
 		disableBuildCache: boolean;
 		copyIgnorePatterns: string;
 		builtinCopyIgnore: string;
+		gitIdentityEnabled: boolean;
+		gitIdentityName: string;
+		gitIdentityEmail: string;
 		dockerArch: string | null;
 		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
@@ -43,6 +55,12 @@
 		customEndpointHaikuModel: string;
 		customEndpointSmallFastModel: string;
 		customEndpointModel: string;
+		manualModelOverrideEnabled: boolean;
+		manualOpusModel: string;
+		manualSonnetModel: string;
+		manualHaikuModel: string;
+		manualSmallFastModel: string;
+		manualModel: string;
 		hostEnvVarsEnabled: boolean;
 		hostEnvVarNames: string[];
 		hostEnvVarPresence: Record<string, boolean>;
@@ -56,6 +74,9 @@
 	{disableBuildCache}
 	{copyIgnorePatterns}
 	{builtinCopyIgnore}
+	{gitIdentityEnabled}
+	{gitIdentityName}
+	{gitIdentityEmail}
 	{dockerArch}
 	{manualTokensEnabled}
 	{githubTokenSet}
@@ -68,6 +89,12 @@
 	{customEndpointHaikuModel}
 	{customEndpointSmallFastModel}
 	{customEndpointModel}
+	{manualModelOverrideEnabled}
+	{manualOpusModel}
+	{manualSonnetModel}
+	{manualHaikuModel}
+	{manualSmallFastModel}
+	{manualModel}
 	{hostEnvVarsEnabled}
 	{hostEnvVarNames}
 	{hostEnvVarPresence}

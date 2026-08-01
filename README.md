@@ -23,6 +23,10 @@ The UI opens at `http://localhost:6969`. State (SQLite DB + per-instance workspa
 - `CODEBAY_GITHUB_TOKEN` — GitHub token to inject instead of reading `gh auth token` from the host
 - `DISABLE_OPEN_BROWSER=1` — skip opening the browser on startup
 
+## Troubleshooting
+
+- `warn: incorrect peer dependency "svelte@5.56.8"` on startup — harmless. It comes from `svelte-french-toast`, whose published peer range predates Svelte 5; the library works correctly on Svelte 5. Nothing to fix.
+
 ## Development
 
 ```sh

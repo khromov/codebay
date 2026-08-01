@@ -1,12 +1,19 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import House from '@lucide/svelte/icons/house';
+	import { onBackLinkClick } from '../lib/popup-nav.ts';
 
 	let { children }: { children?: Snippet } = $props();
 </script>
 
 <header class="bar">
-	<a class="home" href="/" title="All instances" aria-label="All instances"><House size={18} /></a>
+	<a
+		class="home"
+		href="/"
+		title="All instances"
+		aria-label="All instances"
+		onclick={onBackLinkClick}><House size={18} /></a
+	>
 	{@render children?.()}
 </header>
 

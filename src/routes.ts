@@ -19,6 +19,7 @@ import {
 	DEFAULT_SONNET_MODEL
 } from './container-injections/claude-code-custom.ts';
 import { hostEnvVarPresence, parseHostEnvVarNames } from './container-injections/host-env-vars.ts';
+import { gitIdentityEnabled } from './container-injections/git-identity.ts';
 import { browse } from './lib/picker.server.ts';
 import { pickNamePrompt } from './avatars/name-prompts.ts';
 import {
@@ -164,6 +165,11 @@ export const routes: Record<string, MochiRouteValue> = {
 				// An explicit empty string (as opposed to unset) means "copy everything".
 				copyIgnorePatterns: getOption('copy_ignore_patterns') ?? DEFAULT_COPY_IGNORE,
 				builtinCopyIgnore: DEFAULT_COPY_IGNORE,
+				// Not secrets, so the actual values (not just a "set" flag) go to the client.
+				// Blank means "no override" — fall back to the host's git config.
+				gitIdentityEnabled: gitIdentityEnabled(),
+				gitIdentityName: getOption('git_identity_name') ?? '',
+				gitIdentityEmail: getOption('git_identity_email') ?? '',
 				dockerArch: await dockerArch(),
 				// Only whether each token is set — the page renders a placeholder from that.
 				manualTokensEnabled: getOption('manual_tokens_enabled') === '1',
@@ -182,6 +188,14 @@ export const routes: Record<string, MochiRouteValue> = {
 				customEndpointSmallFastModel:
 					getOption('custom_endpoint_small_fast_model') ?? DEFAULT_SMALL_FAST_MODEL,
 				customEndpointModel: getOption('custom_endpoint_model') ?? DEFAULT_MODEL,
+				// Manual model override (standard subscription path): toggle + five blank-by-default
+				// model IDs — only the ones the user fills get injected, so no Bedrock-default seeding.
+				manualModelOverrideEnabled: getOption('manual_model_override_enabled') === '1',
+				manualOpusModel: getOption('manual_opus_model') ?? '',
+				manualSonnetModel: getOption('manual_sonnet_model') ?? '',
+				manualHaikuModel: getOption('manual_haiku_model') ?? '',
+				manualSmallFastModel: getOption('manual_small_fast_model') ?? '',
+				manualModel: getOption('manual_model') ?? '',
 				hostEnvVarsEnabled: getOption('host_env_vars_enabled') === '1',
 				hostEnvVarNames,
 				hostEnvVarPresence: hostEnvVarPresence(hostEnvVarNames),
@@ -210,6 +224,24 @@ export const routes: Record<string, MochiRouteValue> = {
 				return success({ patterns });
 			},
 
+			gitIdentityToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('git_identity_enabled', enabled ? '1' : '0');
+				return success({ enabled });
+			},
+			// Both fields are required — the toggle governs whether the override applies, so a
+			// half-filled or empty identity is never a valid saved state.
+			gitIdentityOverride: ({ formData }) => {
+				const name = str(formData, 'name');
+				const email = str(formData, 'email');
+				if (!name || !email) {
+					return fail(400, { error: 'Both name and email are required.' });
+				}
+				setOption('git_identity_name', name);
+				setOption('git_identity_email', email);
+				return success({ name, email });
+			},
+
 			// Tokens are stored plaintext in the options table and never sent back to the client.
 			manualTokensToggle: ({ formData }) => {
 				const enabled = onChecked(formData, 'enabled');
@@ -230,6 +262,8 @@ export const routes: Record<string, MochiRouteValue> = {
 			customEndpointToggle: ({ formData }) => {
 				const enabled = onChecked(formData, 'enabled');
 				setOption('custom_endpoint_enabled', enabled ? '1' : '0');
+				// LiteLLM and the manual model override own the same env vars — never both.
+				if (enabled) setOption('manual_model_override_enabled', '0');
 				return success({ enabled });
 			},
 			customBaseUrl: ({ formData }) => {
@@ -248,6 +282,22 @@ export const routes: Record<string, MochiRouteValue> = {
 				setOption('custom_endpoint_haiku_model', str(formData, 'haikuModel'));
 				setOption('custom_endpoint_small_fast_model', str(formData, 'smallFastModel'));
 				setOption('custom_endpoint_model', str(formData, 'defaultModel'));
+				return success({});
+			},
+
+			manualModelToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('manual_model_override_enabled', enabled ? '1' : '0');
+				// Reciprocal of customEndpointToggle — the two can't both drive model env vars.
+				if (enabled) setOption('custom_endpoint_enabled', '0');
+				return success({ enabled });
+			},
+			manualModels: ({ formData }) => {
+				setOption('manual_opus_model', str(formData, 'opusModel'));
+				setOption('manual_sonnet_model', str(formData, 'sonnetModel'));
+				setOption('manual_haiku_model', str(formData, 'haikuModel'));
+				setOption('manual_small_fast_model', str(formData, 'smallFastModel'));
+				setOption('manual_model', str(formData, 'defaultModel'));
 				return success({});
 			},
 
