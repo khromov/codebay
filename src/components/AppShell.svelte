@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ideUrl, type Instance, type Preflight } from '../types.ts';
-	import type { AvatarArt } from '../avatars/index.ts';
+	import { findAvatar, type AvatarArt } from '../avatars/index.ts';
 	import { SvelteSet } from 'svelte/reactivity';
 	import DashboardView from './DashboardView.svelte';
 	import IdeBar from './IdeBar.svelte';
@@ -29,6 +29,9 @@
 	// Auth is preserved across stream updates because it's only ever probed at SSR.
 	// svelte-ignore state_referenced_locally
 	let livePreflight = $state<Preflight>(preflight);
+	// Seeded from SSR, then updated live so changing the pet in settings swaps the header without a reload.
+	// svelte-ignore state_referenced_locally
+	let livePet = $state<AvatarArt | undefined>(pet);
 	// svelte-ignore state_referenced_locally
 	let loaded = $state(snapshot.length > 0);
 	const running = $derived(instances.filter((i) => i.status === 'running'));
@@ -154,6 +157,10 @@
 					livePreflight = { ...livePreflight, docker: msg.data.docker, cli: msg.data.cli };
 					return;
 				}
+				if (msg.type === 'pet') {
+					livePet = findAvatar(msg.data.name ?? undefined);
+					return;
+				}
 				if (msg.type === 'health') {
 					// A tick in flight when a rebuild starts probes the *old* container and
 					// reports it accessible, which would mount the iframe against the replacement too early.
@@ -230,7 +237,7 @@
 			oncancelrename={cancelRename}
 		/>
 	{:else}
-		<DashboardView preflight={livePreflight} {instances} {loaded} {pet} />
+		<DashboardView preflight={livePreflight} {instances} {loaded} pet={livePet} />
 	{/if}
 
 	<!-- Always mounted, only hidden, so the iframes survive navigation. -->

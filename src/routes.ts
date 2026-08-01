@@ -25,6 +25,7 @@ import { pickNamePrompt } from './avatars/name-prompts.ts';
 import { avatars, findAvatar } from './avatars/index.ts';
 import {
 	addForwardedPort,
+	broadcastPet,
 	createInstance,
 	deleteAllInstances,
 	deleteDatabaseAndShutdown,
@@ -231,6 +232,7 @@ export const routes: Record<string, MochiRouteValue> = {
 				const enabled = onChecked(formData, 'enabled');
 				if (!enabled) {
 					setOption('pet', '');
+					broadcastPet(null);
 					return success({ enabled: false });
 				}
 				const current = getOption('pet');
@@ -239,6 +241,7 @@ export const routes: Record<string, MochiRouteValue> = {
 						? current
 						: avatars[Math.floor(Math.random() * avatars.length)]!.name;
 				setOption('pet', name);
+				broadcastPet(name);
 				return success({ enabled: true, name });
 			},
 
@@ -246,6 +249,7 @@ export const routes: Record<string, MochiRouteValue> = {
 				const name = str(formData, 'name');
 				if (!findAvatar(name)) return fail(400, { error: 'Unknown pet' });
 				setOption('pet', name);
+				broadcastPet(name);
 				return success({ name });
 			},
 

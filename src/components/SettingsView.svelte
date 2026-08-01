@@ -1526,9 +1526,7 @@
 					<PawPrint size={18} />
 					<div class="text">
 						<div class="name">Pet logo</div>
-						<div class="desc">
-							Swap the box in the header for a pixel pet. Takes effect on the next page load.
-						</div>
+						<div class="desc">Swap the box in the header for a pixel pet.</div>
 					</div>
 				</div>
 				<label class="switch">
@@ -1804,8 +1802,8 @@
 		border-color: var(--rule);
 	}
 	.pet.selected {
-		border-color: var(--ink);
-		background: var(--bg);
+		border-color: var(--attn-done);
+		background: var(--switch-on-bg);
 	}
 	.pet:focus-visible {
 		outline: 2px solid var(--ink);
