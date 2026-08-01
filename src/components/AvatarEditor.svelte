@@ -5,6 +5,7 @@
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import toast from 'svelte-french-toast';
 	import { ROWS, COLS, ON, OFF, GRAY, type AvatarArt } from '../avatars/types.ts';
+	import { MODES, nextValue, type Mode } from '../avatars/editor.ts';
 	import {
 		cellsToPixels,
 		normalizeName,
@@ -26,20 +27,23 @@
 	// Contributing needs a name and at least one lit pixel — a blank sprite is no sprite.
 	const canContribute = $derived(slug.length > 0 && cells.some((c) => c !== OFF));
 
-	// How a click sets a cell: black toggles off↔on, gray toggles off↔gray,
-	// cycle steps off→gray→on→off. Cycle is the default so both shades are reachable in one mode.
-	type Mode = 'black' | 'gray' | 'cycle';
+	// Cycle is the default so both shades are reachable without switching mode.
 	let mode = $state<Mode>('cycle');
-	const MODES: { id: Mode; label: string }[] = [
-		{ id: 'black', label: 'Black' },
-		{ id: 'gray', label: 'Gray' },
-		{ id: 'cycle', label: 'Cycle' }
-	];
+	let modeButtons = $state<HTMLButtonElement[]>([]);
 
-	function nextValue(current: number): number {
-		if (mode === 'black') return current === ON ? OFF : ON;
-		if (mode === 'gray') return current === GRAY ? OFF : GRAY;
-		return current === OFF ? GRAY : current === GRAY ? ON : OFF;
+	// Roving-tabindex arrow navigation, as a radiogroup is expected to behave.
+	function onModeKeydown(e: KeyboardEvent, i: number) {
+		const dir =
+			e.key === 'ArrowRight' || e.key === 'ArrowDown'
+				? 1
+				: e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+					? -1
+					: 0;
+		if (dir === 0) return;
+		e.preventDefault();
+		const next = (i + dir + MODES.length) % MODES.length;
+		mode = MODES[next]!.id;
+		modeButtons[next]?.focus();
 	}
 
 	// Capturing the pointer on the grid is what lets one stroke paint every cell it crosses.
@@ -67,7 +71,7 @@
 		if (i == null) return;
 		(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
 		painting = true;
-		paintValue = nextValue(cells[i]!);
+		paintValue = nextValue(mode, cells[i]!);
 		cells[i] = paintValue;
 	}
 
@@ -154,14 +158,17 @@
 			<div class="mode-field">
 				<span class="preview-label">Mode</span>
 				<div class="modes" role="radiogroup" aria-label="Drawing mode">
-					{#each MODES as m (m.id)}
+					{#each MODES as m, i (m.id)}
 						<button
 							type="button"
 							class="mode"
 							class:active={mode === m.id}
 							role="radio"
 							aria-checked={mode === m.id}
+							tabindex={mode === m.id ? 0 : -1}
+							bind:this={modeButtons[i]}
 							onclick={() => (mode = m.id)}
+							onkeydown={(e) => onModeKeydown(e, i)}
 						>
 							{m.label}
 						</button>
