@@ -52,7 +52,7 @@
 		"test": "bun test",
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
-		"checks": "bun run format && bun run typecheck && bun run test",
+		"checks": "bun run format && eslint . && bun run typecheck && bun run test",
 		"clean": "rimraf .mochi",
 		"gen:chimes": "bun scripts/gen-chimes.ts",
 		"debug:tokens": "bun scripts/debug-tokens.ts",
