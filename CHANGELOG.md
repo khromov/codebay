@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/khromov/codebay/compare/codebay-v0.4.0...codebay-v0.5.0) (2026-08-01)
+
+
+### Features
+
+* propagate host Claude model default and suppress attribution ([#73](https://github.com/khromov/codebay/issues/73)) ([6540675](https://github.com/khromov/codebay/commit/65406756354acb21ebb5cba000ca6067baaf05b0))
+
+
+### Bug Fixes
+
+* robust statusLine script detection (jq operators, ~/ paths) ([#70](https://github.com/khromov/codebay/issues/70)) ([8bc6ee3](https://github.com/khromov/codebay/commit/8bc6ee33fd5c2bcad181d2002e3745862924d9f5))
+
 ## [0.4.0](https://github.com/khromov/codebay/compare/codebay-v0.3.0...codebay-v0.4.0) (2026-08-01)
 
 
