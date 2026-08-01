@@ -16,6 +16,7 @@ Codebay's world has **two different kinds of devcontainer**, and it's easy to co
 	"features": {
 		"ghcr.io/shyim/devcontainers-features/bun:0": {},
 		"ghcr.io/devcontainers/features/github-cli:1": {},
+		"ghcr.io/devcontainers/features/node:1": {},
 		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
 	},
 	"forwardPorts": [6969],
@@ -42,7 +43,8 @@ It's intentionally minimal — inspired by [Mochi's devcontainer](https://github
 - **`mcr.microsoft.com/devcontainers/base:ubuntu`** — a plain Ubuntu base with the standard `vscode` user, git, and common tooling. No custom Dockerfile to maintain.
 - **Bun feature** (`ghcr.io/shyim/devcontainers-features/bun`) — Codebay runs on **Bun only** (Node.js is not supported for running the app). Bun installs to `/usr/local/bin/bun`. The feature tracks latest Bun; the repo's floor is `bun >= 1.3.14` (`engines` in `package.json`, `.bun-version`), which latest satisfies.
 - **GitHub CLI feature** — `gh` for PRs, issues, and the release-please flow. Codebay also reads `gh auth token` on the host when injecting GitHub credentials into instances, so it's a natural fit.
-- **Claude Code feature** (`ghcr.io/anthropics/devcontainer-features/claude-code`) — installs the `claude` CLI globally. **This is not optional in practice:** when Codebay boots an instance it _injects_ Claude credentials, aliases, attention hooks, and a statusLine, but it never installs the `claude` binary itself — it assumes one is already present. Without this feature you get `claude: command not found` in the terminal even though everything else is wired up. The feature also **installs Node.js when it's missing** (Claude Code is an npm package), so no separate `node` feature is needed, and it contributes the `anthropic.claude-code` VS Code extension automatically.
+- **Node feature** (`ghcr.io/devcontainers/features/node`) — Codebay runs on Bun, but Claude Code is an npm package and needs Node + npm. It's listed explicitly rather than relying on the claude-code feature's built-in Node install: on this Ubuntu base that fallback pulls the distro `nodejs` package **without `npm`**, fails its own `command -v npm` check, and aborts the whole build (`ERROR: Node.js and npm are required but could not be installed`). The node feature installs both cleanly, and claude-code's `installsAfter: node` guarantees it runs first.
+- **Claude Code feature** (`ghcr.io/anthropics/devcontainer-features/claude-code`) — installs the `claude` CLI globally. **This is not optional in practice:** when Codebay boots an instance it _injects_ Claude credentials, aliases, attention hooks, and a statusLine, but it never installs the `claude` binary itself — it assumes one is already present. Without this feature you get `claude: command not found` in the terminal even though everything else is wired up. It also contributes the `anthropic.claude-code` VS Code extension automatically.
 - **`forwardPorts: [6969]`** — Codebay's default `PORT`. This is the one port forward the dev environment actually needs: `bun run dev` serves the UI on `6969`, and forwarding it makes `http://localhost:6969` reachable on the host. The `portsAttributes` label just makes it show up as "codebay" in the Ports panel.
 - **`postCreateCommand: bun install`** — installs dependencies once on create so the container is ready to run.
 - **VS Code customizations** — Svelte, ESLint, and Prettier extensions with format-on-save, matching the repo's `bun run checks` (which runs `format` first).
