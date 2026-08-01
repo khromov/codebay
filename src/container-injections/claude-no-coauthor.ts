@@ -2,10 +2,20 @@ import { checkPresence, execInContainer } from '../lib/exec.server.ts';
 import { mergeClaudeSettingsScript } from './attention-hooks.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
+/**
+ * Both schemas on purpose: newer `claude` reads the nested `attribution` object, older builds
+ * the root-level `includeCoAuthoredBy` — setting both suppresses the byline across versions.
+ * Empty `commit`/`pr` strings drop the commit trailer and PR footer.
+ */
+export const NO_COAUTHOR_SETTINGS = {
+	includeCoAuthoredBy: false,
+	attribution: { commit: '', pr: '', includeCoAuthoredBy: false }
+};
+
 async function injectNoCoauthor(target: ContainerTarget): Promise<{ ok: boolean; error?: string }> {
 	const res = await execInContainer(target, {
 		script: mergeClaudeSettingsScript(),
-		stdin: JSON.stringify({ includeCoAuthoredBy: false })
+		stdin: JSON.stringify(NO_COAUTHOR_SETTINGS)
 	});
 	return res.ok ? { ok: true } : { ok: false, error: res.error };
 }

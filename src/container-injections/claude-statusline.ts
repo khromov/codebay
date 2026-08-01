@@ -15,7 +15,7 @@ interface StatusLineConfig {
 	script?: string;
 }
 
-async function readHostClaudeSettings(): Promise<Record<string, unknown> | null> {
+export async function readHostClaudeSettings(): Promise<Record<string, unknown> | null> {
 	const file = join(homedir(), '.claude', 'settings.json');
 	if (!existsSync(file)) return null;
 	try {

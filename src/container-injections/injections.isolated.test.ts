@@ -12,6 +12,8 @@ import { manualModelConfig } from './claude-code-models.ts';
 import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
 import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
 import { expandTilde, extractScriptPath } from './claude-statusline.ts';
+import { hostClaudeModel } from './claude-model.ts';
+import { NO_COAUTHOR_SETTINGS } from './claude-no-coauthor.ts';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
 
@@ -73,6 +75,13 @@ describe('injection registry', () => {
 		expect(statusline).toBeDefined();
 		expect(statusline!.auth).toBeDefined();
 		expect(typeof statusline!.check).toBe('function');
+	});
+
+	test('claude-model is registered with an auth chip and a health check', () => {
+		const model = injections.find((i) => i.id === 'claude-model');
+		expect(model).toBeDefined();
+		expect(model!.auth).toBeDefined();
+		expect(typeof model!.check).toBe('function');
 	});
 
 	test('host-env-vars is registered with a health check and no auth chip', () => {
@@ -361,6 +370,36 @@ describe('manualModelConfig', () => {
 			ANTHROPIC_DEFAULT_HAIKU_MODEL: 'h',
 			ANTHROPIC_SMALL_FAST_MODEL: 'sf',
 			ANTHROPIC_MODEL: 'd'
+		});
+	});
+});
+
+describe('hostClaudeModel', () => {
+	function reset() {
+		setOption('manual_model_override_enabled', '0');
+		setOption('custom_endpoint_enabled', '0');
+	}
+	beforeEach(reset);
+	afterEach(reset);
+
+	test('is null when the manual model override owns the model', async () => {
+		setOption('manual_model_override_enabled', '1');
+		expect(await hostClaudeModel()).toBeNull();
+	});
+
+	test('is null when LiteLLM owns the model', async () => {
+		setOption('custom_endpoint_enabled', '1');
+		expect(await hostClaudeModel()).toBeNull();
+	});
+});
+
+describe('NO_COAUTHOR_SETTINGS', () => {
+	test('suppresses the byline via both the root and nested attribution schemas', () => {
+		expect(NO_COAUTHOR_SETTINGS.includeCoAuthoredBy).toBe(false);
+		expect(NO_COAUTHOR_SETTINGS.attribution).toEqual({
+			commit: '',
+			pr: '',
+			includeCoAuthoredBy: false
 		});
 	});
 });
