@@ -124,5 +124,10 @@ export function pickAvatar(id: string): AvatarArt {
 	return avatars[fnv1a(id) % avatars.length]!;
 }
 
+/** Lookup by name, for sprites chosen by hand rather than hashed from an id. */
+export function findAvatar(name: string | undefined): AvatarArt | undefined {
+	return name ? avatars.find((a) => a.name === name) : undefined;
+}
+
 export { decode } from './types.ts';
 export type { AvatarArt } from './types.ts';

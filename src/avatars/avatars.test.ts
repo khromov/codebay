@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { avatars, pickAvatar, decode } from './index.ts';
+import { avatars, pickAvatar, findAvatar, decode } from './index.ts';
 
 describe('avatar catalog', () => {
 	test('has at least 30 sprites', () => {
@@ -20,6 +20,20 @@ describe('avatar catalog', () => {
 		const names = avatars.map((a) => a.name);
 		expect(names.every((n) => n.length > 0)).toBe(true);
 		expect(new Set(names).size).toBe(names.length);
+	});
+});
+
+describe('findAvatar', () => {
+	test('returns the sprite with the given name', () => {
+		const art = avatars[3]!;
+		expect(findAvatar(art.name)).toBe(art);
+	});
+
+	// A pet cookie can outlive the sprite it names, so an unknown name must not throw.
+	test('returns undefined for unknown or missing names', () => {
+		expect(findAvatar('definitely-not-a-sprite')).toBeUndefined();
+		expect(findAvatar(undefined)).toBeUndefined();
+		expect(findAvatar('')).toBeUndefined();
 	});
 });
 

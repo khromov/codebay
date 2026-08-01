@@ -1,11 +1,16 @@
 <script lang="ts">
 	import Package from '@lucide/svelte/icons/package';
+	import Avatar from './Avatar.svelte';
+	import { getPet } from '../pet.ts';
+
+	// Read once at init — SSR and hydration see the same cookie, so the logo can't flash.
+	const pet = getPet();
 </script>
 
 <a class="brand" href="/"
-	><span class="logo"><Package size={22} /></span><span>Codebay</span><span class="tagline"
-		>devcontainer manager</span
-	></a
+	><span class="logo"
+		>{#if pet}<Avatar art={pet} name={pet.name} scale={2} />{:else}<Package size={22} />{/if}</span
+	><span>Codebay</span><span class="tagline">devcontainer manager</span></a
 >
 
 <style>
