@@ -22,8 +22,10 @@ import { hostEnvVarPresence, parseHostEnvVarNames } from './container-injections
 import { gitIdentityEnabled } from './container-injections/git-identity.ts';
 import { browse } from './lib/picker.server.ts';
 import { pickNamePrompt } from './avatars/name-prompts.ts';
+import { avatars, findAvatar } from './avatars/index.ts';
 import {
 	addForwardedPort,
+	broadcastPet,
 	createInstance,
 	deleteAllInstances,
 	deleteDatabaseAndShutdown,
@@ -76,6 +78,11 @@ async function preflight() {
 	return { docker, cli, auth };
 }
 
+/** The header pet logo, resolved from the DB option. A name that left the catalog reads as "off". */
+function currentPet() {
+	return findAvatar(getOption('pet') ?? undefined);
+}
+
 /** Lets a route handler just `throw` for both validation and business-logic failures. */
 async function mutate(fn: () => Promise<unknown> | unknown): Promise<Response> {
 	try {
@@ -112,7 +119,8 @@ export const routes: Record<string, MochiRouteValue> = {
 		serverProps: async () => ({
 			preflight: await preflight(),
 			initialPath: '/',
-			snapshot: await listInstances()
+			snapshot: await listInstances(),
+			pet: currentPet()
 		})
 	}),
 
@@ -122,7 +130,8 @@ export const routes: Record<string, MochiRouteValue> = {
 			return {
 				preflight: await preflight(),
 				initialPath: `/ide/${params.id}`,
-				snapshot: await listInstances()
+				snapshot: await listInstances(),
+				pet: currentPet()
 			};
 		}
 	}),
@@ -159,6 +168,7 @@ export const routes: Record<string, MochiRouteValue> = {
 			// Only names ever reach the client; presence is sent separately, values never.
 			const hostEnvVarNames = parseHostEnvVarNames(getOption('host_env_var_names'));
 			return {
+				pet: currentPet(),
 				defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
 				builtinImage: DEFAULT_IMAGE,
 				disableBuildCache: getOption('disable_build_cache') === '1',
@@ -215,6 +225,32 @@ export const routes: Record<string, MochiRouteValue> = {
 				const enabled = onChecked(formData, 'enabled');
 				setOption('disable_build_cache', enabled ? '1' : '0');
 				return success({ enabled });
+			},
+
+			// Turning the pet on with none chosen lands on a random sprite, so there's always one to adjust.
+			petToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				if (!enabled) {
+					setOption('pet', '');
+					broadcastPet(null);
+					return success({ enabled: false });
+				}
+				const current = getOption('pet');
+				const name =
+					current && findAvatar(current)
+						? current
+						: avatars[Math.floor(Math.random() * avatars.length)]!.name;
+				setOption('pet', name);
+				broadcastPet(name);
+				return success({ enabled: true, name });
+			},
+
+			petChoose: ({ formData }) => {
+				const name = str(formData, 'name');
+				if (!findAvatar(name)) return fail(400, { error: 'Unknown pet' });
+				setOption('pet', name);
+				broadcastPet(name);
+				return success({ name });
 			},
 
 			// Unlike defaultImage, an empty value is valid — it means "copy everything".

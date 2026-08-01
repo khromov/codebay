@@ -2,8 +2,10 @@
 	import '@fontsource-variable/doto';
 	import '@fontsource-variable/jetbrains-mono';
 	import SettingsView from '../components/SettingsView.svelte';
+	import type { AvatarArt } from '../avatars/index.ts';
 
 	let {
+		pet,
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
@@ -35,6 +37,7 @@
 		hostEnvVarPresence,
 		version
 	}: {
+		pet?: AvatarArt;
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
@@ -69,6 +72,7 @@
 </script>
 
 <SettingsView
+	{pet}
 	{defaultImage}
 	{builtinImage}
 	{disableBuildCache}

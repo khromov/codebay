@@ -4,6 +4,7 @@
 	import Power from '@lucide/svelte/icons/power';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import Volume2 from '@lucide/svelte/icons/volume-2';
+	import PawPrint from '@lucide/svelte/icons/paw-print';
 	import SunMoon from '@lucide/svelte/icons/sun-moon';
 	import ThemePicker from './ThemePicker.svelte';
 	import Layers from '@lucide/svelte/icons/layers';
@@ -24,12 +25,15 @@
 	import { playChime, unlockAudio } from '../sound.ts';
 	import Button from './Button.svelte';
 	import CoinButton from './CoinButton.svelte';
+	import Avatar from './Avatar.svelte';
+	import { avatars, findAvatar, type AvatarArt } from '../avatars/index.ts';
 	import { installPopupBackTrap } from '../lib/popup-nav.ts';
 
 	/** Every settings form action fails with the same `{ error }` shape. */
 	type ActionFailure = { error: string };
 
 	let {
+		pet,
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
@@ -61,6 +65,7 @@
 		hostEnvVarPresence,
 		version
 	}: {
+		pet?: AvatarArt;
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
@@ -95,6 +100,12 @@
 
 	// Defaults to on during SSR, where localStorage doesn't exist.
 	let sound = $state(soundEnabled());
+
+	// DB-backed, so it initializes from the prop. Undefined is the off state — the header keeps its box logo.
+	// svelte-ignore state_referenced_locally
+	let petArt = $state(pet);
+	let savingPet = $state(false);
+	let petError = $state<string | null>(null);
 
 	let shuttingDown = $state(false);
 
@@ -542,6 +553,34 @@
 		// A toggle is a user gesture — unlock audio and preview when enabling.
 		unlockAudio();
 		if (on) playChime('done');
+	}
+
+	// State is object-shaped (the chosen sprite), so this can't reuse the boolean `toggleOpts`.
+	const petToggleOpts: MochiEnhanceOptions<{ enabled: boolean; name?: string }, ActionFailure> = {
+		onPending: (v) => (savingPet = v),
+		submit: () => {
+			petError = null;
+			return ({ result }) => {
+				if (result.type === 'success') {
+					petArt = result.data?.name ? findAvatar(result.data.name) : undefined;
+					return;
+				}
+				petError =
+					result.type === 'failure'
+						? (result.data?.error ?? 'Request failed')
+						: 'Network error. Try again.';
+			};
+		}
+	};
+
+	function petChooseOpts(art: AvatarArt) {
+		return saveOpts<{ name: string }>({
+			setSaving: (v) => (savingPet = v),
+			setError: (v) => (petError = v),
+			onSuccess: (data) => {
+				petArt = (data?.name ? findAvatar(data.name) : undefined) ?? art;
+			}
+		});
 	}
 
 	// The server exits mid-flight, so a dropped connection means success here too.
@@ -1481,6 +1520,51 @@
 			</div>
 		</section>
 
+		<section class="card">
+			<form class="row" method="POST" action="?/petToggle" {@attach enhance(petToggleOpts)}>
+				<div class="label">
+					<PawPrint size={18} />
+					<div class="text">
+						<div class="name">Pet logo</div>
+						<div class="desc">Swap the box in the header for a pixel pet.</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={!!petArt}
+						disabled={savingPet}
+						onchange={(e) => e.currentTarget.form?.requestSubmit()}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if petError}
+				<div class="sub"><div class="msg error">{petError}</div></div>
+			{/if}
+			{#if petArt}
+				<div class="sub pets">
+					{#each avatars as art (art.name)}
+						<form method="POST" action="?/petChoose" {@attach enhance(petChooseOpts(art))}>
+							<input type="hidden" name="name" value={art.name} />
+							<button
+								type="submit"
+								class="pet"
+								class:selected={art.name === petArt.name}
+								disabled={savingPet}
+								title={art.name}
+								aria-label={art.name}
+								aria-pressed={art.name === petArt.name}
+							>
+								<Avatar {art} name={art.name} scale={4} />
+							</button>
+						</form>
+					{/each}
+				</div>
+			{/if}
+		</section>
+
 		<section class="card danger-card">
 			<form class="row" method="POST" action="?/shutdown" {@attach enhance(shutdownOpts)}>
 				<div class="label">
@@ -1690,6 +1774,40 @@
 	}
 	.msg.ok {
 		color: var(--ink-soft);
+	}
+	/* auto-fill so the grid reflows as the catalog grows, with no column count to keep in sync. */
+	.pets {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+		gap: 6px;
+	}
+	/* Each pet is wrapped in its own form; let the button stay the grid item. */
+	.pets form {
+		display: contents;
+	}
+	.pet:disabled {
+		cursor: progress;
+	}
+	.pet {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 4px;
+		appearance: none;
+		background: transparent;
+		border: 1px solid transparent;
+		cursor: pointer;
+	}
+	.pet:hover {
+		border-color: var(--rule);
+	}
+	.pet.selected {
+		border-color: var(--attn-done);
+		background: var(--switch-on-bg);
+	}
+	.pet:focus-visible {
+		outline: 2px solid var(--ink);
+		outline-offset: 1px;
 	}
 	.switch {
 		position: relative;

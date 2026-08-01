@@ -104,7 +104,9 @@ export function subscribeLogs(id: string, onChunk: (chunk: string) => void): () 
 export type StreamEvent =
 	| { type: 'instances'; data: Instance[] }
 	| { type: 'health'; data: { id: string; health: InstanceHealth } }
-	| { type: 'preflight'; data: { docker: boolean; cli: boolean } };
+	| { type: 'preflight'; data: { docker: boolean; cli: boolean } }
+	// `name` is the chosen sprite, or null for the default box logo. Lets the header swap live.
+	| { type: 'pet'; data: { name: string | null } };
 
 interface StreamHub {
 	sockets: Set<ServerWebSocket<unknown>>;
@@ -150,6 +152,11 @@ export function broadcastHealth(id: string, health: InstanceHealth): void {
 	broadcast({ type: 'health', data: { id, health } });
 }
 
+/** Called from the settings action so every open dashboard swaps its header logo without a reload. */
+export function broadcastPet(name: string | null): void {
+	broadcast({ type: 'pet', data: { name } });
+}
+
 async function reconcileInstances(force = false): Promise<void> {
 	const list = await listInstances();
 	const listJson = JSON.stringify(list);
@@ -189,6 +196,8 @@ export function streamOpen(ws: ServerWebSocket<unknown>): void {
 	void listInstances().then((list) => sendTo(ws, { type: 'instances', data: list }));
 	for (const snap of currentHealthSnapshots()) sendTo(ws, { type: 'health', data: snap });
 	void backgroundPreflight().then((pf) => sendTo(ws, { type: 'preflight', data: pf }));
+	// Keeps a reconnecting client correct even if the pet changed while it was away.
+	sendTo(ws, { type: 'pet', data: { name: getOption('pet') || null } });
 }
 
 export function streamClose(ws: ServerWebSocket<unknown>): void {
