@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ideUrl, type Instance, type Preflight } from '../types.ts';
+	import type { AvatarArt } from '../avatars/index.ts';
 	import { SvelteSet } from 'svelte/reactivity';
 	import DashboardView from './DashboardView.svelte';
 	import IdeBar from './IdeBar.svelte';
@@ -13,8 +14,14 @@
 	let {
 		preflight,
 		initialPath,
-		snapshot
-	}: { preflight: Preflight; initialPath: string; snapshot: Instance[] } = $props();
+		snapshot,
+		pet
+	}: {
+		preflight: Preflight;
+		initialPath: string;
+		snapshot: Instance[];
+		pet?: AvatarArt;
+	} = $props();
 
 	// Seeding from the SSR snapshot is intentional — the live stream overwrites it.
 	// svelte-ignore state_referenced_locally
@@ -223,7 +230,7 @@
 			oncancelrename={cancelRename}
 		/>
 	{:else}
-		<DashboardView preflight={livePreflight} {instances} {loaded} />
+		<DashboardView preflight={livePreflight} {instances} {loaded} {pet} />
 	{/if}
 
 	<!-- Always mounted, only hidden, so the iframes survive navigation. -->

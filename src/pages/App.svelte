@@ -3,12 +3,19 @@
 	import '@fontsource-variable/jetbrains-mono';
 	import AppShell from '../components/AppShell.svelte';
 	import type { Instance, Preflight } from '../types.ts';
+	import type { AvatarArt } from '../avatars/index.ts';
 
 	let {
 		preflight,
 		initialPath,
-		snapshot
-	}: { preflight: Preflight; initialPath: string; snapshot: Instance[] } = $props();
+		snapshot,
+		pet
+	}: {
+		preflight: Preflight;
+		initialPath: string;
+		snapshot: Instance[];
+		pet?: AvatarArt;
+	} = $props();
 </script>
 
-<AppShell {preflight} {initialPath} {snapshot} mochi:hydrate />
+<AppShell {preflight} {initialPath} {snapshot} {pet} mochi:hydrate />
