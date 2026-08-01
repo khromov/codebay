@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0](https://github.com/khromov/codebay/compare/codebay-v0.3.0...codebay-v0.4.0) (2026-08-01)
+
+
+### Features
+
+* allow overriding git identity in settings ([#64](https://github.com/khromov/codebay/issues/64)) ([0c63257](https://github.com/khromov/codebay/commit/0c632575cd461a8141d68148bb65fa63b3de050a))
+* **settings:** let a pet sprite replace the header box logo ([#69](https://github.com/khromov/codebay/issues/69)) ([c0d3afd](https://github.com/khromov/codebay/commit/c0d3afd7a0b2f8a8206e4b695cf79cea3af6a82a))
+* **settings:** manual Claude model override on the standard path ([#65](https://github.com/khromov/codebay/issues/65)) ([4cf1758](https://github.com/khromov/codebay/commit/4cf17585e55f1d0835766b4f91e87bd3ebb28722))
+
 ## [0.3.0](https://github.com/khromov/codebay/compare/codebay-v0.2.1...codebay-v0.3.0) (2026-07-30)
 
 ### Features
