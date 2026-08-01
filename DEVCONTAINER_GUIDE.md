@@ -1,93 +1,184 @@
 # Devcontainer guide
 
-Codebay's world has **two different kinds of devcontainer**, and it's easy to confuse them:
+A practical guide to authoring a [devcontainer](https://containers.dev/) for **any** application — a reproducible, containerized dev environment your editor (VS Code, and other devcontainer-compatible tools) builds and drops you into. This is a general reference, not specific to any one project.
 
-1. **The repo's own `.devcontainer/`** — a [devcontainer](https://containers.dev/) for _developing Codebay itself_. Open the repo in VS Code (or any devcontainer-compatible editor) → "Reopen in Container" and you get a ready-to-hack environment. **This guide is about this one.**
-2. **The per-instance devcontainers Codebay generates at runtime** — when you spin up an instance, Codebay copies/clones a source, injects code-server + a bunch of tooling into _that project's_ `devcontainer.json`, and runs `devcontainer up`. Those are described in [`CLAUDE.md`](./CLAUDE.md) (see "Instance lifecycle" and "Container injections"); they are **not** what this file documents.
+## Why a devcontainer
 
-## The dev devcontainer
+- **Reproducible** — everyone gets the same toolchain, versions, and OS packages, regardless of their host.
+- **Isolated** — project dependencies don't pollute the host, and vice versa.
+- **Onboarding in one step** — "Reopen in Container" installs the runtime, tools, extensions, and dependencies for you.
 
-`.devcontainer/devcontainer.json`:
+## A minimal example
+
+Everything lives in `.devcontainer/devcontainer.json` at the repo root:
 
 ```jsonc
 {
-	"name": "Codebay",
+	"name": "My App",
 	"image": "mcr.microsoft.com/devcontainers/base:ubuntu",
 	"features": {
-		"ghcr.io/shyim/devcontainers-features/bun:0": {},
-		"ghcr.io/devcontainers/features/github-cli:1": {},
-		"ghcr.io/devcontainers/features/node:1": {},
-		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+		"ghcr.io/devcontainers/features/node:1": {}
 	},
-	"forwardPorts": [6969],
+	"forwardPorts": [3000],
 	"portsAttributes": {
-		"6969": { "label": "codebay", "onAutoForward": "notify" }
+		"3000": { "label": "app", "onAutoForward": "notify" }
 	},
-	"postCreateCommand": "bun install",
+	"postCreateCommand": "npm install",
 	"customizations": {
 		"vscode": {
-			"extensions": ["svelte.svelte-vscode", "dbaeumer.vscode-eslint", "esbenp.prettier-vscode"],
+			"extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode"],
 			"settings": {
-				"editor.formatOnSave": true,
-				"editor.defaultFormatter": "esbenp.prettier-vscode"
+				"editor.formatOnSave": true
 			}
 		}
 	}
 }
 ```
 
-It's intentionally minimal — inspired by [Mochi's devcontainer](https://github.com/khromov/mochi/tree/main/.devcontainer) but stripped of the firewall, custom Dockerfile, and code-server launcher that setup carries.
+That's a complete, working devcontainer. The rest of this guide explains each part and the choices behind it.
 
-### Why each piece is there
+## The building blocks
 
-- **`mcr.microsoft.com/devcontainers/base:ubuntu`** — a plain Ubuntu base with the standard `vscode` user, git, and common tooling. No custom Dockerfile to maintain.
-- **Bun feature** (`ghcr.io/shyim/devcontainers-features/bun`) — Codebay runs on **Bun only** (Node.js is not supported for running the app). Bun installs to `/usr/local/bin/bun`. The feature tracks latest Bun; the repo's floor is `bun >= 1.3.14` (`engines` in `package.json`, `.bun-version`), which latest satisfies.
-- **GitHub CLI feature** — `gh` for PRs, issues, and the release-please flow. Codebay also reads `gh auth token` on the host when injecting GitHub credentials into instances, so it's a natural fit.
-- **Node feature** (`ghcr.io/devcontainers/features/node`) — Codebay runs on Bun, but Claude Code is an npm package and needs Node + npm. It's listed explicitly rather than relying on the claude-code feature's built-in Node install: on this Ubuntu base that fallback pulls the distro `nodejs` package **without `npm`**, fails its own `command -v npm` check, and aborts the whole build (`ERROR: Node.js and npm are required but could not be installed`). The node feature installs both cleanly, and claude-code's `installsAfter: node` guarantees it runs first.
-- **Claude Code feature** (`ghcr.io/anthropics/devcontainer-features/claude-code`) — installs the `claude` CLI globally. **This is not optional in practice:** when Codebay boots an instance it _injects_ Claude credentials, aliases, attention hooks, and a statusLine, but it never installs the `claude` binary itself — it assumes one is already present. Without this feature you get `claude: command not found` in the terminal even though everything else is wired up. It also contributes the `anthropic.claude-code` VS Code extension automatically.
-- **`forwardPorts: [6969]`** — Codebay's default `PORT`. This is the one port forward the dev environment actually needs: `bun run dev` serves the UI on `6969`, and forwarding it makes `http://localhost:6969` reachable on the host. The `portsAttributes` label just makes it show up as "codebay" in the Ports panel.
-- **`postCreateCommand: bun install`** — installs dependencies once on create so the container is ready to run.
-- **VS Code customizations** — Svelte, ESLint, and Prettier extensions with format-on-save, matching the repo's `bun run checks` (which runs `format` first).
+### Base: `image` vs `build`
 
-### What it deliberately does _not_ include
+- **`image`** — start from a prebuilt image. Fastest and simplest. The `mcr.microsoft.com/devcontainers/base:*` images (`ubuntu`, `debian`, `alpine`) ship a non-root `vscode` user, git, and common CLI tooling — a good default.
+- **`build.dockerfile`** — point at a local `Dockerfile` when you need custom system packages, a pinned toolchain baked into the image, or anything features can't express. More power, more to maintain.
 
-- **No Docker access.** Codebay's job is orchestrating Docker containers, but this dev devcontainer is **Bun-only**: no host Docker socket, no docker-in-docker. You can edit, typecheck, test, format, and run the server, but you can't spawn instances from inside the container. This keeps the setup minimal and sidesteps the docker-outside-of-docker networking gotcha (child containers publish their ports on the _host's_ loopback, which the dev container can't reach at `127.0.0.1`). Do full instance-orchestration work on the host, or on a machine with a real daemon.
-- **No firewall / no custom Dockerfile.** Both add complexity this environment doesn't need.
+Reach for `image` + features first. Only introduce a Dockerfile when a feature can't do the job.
 
-## Testing strategy & Docker
+### Features
 
-The automated suite is **fully self-contained and needs no Docker daemon** — even `src/lib/docker.isolated.test.ts` stubs dockerode by seeding `globalThis.__codebayDocker` with a fake client. So:
+[Features](https://containers.dev/features) are composable install units referenced by OCI address. They're the idiomatic way to add languages and tools without writing install scripts:
 
-```sh
-bun run checks   # format + typecheck + tests — always runs, Docker or not
+```jsonc
+"features": {
+  "ghcr.io/devcontainers/features/node:1": {},
+  "ghcr.io/devcontainers/features/python:1": { "version": "3.12" },
+  "ghcr.io/devcontainers/features/go:1": {},
+  "ghcr.io/devcontainers/features/github-cli:1": {},
+  "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+}
 ```
 
-works inside this Bun-only devcontainer with everything green.
+Notes that save you time:
 
-Only **end-to-end verification of the instance lifecycle** — actually creating an instance, `devcontainer up`, the boot/health flow — needs a **live daemon**. Before attempting that, probe first:
+- **Pin versions** where reproducibility matters — most features take a `version` option (`"version": "3.12"`).
+- **Ordering & dependencies.** A feature can declare `installsAfter`, and the resolver orders things accordingly, so declaration order in your file usually doesn't matter. But dependencies aren't always inferred — see the gotcha below.
+- **Community features exist** for things not in the official set (e.g. Bun via `ghcr.io/shyim/devcontainers-features/bun`). They're third-party — pin and vet them like any dependency.
 
-```sh
-docker info        # or: docker context inspect
+### Add a feature's prerequisites explicitly
+
+**A feature that tries to auto-install its own prerequisites can fail on some base images. When a feature depends on a runtime, add that runtime's feature explicitly rather than trusting the fallback.**
+
+A concrete example: the Claude Code feature (`ghcr.io/anthropics/devcontainer-features/claude-code`) needs Node + npm. If Node is absent it tries to install it, but on the Ubuntu base its fallback pulls the distro `nodejs` package **without `npm`**, then fails its own `command -v npm` check and aborts the entire build:
+
+```
+ERROR: Node.js and npm are required but could not be installed!
+Please add the Node.js feature to your devcontainer.json
 ```
 
-If Docker isn't available (as in this devcontainer), don't try to boot instances — rely on the unit/isolated tests, which cover the orchestration logic against stubs. When Docker _is_ running, live-boot verification becomes an option on top of the suite. (This same guidance lives in `CLAUDE.md`.)
+The fix is to list the dependency feature yourself:
+
+```jsonc
+"features": {
+  "ghcr.io/devcontainers/features/node:1": {},
+  "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+}
+```
+
+The dependent feature's `installsAfter: node` still guarantees correct ordering — you're just making sure a working Node is present for it to run after. The general lesson: if a feature's install can silently depend on a runtime, declare that runtime.
+
+### Forwarding ports
+
+`forwardPorts` publishes a container port to your host so `http://localhost:<port>` reaches your app. `portsAttributes` labels each port and controls the notification behavior:
+
+```jsonc
+"forwardPorts": [3000],
+"portsAttributes": {
+  "3000": { "label": "app", "onAutoForward": "notify" }
+}
+```
+
+Forward exactly the ports your dev server, API, or debugger listens on. (VS Code can also auto-detect and forward ports at runtime, but declaring them is explicit and works headless.)
+
+### Installing dependencies: lifecycle commands
+
+Run setup with the lifecycle hooks — they fire at different times:
+
+- **`postCreateCommand`** — once, after the container is created. The place for `npm install` / `bun install` / `pip install -r requirements.txt`.
+- **`postStartCommand`** — every time the container starts (e.g. launch a background service).
+- **`onCreateCommand`** / **`updateContentCommand`** — earlier hooks used by prebuild systems.
+
+```jsonc
+"postCreateCommand": "npm install"
+```
+
+### Editor customizations
+
+`customizations.vscode` seeds extensions and settings so the environment is consistent for everyone who opens it:
+
+```jsonc
+"customizations": {
+  "vscode": {
+    "extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode"],
+    "settings": { "editor.formatOnSave": true, "editor.defaultFormatter": "esbenp.prettier-vscode" }
+  }
+}
+```
+
+Some features contribute their own extensions automatically (the Claude Code feature adds `anthropic.claude-code`, for instance), so you don't always have to list them.
+
+### Other fields worth knowing
+
+- **`remoteUser`** — the user commands run as (`vscode` on the base images; `node` on `node:*`, etc.).
+- **`containerEnv`** — environment variables baked into the container.
+- **`mounts`** / **`workspaceMount`** — bind or volume mounts, e.g. to persist shell history or a tool's config across rebuilds.
+- **`runArgs`** — extra `docker run` flags (e.g. `--add-host=host.docker.internal:host-gateway`).
+
+## If your app needs Docker
+
+When the app under development itself talks to a Docker daemon (builds images, spawns containers), give the devcontainer Docker access with one of:
+
+- **`docker-outside-of-docker`** — mounts the **host's** Docker socket; containers your app creates are siblings on the host daemon.
+- **`docker-in-docker`** — runs a **nested** daemon inside the devcontainer; fully isolated but heavier.
+
+```jsonc
+"features": { "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {} }
+```
+
+**Watch the networking gotcha with docker-outside-of-docker:** containers your app spawns publish their ports on the **host's** loopback, not the devcontainer's. So a service the app starts on `127.0.0.1:8080` is reachable from the host but **not** from inside the devcontainer at that address. If your workflow needs to reach those ports from within the container, prefer docker-in-docker or publish on `0.0.0.0` and connect via `host.docker.internal`.
+
+## Verifying it builds — and testing inside it
+
+**Build it before you trust it.** Rebuild from a clean state so caching doesn't hide a broken step (in VS Code: "Dev Containers: Rebuild Without Cache"), or from the CLI:
+
+```sh
+npx @devcontainers/cli up --workspace-folder . --remove-existing-container
+```
+
+A feature that fails to install **aborts the whole build** (as the Node/npm example above shows), so a green build is a real signal.
+
+**Design your test strategy around what's actually in the container.** Two common cases:
+
+- **Tests that need no external services** should run purely inside the container — that's the point of the setup, and they should pass on a fresh build with nothing else running.
+- **Tests that need a live dependency** (a database, a Docker daemon, an external API) should **probe for it and adapt**, not assume it. For a daemon, gate on a check before running the heavy path:
+
+  ```sh
+  docker info >/dev/null 2>&1 && echo "daemon available" || echo "skipping docker-dependent tests"
+  ```
+
+  Where possible, stub or mock the dependency so the core suite stays runnable everywhere (including a container that deliberately has no Docker access), and keep the live-integration checks as an opt-in layer on top.
 
 ## Using it
 
-1. Open the repo in VS Code with the **Dev Containers** extension (or a compatible editor).
-2. **Reopen in Container** (Command Palette → "Dev Containers: Reopen in Container"). First build installs the features and runs `bun install`.
-3. Run the app:
+1. Open the repo in an editor with devcontainer support (VS Code + the **Dev Containers** extension, or a compatible tool).
+2. **Reopen in Container** (Command Palette → "Dev Containers: Reopen in Container"). The first build installs features and runs `postCreateCommand`.
+3. Work as normal — the terminal, extensions, and forwarded ports are all inside the container.
+4. Changed `.devcontainer/devcontainer.json`? **Rebuild Container** to apply it.
 
-   ```sh
-   bun run dev      # MODE=development, local ./.codebay DATA_DIR, no browser launch
-   ```
+## Further reading
 
-   Open `http://localhost:6969` (port `6969` is forwarded).
-
-4. Before considering any change done:
-
-   ```sh
-   bun run checks   # format, typecheck, tests
-   ```
-
-If you change `.devcontainer/devcontainer.json`, rebuild the container ("Dev Containers: Rebuild Container") to pick it up.
+- [containers.dev](https://containers.dev/) — the Development Containers specification
+- [Available features](https://containers.dev/features)
+- [`devcontainer.json` reference](https://containers.dev/implementors/json_reference/)
+- [`@devcontainers/cli`](https://github.com/devcontainers/cli) — build and run devcontainers from the command line
