@@ -14,7 +14,7 @@ import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './h
 import { expandTilde, extractScriptPath } from './claude-statusline.ts';
 import { hostClaudeModel } from './claude-model.ts';
 import { NO_COAUTHOR_SETTINGS } from './claude-no-coauthor.ts';
-import { claudeTrustConfig } from './claude-trust.ts';
+import { claudeTrustConfig, CLAUDE_TRUST_SETTINGS } from './claude-trust.ts';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
 
@@ -439,6 +439,10 @@ describe('claudeTrustConfig', () => {
 
 	test('omits the projects block when no workspace path is known', () => {
 		expect(claudeTrustConfig(null).projects).toBeUndefined();
+	});
+
+	test('pre-accepts the bypass warning in settings.json, where claude ≥2.1.220 keeps it', () => {
+		expect(CLAUDE_TRUST_SETTINGS).toEqual({ skipDangerousModePermissionPrompt: true });
 	});
 
 	test('nests trust + MCP auto-accept under the workspace path', () => {

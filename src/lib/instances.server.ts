@@ -38,9 +38,11 @@ import {
 	copyWorkspace,
 	devcontainerCliAvailable,
 	devcontainerUp,
+	INJECTIONS_DONE_FILE,
 	readDeclaredContainerPorts,
 	writeOverrideConfig
 } from './devcontainer.server.ts';
+import { writeContainerFile } from './container-files.server.ts';
 import { clearAttention, getAttention } from './bridge.server.ts';
 import { proxyPathFor } from './proxy.server.ts';
 import { resolveInjections } from './injections.server.ts';
@@ -341,6 +343,11 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 				appendLog(row.id, `⚠ ${injection.label} injection failed: ${(err as Error).message}\n`);
 			}
 		}
+
+		// Unblocks the terminal launcher's wait; written even after ⚠s — its timeout is the fallback.
+		await writeContainerFile(target, { dir: '$HOME', name: INJECTIONS_DONE_FILE }, 'done\n').catch(
+			() => undefined
+		);
 
 		appendLog(row.id, `\n✓ Instance running — open it via the proxy at ${proxyPathFor(row.id)}\n`);
 		triggerReconcile();
