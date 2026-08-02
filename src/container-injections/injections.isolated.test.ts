@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { injections, resolveInjections } from '../lib/injections.server.ts';
@@ -17,6 +17,11 @@ import { NO_COAUTHOR_SETTINGS } from './claude-no-coauthor.ts';
 import { claudeTrustConfig, CLAUDE_TRUST_SETTINGS } from './claude-trust.ts';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
+import {
+	CHECK_SCRIPT as EXT_CHECK_SCRIPT,
+	EXTENSION_ID,
+	INSTALL_SCRIPT as EXT_INSTALL_SCRIPT
+} from './claude-code-ide-extension.ts';
 
 describe('injection registry', () => {
 	test('every injection has a unique id', () => {
@@ -109,6 +114,14 @@ describe('injection registry', () => {
 		expect(t!.auth).toBeUndefined();
 	});
 
+	test('claude-code-ide-extension is registered with a health check and no auth chip', () => {
+		const ext = injections.find((i) => i.id === 'claude-code-ide-extension');
+		expect(ext).toBeDefined();
+		expect(typeof ext!.check).toBe('function');
+		// No host-side credential dependency, so it draws no setup-UI chip.
+		expect(ext!.auth).toBeUndefined();
+	});
+
 	test('tmux runs second, right after git-safe-directory', () => {
 		// git safe.directory must stay first (later git-touching steps depend on it);
 		// tmux is next because its package install is the slowest injection and the
@@ -138,6 +151,42 @@ describe('tmux injection scripts', () => {
 
 	test('conf binds a key to toggle mouse mode for copy/paste vs. scroll', () => {
 		expect(TMUX_CONF_LINES.some((line) => line.startsWith('bind m set -g mouse'))).toBe(true);
+	});
+});
+
+describe('claude-code-ide-extension scripts', () => {
+	test('install script targets the Open VSX extension id', () => {
+		expect(EXTENSION_ID).toBe('anthropic.claude-code');
+		expect(EXT_INSTALL_SCRIPT).toContain('--install-extension anthropic.claude-code');
+	});
+
+	test('install script short-circuits when the extension is already present', () => {
+		expect(
+			EXT_INSTALL_SCRIPT.startsWith(
+				'if ls -d ~/.local/share/code-server/extensions/anthropic.claude-code-*'
+			)
+		).toBe(true);
+	});
+
+	// Run the probe against a temp home, exactly as `checkPresence` would in a container.
+	function runCheck(home: string): string {
+		const res = Bun.spawnSync(['bash', '-c', EXT_CHECK_SCRIPT], {
+			env: { ...process.env, HOME: home }
+		});
+		return res.stdout.toString().trim();
+	}
+
+	test('check reports 1 when an extension dir exists, 0 otherwise', () => {
+		const home = mkdtempSync(join(tmpdir(), 'codebay-ext-'));
+		try {
+			expect(runCheck(home)).toBe('0');
+			mkdirSync(join(home, '.local/share/code-server/extensions/anthropic.claude-code-2.1.220'), {
+				recursive: true
+			});
+			expect(runCheck(home)).toBe('1');
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
 	});
 });
 

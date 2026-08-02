@@ -3,6 +3,7 @@ import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT as TMUX_INSTALL_SCRIPT } from '../container-injections/tmux.ts';
+import { EXTENSION_ID as CLAUDE_CODE_EXTENSION_ID } from '../container-injections/claude-code-ide-extension.ts';
 import {
 	CODE_SERVER_PORT,
 	DEFAULT_IMAGE,
@@ -114,8 +115,15 @@ const CODE_SERVER_APPLY_SETTINGS =
 	`cp -f \\"$PWD/.devcontainer/${CODE_SERVER_SETTINGS_FILE}\\" ` +
 	`~/.local/share/code-server/User/settings.json 2>/dev/null;`;
 
+// Runs before code-server first launches so the extension host activates it on the first window
+// (the /ide bridge, in-container over localhost); best-effort, offline-tolerant, skipped if present.
+const CODE_SERVER_INSTALL_EXT =
+	`ls -d ~/.local/share/code-server/extensions/${CLAUDE_CODE_EXTENSION_ID}-* >/dev/null 2>&1 || ` +
+	`code-server --install-extension ${CLAUDE_CODE_EXTENSION_ID} >/tmp/code-server-ext.log 2>&1 || true; `;
+
 const CODE_SERVER_LAUNCH =
 	`bash -c "${CODE_SERVER_APPLY_SETTINGS} ` +
+	`${CODE_SERVER_INSTALL_EXT} ` +
 	// The bare default image may not export SHELL, which the Terminal task needs.
 	`export SHELL=\\"\${SHELL:-/bin/bash}\\"; ` +
 	`pgrep -f 'code-server.*${CODE_SERVER_PORT}' >/dev/null 2>&1 || ` +

@@ -204,6 +204,14 @@ describe('writeOverrideConfig terminal task + settings', () => {
 	const readDevcontainer = () =>
 		JSON.parse(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8'));
 
+	test('installs the Claude Code IDE extension before code-server first launches', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const cmd = readDevcontainer().postStartCommand as string;
+		// Must land before the `nohup code-server` line so the extension host activates it on the first window.
+		expect(cmd).toContain('--install-extension anthropic.claude-code');
+		expect(cmd.indexOf('--install-extension')).toBeLessThan(cmd.indexOf('nohup code-server'));
+	});
+
 	test('injects the provided default image and reports it when the folder has no config', async () => {
 		const { imageSource } = await writeOverrideConfig(dir, 8001, [], 'my/custom:42');
 		expect(imageSource).toBe('my/custom:42');
