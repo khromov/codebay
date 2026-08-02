@@ -1,6 +1,7 @@
 import { getOption } from '../lib/db.server.ts';
 import {
 	containerFileExists,
+	shellEnvFile,
 	installShellEnvFile,
 	shellSingleQuote
 } from '../lib/container-files.server.ts';
@@ -91,6 +92,6 @@ export const hostEnvVars: Injection = {
 	},
 
 	async check(target) {
-		return containerFileExists(target, { name: ENV_FILE_NAME });
+		return containerFileExists(target, shellEnvFile(ENV_FILE_NAME));
 	}
 };

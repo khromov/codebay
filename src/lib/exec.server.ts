@@ -82,5 +82,6 @@ export async function checkPresence(
 	args?: string[]
 ): Promise<boolean> {
 	const res = await execInContainer(target, { script, args, capture: true });
-	return res.ok && res.stdout === '1';
+	// The login shell's profile noise precedes the probe's echo, so only the last line counts.
+	return res.ok && res.stdout.split('\n').at(-1)?.trim() === '1';
 }

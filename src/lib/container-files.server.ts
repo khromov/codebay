@@ -1,6 +1,9 @@
 import { checkPresence, execInContainer, type ExecTarget } from './exec.server.ts';
 
-/** A file inside a container, addressed by a shell expr for its dir (`$h` = the exec user's home) + name. */
+/**
+ * A file inside a container, addressed by a shell expr for its dir (`$h` = the exec user's home) + name.
+ * Every field is interpolated into a bash script, so callers must pass literal, trusted values only.
+ */
 export interface ContainerFile {
 	/** Shell expr for the containing dir; `$h` is bound to the resolved home. Defaults to `$h`. */
 	dir?: string;
@@ -17,15 +20,36 @@ const filePath = (file: ContainerFile): string => `${file.dir ?? '$h'}/${file.na
 /** The two rc files either shell may open, so an interactive-shell tweak must reach both. */
 export const SHELL_RC_FILES: ContainerFile[] = [{ name: '.bashrc' }, { name: '.zshrc' }];
 
+/** `bash -lc` runs profile scripts whose stdout precedes ours, so reads mark where real output starts. */
+const READ_MARKER = '__CODEBAY_READ__';
+
 export function readFileScript(file: ContainerFile): string {
-	// `|| true` so an absent file is an empty read, not a non-zero exit.
-	return `${HOME_PRELUDE}f="${filePath(file)}"; cat "$f" 2>/dev/null || true`;
+	// A status char follows the marker: A(bsent), O(k)+content, E (exists but unreadable).
+	return (
+		`${HOME_PRELUDE}f="${filePath(file)}"; ` +
+		`if [ ! -e "$f" ]; then printf '%sA' '${READ_MARKER}'; ` +
+		`elif c=$(cat "$f" 2>/dev/null); then printf '%sO%s' '${READ_MARKER}' "$c"; ` +
+		`else printf '%sE' '${READ_MARKER}'; fi`
+	);
+}
+
+type ContainerRead = { ok: true; content: string | null } | { ok: false; error: string };
+
+/** Slices `readFileScript` output at the marker, so profile noise can't masquerade as file content. */
+export function parseReadScriptOutput(stdout: string, name: string): ContainerRead {
+	const at = stdout.indexOf(READ_MARKER);
+	if (at === -1) return { ok: false, error: `read of ${name} produced no marker` };
+	const payload = stdout.slice(at + READ_MARKER.length);
+	if (payload[0] === 'A') return { ok: true, content: null };
+	if (payload[0] === 'O') return { ok: true, content: payload.slice(1) };
+	return { ok: false, error: `${name} exists but is unreadable` };
 }
 
 export function writeFileScript(file: ContainerFile): string {
 	const mode = file.mode ?? '644';
+	// `set -e` so a partial write can't exit 0 and get reported as a success.
 	return (
-		`${HOME_PRELUDE}f="${filePath(file)}"; mkdir -p "$(dirname "$f")"; ` +
+		`set -e; ${HOME_PRELUDE}f="${filePath(file)}"; mkdir -p "$(dirname "$f")"; ` +
 		`printf '%s' "$CODEBAY_STDIN" > "$f"; chmod ${mode} "$f"`
 	);
 }
@@ -36,8 +60,9 @@ export const shellSingleQuote = (value: string): string => `'${value.replaceAll(
 /** Lines arrive as `$@` so none is interpolated into the loop body; each file gets a `grep -qF` guard. */
 export function appendLinesScript(files: ContainerFile[]): string {
 	const paths = files.map((f) => `"${filePath(f)}"`).join(' ');
+	// `set -e` so a failed append (readonly fs, perms) can't exit 0 and get reported as a success.
 	return (
-		`${HOME_PRELUDE}for line in "$@"; do ` +
+		`set -e; ${HOME_PRELUDE}for line in "$@"; do ` +
 		`for f in ${paths}; do ` +
 		`mkdir -p "$(dirname "$f")"; ` +
 		`grep -qF "$line" "$f" 2>/dev/null || printf '%s\\n' "$line" >> "$f"; ` +
@@ -45,14 +70,23 @@ export function appendLinesScript(files: ContainerFile[]): string {
 	);
 }
 
-/** Returns the file's contents, or null when it's absent or empty. Note: `execInContainer` trims captured output, so leading/trailing whitespace (incl. trailing newlines) is stripped and a whitespace-only file reads as null — fine for JSON callers, but don't use this where exact bytes matter. */
+/** Read that distinguishes "absent" (`content: null`) from "couldn't read" (`ok: false`). */
+export async function readContainerFileResult(
+	target: ExecTarget,
+	file: ContainerFile
+): Promise<ContainerRead> {
+	const res = await execInContainer(target, { script: readFileScript(file), capture: true });
+	if (!res.ok) return { ok: false, error: res.error ?? `read of ${file.name} failed` };
+	return parseReadScriptOutput(res.stdout, file.name);
+}
+
+/** Returns the file's contents, or null when it's absent, empty, or unreadable. Note: output capture trims trailing whitespace (incl. trailing newlines), so a whitespace-only file reads as null — fine for JSON callers, but don't use this where exact bytes matter. */
 export async function readContainerFile(
 	target: ExecTarget,
 	file: ContainerFile
 ): Promise<string | null> {
-	const res = await execInContainer(target, { script: readFileScript(file), capture: true });
-	if (!res.ok || res.stdout === '') return null;
-	return res.stdout;
+	const res = await readContainerFileResult(target, file);
+	return res.ok && res.content ? res.content : null;
 }
 
 export async function writeContainerFile(
@@ -94,16 +128,15 @@ export function linesPresent(
 }
 
 /** True when the file exists and is non-empty — a content-free probe for `check()`. */
-export async function containerFileExists(
-	target: ExecTarget,
-	file: ContainerFile
-): Promise<boolean> {
-	const res = await execInContainer(target, {
-		script: `${HOME_PRELUDE}f="${filePath(file)}"; [ -s "$f" ] && echo 1 || echo 0`,
-		capture: true
-	});
-	return res.ok && res.stdout === '1';
+export function containerFileExists(target: ExecTarget, file: ContainerFile): Promise<boolean> {
+	return checkPresence(
+		target,
+		`${HOME_PRELUDE}f="${filePath(file)}"; [ -s "$f" ] && echo 1 || echo 0`
+	);
 }
+
+/** `$HOME`-addressed so the write, the `check()` probe, and the sourced rc line all resolve one path. */
+export const shellEnvFile = (name: string): ContainerFile => ({ dir: '$HOME', name, mode: '600' });
 
 /** Writes a mode-600 env file in the home dir and guards a source line into both rc files. */
 export async function installShellEnvFile(
@@ -111,9 +144,8 @@ export async function installShellEnvFile(
 	name: string,
 	content: string
 ): Promise<{ ok: boolean; error?: string }> {
-	const wrote = await writeContainerFile(target, { name, mode: '600' }, content);
+	const wrote = await writeContainerFile(target, shellEnvFile(name), content);
 	if (!wrote.ok) return wrote;
-	// Sourced from `$HOME` so the line stays portable and matches on every re-apply.
 	const path = `$HOME/${name}`;
 	return appendLinesIfAbsent(target, SHELL_RC_FILES, [`[ -f "${path}" ] && . "${path}"`]);
 }
@@ -177,9 +209,9 @@ export async function editJsonFile(
 	file: ContainerFile,
 	edit: (current: Record<string, unknown>) => Record<string, unknown> | void
 ): Promise<{ ok: boolean; error?: string }> {
-	const read = await execInContainer(target, { script: readFileScript(file), capture: true });
+	const read = await readContainerFileResult(target, file);
 	if (!read.ok) return { ok: false, error: `read before edit failed: ${read.error}` };
-	const parsed = parseJsonRead(read.stdout, file.name);
+	const parsed = parseJsonRead(read.content, file.name);
 	if (!parsed.ok) return { ok: false, error: parsed.error };
 	const current = parsed.data ?? {};
 	const next = edit(current) ?? current;

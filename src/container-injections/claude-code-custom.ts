@@ -1,6 +1,7 @@
 import { getOption } from '../lib/db.server.ts';
 import {
 	containerFileExists,
+	shellEnvFile,
 	deepMerge,
 	editJsonFile,
 	installShellEnvFile,
@@ -106,6 +107,6 @@ export const claudeCodeCustom: Injection = {
 	},
 
 	async check(target) {
-		return containerFileExists(target, { name: ENV_FILE_NAME });
+		return containerFileExists(target, shellEnvFile(ENV_FILE_NAME));
 	}
 };

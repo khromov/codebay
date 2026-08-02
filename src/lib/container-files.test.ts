@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -7,6 +7,7 @@ import {
 	deepMerge,
 	linesPresentScript,
 	parseJsonRead,
+	parseReadScriptOutput,
 	readFileScript,
 	shellSingleQuote,
 	writeFileScript
@@ -89,6 +90,13 @@ function runInTmp<T>(fn: (dir: string) => T): T {
 	}
 }
 
+/** Runs a read script through bash and the host-side parser, as `readContainerFileResult` does. */
+function runRead(script: string, name: string) {
+	const read = Bun.spawnSync(['bash', '-c', script]);
+	expect(read.exitCode).toBe(0);
+	return parseReadScriptOutput(read.stdout.toString().trim(), name);
+}
+
 describe('writeFileScript / readFileScript', () => {
 	test('writes stdin to the file, then reads it back verbatim', () => {
 		runInTmp((dir) => {
@@ -98,8 +106,10 @@ describe('writeFileScript / readFileScript', () => {
 			});
 			expect(readFileSync(join(dir, 'settings.json'), 'utf8')).toBe('{"model":"opus"}');
 
-			const read = Bun.spawnSync(['bash', '-c', readFileScript(file)]);
-			expect(read.stdout.toString().trim()).toBe('{"model":"opus"}');
+			expect(runRead(readFileScript(file), 'settings.json')).toEqual({
+				ok: true,
+				content: '{"model":"opus"}'
+			});
 		});
 	});
 
@@ -113,12 +123,56 @@ describe('writeFileScript / readFileScript', () => {
 		});
 	});
 
-	test('reading an absent file yields empty output and exit 0', () => {
+	test('a write that cannot create its parent dir exits non-zero', () => {
 		runInTmp((dir) => {
-			const read = Bun.spawnSync(['bash', '-c', readFileScript({ dir, name: 'nope' })]);
-			expect(read.exitCode).toBe(0);
-			expect(read.stdout.toString()).toBe('');
+			writeFileSync(join(dir, 'blocker'), '');
+			const res = Bun.spawnSync(
+				['bash', '-c', writeFileScript({ dir: `${dir}/blocker/sub`, name: 'f' })],
+				{
+					env: { ...process.env, CODEBAY_STDIN: 'x' }
+				}
+			);
+			expect(res.exitCode).not.toBe(0);
 		});
+	});
+
+	test('reading an absent file reports absent, not an error', () => {
+		runInTmp((dir) => {
+			expect(runRead(readFileScript({ dir, name: 'nope' }), 'nope')).toEqual({
+				ok: true,
+				content: null
+			});
+		});
+	});
+
+	test('login-shell profile noise before the marker does not corrupt the read', () => {
+		runInTmp((dir) => {
+			const file = { dir, name: 'settings.json' };
+			writeFileSync(join(dir, 'settings.json'), '{"model":"opus"}');
+			const noisy = `echo 'Welcome to the container!'; ${readFileScript(file)}`;
+			expect(runRead(noisy, 'settings.json')).toEqual({ ok: true, content: '{"model":"opus"}' });
+		});
+	});
+
+	test.skipIf(process.getuid?.() === 0)(
+		'an unreadable file errors instead of reading as absent',
+		() => {
+			runInTmp((dir) => {
+				writeFileSync(join(dir, 'secret.json'), '{"keep":true}');
+				chmodSync(join(dir, 'secret.json'), 0o000);
+				const res = runRead(readFileScript({ dir, name: 'secret.json' }), 'secret.json');
+				expect(res.ok).toBe(false);
+				if (!res.ok) expect(res.error).toContain('unreadable');
+			});
+		}
+	);
+});
+
+describe('parseReadScriptOutput', () => {
+	test('output with no marker errors so an edit refuses to proceed', () => {
+		const res = parseReadScriptOutput('profile noise only', 'settings.json');
+		expect(res.ok).toBe(false);
+		if (!res.ok) expect(res.error).toContain('settings.json');
 	});
 });
 
