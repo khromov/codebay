@@ -85,10 +85,11 @@ describe('injection registry', () => {
 		expect(typeof statusline!.check).toBe('function');
 	});
 
-	test('claude-model is registered with an auth chip and a health check', () => {
+	test('claude-model is registered with a health check and no auth chip', () => {
 		const model = injections.find((i) => i.id === 'claude-model');
 		expect(model).toBeDefined();
-		expect(model!.auth).toBeDefined();
+		// Mirrors the host default silently; it deliberately draws no credentials-menu chip.
+		expect(model!.auth).toBeUndefined();
 		expect(typeof model!.check).toBe('function');
 	});
 

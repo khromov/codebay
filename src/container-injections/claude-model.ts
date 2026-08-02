@@ -24,14 +24,6 @@ export const claudeModel: Injection = {
 	id: 'claude-model',
 	label: 'model default',
 
-	auth: {
-		hint: 'set `model` in ~/.claude/settings.json',
-		async status() {
-			const model = await hostClaudeModel();
-			return { available: model !== null, source: model ? '~/.claude/settings.json' : null };
-		}
-	},
-
 	async apply(target, log) {
 		const model = await hostClaudeModel();
 		if (!model) return;
