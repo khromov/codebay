@@ -267,7 +267,7 @@
 		background-color: var(--rule-soft); /* unlit LED — faint */
 	}
 	.cell.gray {
-		background-color: var(--ink-soft); /* half-lit LED */
+		background-color: var(--led-gray); /* half-lit LED */
 	}
 	.cell.on {
 		background-color: var(--ink);

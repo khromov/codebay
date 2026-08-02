@@ -122,7 +122,7 @@
 		background-color: var(--rule-soft); /* unlit LED — faint */
 	}
 	.px.gray {
-		background-color: var(--ink-soft); /* half-lit LED */
+		background-color: var(--led-gray); /* half-lit LED */
 	}
 	.px.on {
 		background-color: var(--ink);
