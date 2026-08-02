@@ -1,8 +1,13 @@
 import { getOption } from '../lib/db.server.ts';
-import { checkPresence, execInContainer } from '../lib/exec.server.ts';
+import {
+	containerFileExists,
+	shellEnvFile,
+	installShellEnvFile,
+	shellSingleQuote
+} from '../lib/container-files.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
-const ENV_FILE = '~/.codebay-host-env';
+const ENV_FILE_NAME = '.codebay-host-env';
 
 interface ResolvedVar {
 	name: string;
@@ -47,31 +52,15 @@ export function hostEnvVarsConfig(): {
 }
 
 /** Values ride `stdin` as one payload, so they reach neither argv nor `docker inspect`. */
-async function injectHostEnvVars(
+function injectHostEnvVars(
 	target: ContainerTarget,
 	resolved: ResolvedVar[]
 ): Promise<{ ok: boolean; error?: string }> {
 	// Every interactive shell sources this file, so values must be single-quoted to stay literal.
-	const payload = resolved
-		.map(({ name, value }) => `export ${name}='${value.replaceAll("'", "'\\''")}'`)
-		.join('\n');
-	const script =
-		'set -e; f=$(eval echo "' +
-		ENV_FILE +
-		'"); ' +
-		'printf \'%s\\n\' "$CODEBAY_STDIN" > "$f"; chmod 600 "$f"; ' +
-		// The grep guard keeps a re-apply from stacking duplicate source lines.
-		'h=$(eval echo ~$(id -un)); src="[ -f \\"$f\\" ] && . \\"$f\\""; ' +
-		'for rc in "$h/.bashrc" "$h/.zshrc"; do ' +
-		'grep -qF "$src" "$rc" 2>/dev/null || printf \'%s\\n\' "$src" >> "$rc"; ' +
-		'done';
-
-	const res = await execInContainer(target, {
-		script,
-		stdin: payload,
-		args: ['host-env-vars']
-	});
-	return res.ok ? { ok: true } : { ok: false, error: res.error };
+	const content =
+		resolved.map(({ name, value }) => `export ${name}=${shellSingleQuote(value)}`).join('\n') +
+		'\n';
+	return installShellEnvFile(target, ENV_FILE_NAME, content);
 }
 
 /**
@@ -103,6 +92,6 @@ export const hostEnvVars: Injection = {
 	},
 
 	async check(target) {
-		return checkPresence(target, `f=$(eval echo "${ENV_FILE}"); [ -s "$f" ] && echo 1 || echo 0`);
+		return containerFileExists(target, shellEnvFile(ENV_FILE_NAME));
 	}
 };

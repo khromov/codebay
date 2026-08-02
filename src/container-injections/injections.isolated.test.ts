@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { injections, resolveInjections } from '../lib/injections.server.ts';
 import { setOption } from '../lib/db.server.ts';
-import { attentionHookSettings } from './attention-hooks.ts';
+import { attentionHookSettings, hasAttentionHook } from './attention-hooks.ts';
 import { isValid, LIVE_CREDENTIALS_TEST, tokenCredentials } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
 import { gitIdentity, gitIdentityEnabled, readGitIdentity } from './git-identity.ts';
@@ -141,15 +141,32 @@ describe('tmux injection scripts', () => {
 });
 
 describe('attentionHookSettings', () => {
-	test('emits valid Claude settings JSON with the three lifecycle hooks', () => {
-		const json = attentionHookSettings('inst-123');
-		const parsed = JSON.parse(json) as { hooks: Record<string, unknown> };
-		expect(Object.keys(parsed.hooks).sort()).toEqual(['Notification', 'Stop', 'UserPromptSubmit']);
+	test('emits a Claude settings object with the three lifecycle hooks', () => {
+		const settings = attentionHookSettings('inst-123');
+		const hooks = settings.hooks as Record<string, unknown>;
+		expect(Object.keys(hooks).sort()).toEqual(['Notification', 'Stop', 'UserPromptSubmit']);
+		const json = JSON.stringify(settings);
 		// The instance id must reach the curl command so the bridge can route it.
 		expect(json).toContain('inst-123');
 		// The token must NOT be baked into settings.json — the hooks read it from a
 		// mode-600 header file at runtime, keeping it off curl's argv (and out of ps).
 		expect(json).toContain('.bridge-header');
+	});
+});
+
+describe('hasAttentionHook', () => {
+	test('matches settings carrying the instance hooks', () => {
+		expect(hasAttentionHook(attentionHookSettings('inst-abc'), 'inst-abc')).toBe(true);
+	});
+
+	test('rejects a different instance id, empty settings, and null', () => {
+		expect(hasAttentionHook(attentionHookSettings('inst-abc'), 'inst-xyz')).toBe(false);
+		expect(hasAttentionHook({}, 'inst-abc')).toBe(false);
+		expect(hasAttentionHook(null, 'inst-abc')).toBe(false);
+	});
+
+	test('an id that is a prefix of the installed one does not match', () => {
+		expect(hasAttentionHook(attentionHookSettings('inst-abcdef'), 'inst-abc')).toBe(false);
 	});
 });
 

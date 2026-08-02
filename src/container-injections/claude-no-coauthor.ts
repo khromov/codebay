@@ -1,6 +1,5 @@
-import { checkPresence, execInContainer } from '../lib/exec.server.ts';
-import { mergeClaudeSettingsScript } from './attention-hooks.ts';
-import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
+import { mergeClaudeSettings, readClaudeSettings } from '../lib/claude-settings.server.ts';
+import type { Injection } from '../lib/injections.server.ts';
 
 /**
  * Both schemas on purpose: newer `claude` reads the nested `attribution` object, older builds
@@ -12,14 +11,6 @@ export const NO_COAUTHOR_SETTINGS = {
 	attribution: { commit: '', pr: '', includeCoAuthoredBy: false }
 };
 
-async function injectNoCoauthor(target: ContainerTarget): Promise<{ ok: boolean; error?: string }> {
-	const res = await execInContainer(target, {
-		script: mergeClaudeSettingsScript(),
-		stdin: JSON.stringify(NO_COAUTHOR_SETTINGS)
-	});
-	return res.ok ? { ok: true } : { ok: false, error: res.error };
-}
-
 /** A Codebay-wide default rather than an opt-in setting, hence no `auth` block. */
 export const claudeNoCoauthor: Injection = {
 	id: 'claude-no-coauthor',
@@ -27,7 +18,7 @@ export const claudeNoCoauthor: Injection = {
 
 	async apply(target, log) {
 		log('Disabling Claude co-author commit byline…\n');
-		const result = await injectNoCoauthor(target);
+		const result = await mergeClaudeSettings(target, NO_COAUTHOR_SETTINGS);
 		log(
 			result.ok
 				? '✓ Claude co-author byline disabled\n'
@@ -36,10 +27,7 @@ export const claudeNoCoauthor: Injection = {
 	},
 
 	async check(target) {
-		return checkPresence(
-			target,
-			'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
-				'[ -s "$d/settings.json" ] && grep -q includeCoAuthoredBy "$d/settings.json" && echo 1 || echo 0'
-		);
+		const settings = await readClaudeSettings(target);
+		return settings !== null && 'includeCoAuthoredBy' in settings;
 	}
 };

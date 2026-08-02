@@ -1,5 +1,5 @@
 import { getOption } from '../lib/db.server.ts';
-import { execInContainer } from '../lib/exec.server.ts';
+import { installShellEnvFile, shellSingleQuote } from '../lib/container-files.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 /** The option key → Claude env var mapping; order is the field order in Settings. */
@@ -26,33 +26,17 @@ export function manualModelConfig(): Record<string, string> | null {
 	return Object.keys(filled).length ? filled : null;
 }
 
-const ENV_FILE = '~/.codebay-claude-models-env';
+const ENV_FILE_NAME = '.codebay-claude-models-env';
 
-/** Model IDs are non-secret, so every value rides `args` ($1, $2, …) — no stdin. */
-async function injectModels(
+function injectModels(
 	target: ContainerTarget,
 	config: Record<string, string>
 ): Promise<{ ok: boolean; error?: string }> {
-	const entries = Object.entries(config);
-	const writes = entries.map(([env], i) => `printf 'export ${env}=%s\\n' "$${i + 1}"; `).join('');
-	const script =
-		'set -e; f=$(eval echo "' +
-		ENV_FILE +
-		'"); ' +
-		'{ ' +
-		writes +
-		'} > "$f"; chmod 600 "$f"; ' +
-		// The grep guard keeps a re-apply from stacking duplicate source lines.
-		'h=$(eval echo ~$(id -un)); src="[ -f \\"$f\\" ] && . \\"$f\\""; ' +
-		'for rc in "$h/.bashrc" "$h/.zshrc"; do ' +
-		'grep -qF "$src" "$rc" 2>/dev/null || printf \'%s\\n\' "$src" >> "$rc"; ' +
-		'done';
-
-	const res = await execInContainer(target, {
-		script,
-		args: ['claude-models', ...entries.map(([, value]) => value)]
-	});
-	return res.ok ? { ok: true } : { ok: false, error: res.error };
+	const content =
+		Object.entries(config)
+			.map(([env, value]) => `export ${env}=${shellSingleQuote(value)}`)
+			.join('\n') + '\n';
+	return installShellEnvFile(target, ENV_FILE_NAME, content);
 }
 
 /** Sets Claude model env vars on the standard path; skipped when LiteLLM is active. */

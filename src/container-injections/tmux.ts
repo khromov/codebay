@@ -1,4 +1,5 @@
 import { checkPresence, execInContainer } from '../lib/exec.server.ts';
+import { appendLinesIfAbsent } from '../lib/container-files.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
 
 /** apt-get is the real path (the default image is Debian); the rest cover project images. */
@@ -26,13 +27,6 @@ export const TMUX_CONF_LINES = [
 	'bind m set -g mouse \\; display-message "mouse: #{?mouse,on,off}"'
 ];
 
-/** Lines arrive as `$@` so no conf text is interpolated into the loop body. */
-const CONF_SCRIPT =
-	'h=$(eval echo ~$(id -un)); f="$h/.tmux.conf"; ' +
-	'for line in "$@"; do ' +
-	'grep -qF "$line" "$f" 2>/dev/null || printf \'%s\\n\' "$line" >> "$f"; ' +
-	'done';
-
 const CHECK_SCRIPT = 'command -v tmux >/dev/null 2>&1 && echo 1 || echo 0';
 
 /**
@@ -54,10 +48,7 @@ export const tmux: Injection = {
 			log(`⚠ tmux install failed: ${install.error} — terminal falls back to non-persistent mode\n`);
 			return;
 		}
-		const conf = await execInContainer(target, {
-			script: CONF_SCRIPT,
-			args: ['tmux-conf', ...TMUX_CONF_LINES]
-		});
+		const conf = await appendLinesIfAbsent(target, [{ name: '.tmux.conf' }], TMUX_CONF_LINES);
 		log(conf.ok ? '✓ tmux installed\n' : `⚠ tmux conf setup failed: ${conf.error}\n`);
 	},
 

@@ -1,8 +1,7 @@
 import { getOption } from '../lib/db.server.ts';
-import { checkPresence, execInContainer } from '../lib/exec.server.ts';
-import { mergeClaudeSettingsScript } from './attention-hooks.ts';
+import { mergeClaudeSettings, readClaudeSettings } from '../lib/claude-settings.server.ts';
 import { readHostClaudeSettings } from './claude-statusline.ts';
-import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
+import type { Injection } from '../lib/injections.server.ts';
 
 /** The app's own model config (manual override / LiteLLM) exports ANTHROPIC_MODEL, which wins over settings.json. */
 function appOwnsModel(): boolean {
@@ -18,17 +17,6 @@ export async function hostClaudeModel(): Promise<string | null> {
 	const settings = await readHostClaudeSettings();
 	const model = settings?.model;
 	return typeof model === 'string' && model.trim() ? model.trim() : null;
-}
-
-async function injectModel(
-	target: ContainerTarget,
-	model: string
-): Promise<{ ok: boolean; error?: string }> {
-	const res = await execInContainer(target, {
-		script: mergeClaudeSettingsScript(),
-		stdin: JSON.stringify({ model })
-	});
-	return res.ok ? { ok: true } : { ok: false, error: res.error };
 }
 
 /** Mirrors the host's default `model` into the container so subscription instances match the host. */
@@ -48,7 +36,7 @@ export const claudeModel: Injection = {
 		const model = await hostClaudeModel();
 		if (!model) return;
 		log(`Injecting Claude model default (${model})…\n`);
-		const result = await injectModel(target, model);
+		const result = await mergeClaudeSettings(target, { model });
 		log(
 			result.ok
 				? '✓ Claude model default configured in container\n'
@@ -57,10 +45,7 @@ export const claudeModel: Injection = {
 	},
 
 	async check(target) {
-		return checkPresence(
-			target,
-			'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
-				'[ -s "$d/settings.json" ] && grep -q \'"model"\' "$d/settings.json" && echo 1 || echo 0'
-		);
+		const settings = await readClaudeSettings(target);
+		return typeof settings?.model === 'string' && settings.model.trim() !== '';
 	}
 };

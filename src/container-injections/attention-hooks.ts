@@ -1,5 +1,10 @@
 import { PORT } from '../lib/config.server.ts';
-import { checkPresence, execInContainer, mergeJsonFileScript } from '../lib/exec.server.ts';
+import { writeContainerFile } from '../lib/container-files.server.ts';
+import {
+	claudeConfigFile,
+	mergeClaudeSettings,
+	readClaudeSettings
+} from '../lib/claude-settings.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 function bridgeUrl(): string {
@@ -40,45 +45,32 @@ function hookFor(id: string, state: 'done' | 'waiting' | 'busy') {
 }
 
 /** Carries no token — that lives in the mode-600 header file `writeBridgeHeader` stages. */
-export function attentionHookSettings(id: string): string {
-	const settings = {
+export function attentionHookSettings(id: string): Record<string, unknown> {
+	return {
 		hooks: {
 			Stop: hookFor(id, 'done'),
 			Notification: hookFor(id, 'waiting'),
 			UserPromptSubmit: hookFor(id, 'busy')
 		}
 	};
-	return JSON.stringify(settings, null, 2);
 }
 
 /** Stored as a whole header line so curl can consume the file directly with `-H @`. */
-async function writeBridgeHeader(
+function writeBridgeHeader(
 	target: ContainerTarget,
 	token: string
 ): Promise<{ ok: boolean; error?: string }> {
-	const script =
-		'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; mkdir -p "$d"; ' +
-		'f="$d/.bridge-header"; printf \'X-Bridge-Token: %s\\n\' "$CODEBAY_STDIN" > "$f"; chmod 600 "$f"';
-	const res = await execInContainer(target, { script, stdin: token });
-	return res.ok ? { ok: true } : { ok: false, error: res.error };
-}
-
-/** Merging rather than overwriting is what lets the settings.json injections compose in any order. */
-export function mergeClaudeSettingsScript(): string {
-	return mergeJsonFileScript(
-		'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; mkdir -p "$d"; f="$d/settings.json"; '
+	return writeContainerFile(
+		target,
+		claudeConfigFile('.bridge-header', '600'),
+		`X-Bridge-Token: ${token}\n`
 	);
 }
 
-async function injectClaudeHooks(
-	target: ContainerTarget,
-	settingsJson: string
-): Promise<{ ok: boolean; error?: string }> {
-	const res = await execInContainer(target, {
-		script: mergeClaudeSettingsScript(),
-		stdin: settingsJson
-	});
-	return res.ok ? { ok: true } : { ok: false, error: res.error };
+/** Matches the delimited `id=<id>&state=` fragment of the hook's curl URL, so no other instance id can match by substring. */
+export function hasAttentionHook(settings: Record<string, unknown> | null, id: string): boolean {
+	if (settings === null) return false;
+	return JSON.stringify(settings.hooks ?? null).includes(`id=${encodeURIComponent(id)}&state=`);
 }
 
 export const attentionHooks: Injection = {
@@ -92,8 +84,7 @@ export const attentionHooks: Injection = {
 			log(`⚠ Claude hook injection failed: ${header.error}\n`);
 			return;
 		}
-		const settings = attentionHookSettings(target.instance.id);
-		const hooks = await injectClaudeHooks(target, settings);
+		const hooks = await mergeClaudeSettings(target, attentionHookSettings(target.instance.id));
 		log(
 			hooks.ok
 				? '✓ Claude attention hooks installed\n'
@@ -102,11 +93,6 @@ export const attentionHooks: Injection = {
 	},
 
 	async check(target) {
-		return checkPresence(
-			target,
-			'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
-				'[ -s "$d/settings.json" ] && grep -q "$1" "$d/settings.json" && echo 1 || echo 0',
-			['attention-check', target.instance.id]
-		);
+		return hasAttentionHook(await readClaudeSettings(target), target.instance.id);
 	}
 };

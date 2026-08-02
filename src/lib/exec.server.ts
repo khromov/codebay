@@ -82,29 +82,6 @@ export async function checkPresence(
 	args?: string[]
 ): Promise<boolean> {
 	const res = await execInContainer(target, { script, args, capture: true });
-	return res.ok && res.stdout === '1';
-}
-
-/** Only for secret-only files; injections mixing secret and non-secret content roll their own. */
-export function writeSecretFileScript(dirExpr: string, filename: string, mode = '600'): string {
-	const path = `${dirExpr}/${filename}`;
-	return `mkdir -p "${dirExpr}"; printf '%s' "$CODEBAY_STDIN" > "${path}"; chmod ${mode} "${path}";`;
-}
-
-/**
- * Deep-merges the JSON in `$CODEBAY_STDIN` into a target file, letting settings injections
- * compose in any order. `pathSetup` is a shell snippet that must set `f` to the target path
- * (and create its directory); `jq '.[0] * .[1]'` recurses into nested objects, so keys like
- * `projects.<path>` merge rather than clobber. Falls back to a plain write when the file is
- * missing/empty or jq is unavailable.
- */
-export function mergeJsonFileScript(pathSetup: string): string {
-	return (
-		pathSetup +
-		'new="$CODEBAY_STDIN"; ' +
-		'if command -v jq >/dev/null 2>&1 && [ -s "$f" ] && ' +
-		'merged=$(printf \'%s\' "$new" | jq -s \'.[0] * .[1]\' "$f" - 2>/dev/null); then ' +
-		'printf \'%s\' "$merged" > "$f"; else printf \'%s\' "$new" > "$f"; fi; ' +
-		'chmod 644 "$f"'
-	);
+	// The login shell's profile noise precedes the probe's echo, so only the last line counts.
+	return res.ok && res.stdout.split('\n').at(-1)?.trim() === '1';
 }

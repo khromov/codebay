@@ -2,8 +2,12 @@ import { existsSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { checkPresence, execInContainer } from '../lib/exec.server.ts';
-import { mergeClaudeSettingsScript } from './attention-hooks.ts';
+import { writeContainerFile } from '../lib/container-files.server.ts';
+import {
+	claudeConfigFile,
+	mergeClaudeSettings,
+	readClaudeSettings
+} from '../lib/claude-settings.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 /** Left unexpanded — Claude Code invokes this long after the injection has finished. */
@@ -65,23 +69,20 @@ export async function readStatusLineConfig(): Promise<StatusLineConfig | null> {
 	return { statusLine: { ...statusLine, command }, script };
 }
 
-/** Two execs rather than one, because `execInContainer` carries a single `stdin` payload per call. */
+/** A referenced script is staged first, then the statusLine block is merged into settings.json. */
 async function injectStatusLine(
 	target: ContainerTarget,
 	config: StatusLineConfig
 ): Promise<{ ok: boolean; error?: string }> {
 	if (config.script) {
-		const writeScript =
-			'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; mkdir -p "$d"; ' +
-			'printf \'%s\' "$CODEBAY_STDIN" > "$d/statusline.sh"; chmod 755 "$d/statusline.sh"';
-		const res = await execInContainer(target, { script: writeScript, stdin: config.script });
-		if (!res.ok) return { ok: false, error: res.error };
+		const wrote = await writeContainerFile(
+			target,
+			claudeConfigFile('statusline.sh', '755'),
+			config.script
+		);
+		if (!wrote.ok) return wrote;
 	}
-	const res = await execInContainer(target, {
-		script: mergeClaudeSettingsScript(),
-		stdin: JSON.stringify({ statusLine: config.statusLine })
-	});
-	return res.ok ? { ok: true } : { ok: false, error: res.error };
+	return mergeClaudeSettings(target, { statusLine: config.statusLine });
 }
 
 export const claudeStatusline: Injection = {
@@ -115,10 +116,7 @@ export const claudeStatusline: Injection = {
 	},
 
 	async check(target) {
-		return checkPresence(
-			target,
-			'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
-				'[ -s "$d/settings.json" ] && grep -q statusLine "$d/settings.json" && echo 1 || echo 0'
-		);
+		const settings = await readClaudeSettings(target);
+		return !!settings?.statusLine;
 	}
 };

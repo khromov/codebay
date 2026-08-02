@@ -1,5 +1,6 @@
-import { checkPresence, execInContainer, mergeJsonFileScript } from '../lib/exec.server.ts';
-import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
+import { deepMerge, editJsonFile, readJsonFile } from '../lib/container-files.server.ts';
+import { CLAUDE_JSON_FILE } from '../lib/claude-settings.server.ts';
+import type { Injection } from '../lib/injections.server.ts';
 
 /**
  * Pre-accepts the three prompts `claude` shows on first launch, so a throwaway instance
@@ -26,10 +27,6 @@ export function claudeTrustConfig(workspacePath: string | null): Record<string, 
 	return cfg;
 }
 
-/** Same resolution the credentials injection uses, so both target the one `.claude.json`. */
-const CLAUDE_JSON_PATH_SETUP =
-	'h=$(eval echo ~$(id -un)); f="${CLAUDE_CONFIG_DIR:+$CLAUDE_CONFIG_DIR/.claude.json}"; f="${f:-$h/.claude.json}"; ';
-
 /** Safe here only because instances are throwaway, single-tenant sandboxes. */
 export const claudeTrust: Injection = {
 	id: 'claude-trust',
@@ -37,11 +34,10 @@ export const claudeTrust: Injection = {
 
 	async apply(target, log) {
 		log('Pre-accepting Claude trust, MCP, and bypass-permissions prompts…\n');
-		const config = claudeTrustConfig(target.instance.remote_workspace_folder);
-		const res = await execInContainer(target, {
-			script: mergeJsonFileScript(CLAUDE_JSON_PATH_SETUP),
-			stdin: JSON.stringify(config)
-		});
+		// deepMerge recurses into `projects`, so the per-project keys layer onto any existing entries.
+		const res = await editJsonFile(target, CLAUDE_JSON_FILE, (cur) =>
+			deepMerge(cur, claudeTrustConfig(target.instance.remote_workspace_folder))
+		);
 		log(
 			res.ok
 				? '✓ Claude startup prompts pre-accepted\n'
@@ -49,11 +45,8 @@ export const claudeTrust: Injection = {
 		);
 	},
 
-	async check(target: ContainerTarget) {
-		return checkPresence(
-			target,
-			CLAUDE_JSON_PATH_SETUP +
-				'[ -s "$f" ] && grep -q bypassPermissionsModeAccepted "$f" && echo 1 || echo 0'
-		);
+	async check(target) {
+		const cfg = await readJsonFile(target, CLAUDE_JSON_FILE);
+		return cfg?.bypassPermissionsModeAccepted === true;
 	}
 };

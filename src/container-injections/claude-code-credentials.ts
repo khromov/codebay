@@ -4,7 +4,9 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CLAUDE_CODE_TOKEN, CLAUDE_KEYCHAIN_SERVICE } from '../lib/config.server.ts';
 import { getOption } from '../lib/db.server.ts';
-import { checkPresence, execInContainer, writeSecretFileScript } from '../lib/exec.server.ts';
+import { checkPresence } from '../lib/exec.server.ts';
+import { deepMerge, editJsonFile, writeContainerFile } from '../lib/container-files.server.ts';
+import { CLAUDE_JSON_FILE, claudeConfigFile } from '../lib/claude-settings.server.ts';
 import { spawnCapture } from '../lib/spawn.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
@@ -95,13 +97,15 @@ async function injectClaudeCredentials(
 	target: ContainerTarget,
 	creds: string
 ): Promise<{ ok: boolean; error?: string }> {
-	const script =
-		'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
-		writeSecretFileScript('$d', '.credentials.json', '600') +
-		' cfg="${CLAUDE_CONFIG_DIR:+$CLAUDE_CONFIG_DIR/.claude.json}"; cfg="${cfg:-$h/.claude.json}"; ' +
-		'printf \'%s\' \'{"hasCompletedOnboarding":true}\' > "$cfg"; chmod 644 "$cfg"';
-	const res = await execInContainer(target, { script, stdin: creds });
-	return res.ok ? { ok: true } : { ok: false, error: res.error };
+	const wrote = await writeContainerFile(
+		target,
+		claudeConfigFile('.credentials.json', '600'),
+		creds
+	);
+	if (!wrote.ok) return wrote;
+	return editJsonFile(target, CLAUDE_JSON_FILE, (cur) =>
+		deepMerge(cur, { hasCompletedOnboarding: true })
+	);
 }
 
 /**
