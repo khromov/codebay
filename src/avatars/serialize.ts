@@ -1,6 +1,6 @@
 // Turns an avatar-editor drawing into the two things a contribution needs:
 // module source and a pre-filled issue URL.
-import { type AvatarArt, ROWS, COLS, ON } from './types.ts';
+import { type AvatarArt, ROWS, COLS, ON, GRAY } from './types.ts';
 
 export const REPO_URL = 'https://github.com/khromov/codebay';
 
@@ -18,7 +18,8 @@ export function cellsToPixels(cells: number[]): string[] {
 	for (let r = 0; r < ROWS; r++) {
 		let row = '';
 		for (let c = 0; c < COLS; c++) {
-			row += cells[r * COLS + c] === ON ? '#' : '.';
+			const cell = cells[r * COLS + c];
+			row += cell === ON ? '#' : cell === GRAY ? '+' : '.';
 		}
 		rows.push(row);
 	}
@@ -58,7 +59,7 @@ export function toIssueUrl(art: AvatarArt): string {
 		toModuleSource(art).trimEnd(),
 		'```',
 		'',
-		'_It should satisfy `src/avatars/avatars.test.ts`: exactly 8×8, only `#`/`.` pixels, unique name._'
+		'_It should satisfy `src/avatars/avatars.test.ts`: exactly 8×8, only `#`/`+`/`.` pixels, unique name._'
 	].join('\n');
 	const params = new URLSearchParams({ title, body });
 	return `${REPO_URL}/issues/new?${params}`;

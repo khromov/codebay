@@ -16,7 +16,7 @@ gh issue view <number-or-url> --json number,title,body,url
 Confirm the shape matches what `serialize.ts::toIssueUrl` produces:
 
 - Title is `Avatar contribution: <name>`
-- Body contains a plain fenced block with 8 lines of `#`/`.` art
+- Body contains a plain fenced block with 8 lines of `#`/`+`/`.` art (`#` = on, `+` = gray, `.` = off)
 - Body contains a ` ```ts ` fenced block with a full `AvatarArt` module (`import type { AvatarArt } from './types.ts'; ... export default art;`)
 
 If the issue doesn't look like this — wrong title format, missing code block, art that isn't 8×8 — **stop and tell the user what's off** rather than guessing at intent or trying to reshape it into something that fits.
@@ -26,7 +26,7 @@ If the issue doesn't look like this — wrong title format, missing code block, 
 Pull `name` and the module source out of the ` ```ts ` block. Before writing anything, validate against the same rules `src/avatars/avatars.test.ts` enforces:
 
 - Exactly 8 rows in `pixels`
-- Each row is exactly 8 characters, only `#` or `.` (the editor never emits raw spaces, but treat space as off too if you see one)
+- Each row is exactly 8 characters, only `#`, `+` or `.` (the editor never emits raw spaces, but treat space as off too if you see one)
 - `name` is non-empty and **not already present** in `src/avatars/index.ts`'s `avatars[]` array
 
 If any rule fails, report exactly which rule and which row failed. Do not "fix" bad art or auto-rename a colliding name — ask the user how they want to handle it.
