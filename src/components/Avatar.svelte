@@ -96,7 +96,7 @@
 	onlostpointercapture={release}
 >
 	{#each grid as cell, i (i)}
-		<span class="px" class:on={cell === 1}></span>
+		<span class="px" class:on={cell === 1} class:gray={cell === 2}></span>
 	{/each}
 	{#if interactive}
 		<span class="invert" aria-hidden="true"></span>
@@ -120,6 +120,9 @@
 		padding: 0 var(--gap) var(--gap) 0;
 		background-clip: content-box;
 		background-color: var(--rule-soft); /* unlit LED — faint */
+	}
+	.px.gray {
+		background-color: var(--led-gray); /* half-lit LED */
 	}
 	.px.on {
 		background-color: var(--ink);

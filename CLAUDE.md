@@ -18,15 +18,17 @@ bun run typecheck  # svelte-check (with a custom warning-ignore flag) + tsc --no
 bun test           # all tests
 bun test src/index.isolated.test.ts          # single file
 bun test -t "renders Hello world"            # single test by name
-bun run checks     # format + typecheck + tests — run this after every change (see below)
+bun run checks     # format + eslint + typecheck + tests — run this after every change (see below)
 bun run clean      # remove .mochi build output
-bun run lint       # prettier --check + eslint (read-only; `checks` runs format instead)
+bun run lint       # prettier --check + eslint (read-only; `checks` runs format instead of prettier --check, but the same eslint)
 bun run gen:chimes # re-render attention chimes to public/sounds/ WAVs (after editing scripts/gen-chimes.ts)
 bun run prod       # build + serve the production bundle
 bun run verify:package # pack the tarball, install + boot it elsewhere (see npm packaging below)
 ```
 
-**Always run `bun run checks` after implementing a change** (it runs `format`, then `typecheck`, then `test`) and fix anything it surfaces before considering the work done.
+**Always run `bun run checks` after implementing a change** (it runs `format`, then `eslint`, then `typecheck`, then `test`) and fix anything it surfaces before considering the work done.
+
+**Docker availability & testing strategy.** The automated suite (`bun test` / `bun run checks`) is fully self-contained — even `docker.isolated.test.ts` stubs dockerode via `globalThis.__codebayDocker`, so **no Docker daemon is required** and the checks always run (e.g. inside the Bun-only `.devcontainer/`, which deliberately has no Docker access). Only end-to-end verification of the instance lifecycle — actually creating an instance, `devcontainer up`, the boot/health flow — needs a **live daemon**. Before attempting any such live verification, probe with `docker info` (or `docker context inspect`): if it's unavailable, don't try to boot instances — say so and fall back to the unit/isolated tests, which cover the orchestration logic against stubs. When Docker _is_ running, live-boot verification becomes an option on top of the suite.
 
 Tests that touch server state are named `*.isolated.test.ts`; pure unit tests (e.g. `src/avatars/*.test.ts`) use plain `*.test.ts`. `bunfig.toml` sets `root = "src"` (so vendored framework tests never run) and preloads `test-setup.ts`, which wipes `./.test-data` and forces `DATA_DIR` there before any module loads — a bare `bun test` can never open the real `~/.codebay` DB. Note that `db.server.ts` pins its SQLite handle to `globalThis`, so all tests in a run share one DB connection: a per-file `DATA_DIR` override only wins if that file opens the DB first, and don't `rmSync(DATA_DIR)` in a test's `afterAll` or you'll yank state out from under other tests.
 

@@ -4,7 +4,8 @@
 	import Contrast from '@lucide/svelte/icons/contrast';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import toast from 'svelte-french-toast';
-	import { ROWS, COLS, ON, OFF, type AvatarArt } from '../avatars/types.ts';
+	import { ROWS, COLS, ON, OFF, GRAY, type AvatarArt } from '../avatars/types.ts';
+	import { MODES, nextValue, type Mode } from '../avatars/editor.ts';
 	import {
 		cellsToPixels,
 		normalizeName,
@@ -24,7 +25,26 @@
 	const slug = $derived(normalizeName(avatarName));
 	const art = $derived<AvatarArt>({ name: slug || 'my-avatar', pixels: cellsToPixels(cells) });
 	// Contributing needs a name and at least one lit pixel — a blank sprite is no sprite.
-	const canContribute = $derived(slug.length > 0 && cells.some((c) => c === ON));
+	const canContribute = $derived(slug.length > 0 && cells.some((c) => c !== OFF));
+
+	// Cycle is the default so both shades are reachable without switching mode.
+	let mode = $state<Mode>('cycle');
+	let modeButtons = $state<HTMLButtonElement[]>([]);
+
+	// Roving-tabindex arrow navigation, as a radiogroup is expected to behave.
+	function onModeKeydown(e: KeyboardEvent, i: number) {
+		const dir =
+			e.key === 'ArrowRight' || e.key === 'ArrowDown'
+				? 1
+				: e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+					? -1
+					: 0;
+		if (dir === 0) return;
+		e.preventDefault();
+		const next = (i + dir + MODES.length) % MODES.length;
+		mode = MODES[next]!.id;
+		modeButtons[next]?.focus();
+	}
 
 	// Capturing the pointer on the grid is what lets one stroke paint every cell it crosses.
 	let gridEl = $state<HTMLDivElement | null>(null);
@@ -51,7 +71,7 @@
 		if (i == null) return;
 		(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
 		painting = true;
-		paintValue = cells[i] === ON ? OFF : ON;
+		paintValue = nextValue(mode, cells[i]!);
 		cells[i] = paintValue;
 	}
 
@@ -69,8 +89,9 @@
 		cells = Array(ROWS * COLS).fill(OFF);
 	}
 
+	// Only swaps off↔on; gray sits in the middle and is left untouched.
 	function invert() {
-		cells = cells.map((c) => (c === ON ? OFF : ON));
+		cells = cells.map((c) => (c === ON ? OFF : c === OFF ? ON : c));
 	}
 
 	async function copyModule() {
@@ -106,7 +127,7 @@
 				onlostpointercapture={stopPainting}
 			>
 				{#each cells as cell, i (i)}
-					<span class="cell" class:on={cell === ON}></span>
+					<span class="cell" class:on={cell === ON} class:gray={cell === GRAY}></span>
 				{/each}
 			</div>
 		</div>
@@ -133,6 +154,27 @@
 					maxlength="24"
 				/>
 			</label>
+
+			<div class="mode-field">
+				<span class="preview-label">Mode</span>
+				<div class="modes" role="radiogroup" aria-label="Drawing mode">
+					{#each MODES as m, i (m.id)}
+						<button
+							type="button"
+							class="mode"
+							class:active={mode === m.id}
+							role="radio"
+							aria-checked={mode === m.id}
+							tabindex={mode === m.id ? 0 : -1}
+							bind:this={modeButtons[i]}
+							onclick={() => (mode = m.id)}
+							onkeydown={(e) => onModeKeydown(e, i)}
+						>
+							{m.label}
+						</button>
+					{/each}
+				</div>
+			</div>
 
 			<div class="tools">
 				<Button size="sm" icon={Eraser} onclick={clear}>Clear</Button>
@@ -224,6 +266,9 @@
 		background-clip: content-box;
 		background-color: var(--rule-soft); /* unlit LED — faint */
 	}
+	.cell.gray {
+		background-color: var(--led-gray); /* half-lit LED */
+	}
 	.cell.on {
 		background-color: var(--ink);
 	}
@@ -266,6 +311,39 @@
 	.name-field input:focus {
 		outline: none;
 		box-shadow: inset 3px 3px 0 var(--rule-soft);
+	}
+	.mode-field {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.modes {
+		display: flex;
+		border: 1px solid var(--ink);
+	}
+	.mode {
+		flex: 1;
+		padding: 7px 6px;
+		border: none;
+		border-right: 1px solid var(--ink);
+		background: var(--bg);
+		color: var(--ink);
+		font-family: var(--font-mono);
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		cursor: pointer;
+	}
+	.mode:last-child {
+		border-right: none;
+	}
+	.mode.active {
+		background: var(--ink);
+		color: var(--bg);
+	}
+	.mode:focus-visible {
+		outline: none;
+		box-shadow: inset 0 0 0 2px var(--rule-soft);
 	}
 	.tools {
 		display: flex;
