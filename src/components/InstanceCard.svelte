@@ -7,10 +7,13 @@
 	import Button from './Button.svelte';
 	import { withPopupMarker } from '../lib/popup-nav.ts';
 
+	type Action = 'start' | 'stop' | 'delete' | 'rebuild';
+
 	let {
 		instance,
 		editing,
 		editingName = $bindable(),
+		pending = null,
 		onact,
 		onstartrename,
 		oncommitrename,
@@ -19,7 +22,9 @@
 		instance: Instance;
 		editing: boolean;
 		editingName: string;
-		onact: (action: 'start' | 'stop' | 'delete' | 'rebuild') => void;
+		/** The user-triggered action currently in flight, if any — drives the busy overlay. */
+		pending?: Action | null;
+		onact: (action: Action) => void;
 		onstartrename: () => void;
 		oncommitrename: () => void;
 		oncancelrename: () => void;
@@ -31,9 +36,19 @@
 			instance.status === 'stopped' ||
 			(instance.status === 'error' && !!instance.container_id)
 	);
+
+	const BUSY_LABEL: Record<Action, string> = {
+		start: 'Starting…',
+		stop: 'Stopping…',
+		delete: 'Deleting…',
+		rebuild: 'Rebuilding…'
+	};
 </script>
 
-<li class="card panel">
+<li class="card panel" class:busy={!!pending} aria-busy={!!pending || undefined}>
+	{#if pending}
+		<div class="busy" aria-live="polite"><span class="busy-label">{BUSY_LABEL[pending]}</span></div>
+	{/if}
 	<div class="card-head">
 		<Avatar id={instance.id} name={instance.name} interactive />
 		{#if editing}
@@ -109,15 +124,49 @@
 
 <style>
 	.card {
+		position: relative;
 		background: var(--bg-card);
 		padding: 16px 16px 14px;
 		transition:
 			transform 0.08s steps(2),
 			box-shadow 0.08s steps(2);
 	}
-	.card:hover {
+	.card:hover:not(.busy) {
 		transform: translate(-1px, -1px);
 		box-shadow: 6px 6px 0 var(--ink);
+	}
+	/* Translucent scrim dims the card body and blocks clicks on the buttons beneath. */
+	.busy {
+		position: absolute;
+		inset: 0;
+		z-index: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: color-mix(in srgb, var(--bg-card) 78%, transparent);
+	}
+	.busy-label {
+		font-family: var(--font-mono);
+		font-weight: 600;
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		padding: 4px 9px;
+		border: 1px solid var(--ink);
+		background: var(--ink);
+		color: var(--bg);
+		animation: lcd-blink 1.1s steps(1) infinite;
+	}
+	@keyframes lcd-blink {
+		50% {
+			background: transparent;
+			color: var(--ink);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.busy-label {
+			animation: none;
+		}
 	}
 	.card-head {
 		display: flex;

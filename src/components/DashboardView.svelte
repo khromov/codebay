@@ -16,13 +16,31 @@
 		pet
 	}: { preflight: Preflight; instances: Instance[]; loaded: boolean; pet?: AvatarArt } = $props();
 
+	type Action = 'start' | 'stop' | 'delete' | 'rebuild';
+
 	let browserOpen = $state(false);
 	let creating = $state(false);
 	let actionError = $state<string | null>(null);
 	let editingId = $state<string | null>(null);
 	let editingName = $state('');
+	// Per-instance in-flight action + the status it started from, so the busy overlay clears
+	// only once the live stream reports the resulting change (avoids flicker on the round-trip).
+	let pending = $state<Record<string, { action: Action; since: Instance['status'] }>>({});
 
 	const ready = $derived(preflight.docker && preflight.cli);
+
+	// Drop a pending entry once its instance is gone (deleted) or its status has moved on.
+	$effect(() => {
+		for (const [id, { since }] of Object.entries(pending)) {
+			const instance = instances.find((i) => i.id === id);
+			if (!instance || instance.status !== since) clearPending(id);
+		}
+	});
+
+	function clearPending(id: string) {
+		const { [id]: _, ...rest } = pending;
+		pending = rest;
+	}
 
 	async function createFrom(sourcePath: string, opts?: { branch?: string }) {
 		browserOpen = false;
@@ -42,7 +60,7 @@
 		}
 	}
 
-	async function act(id: string, action: 'start' | 'stop' | 'delete' | 'rebuild') {
+	async function act(id: string, action: Action) {
 		actionError = null;
 		if (action === 'delete' && !confirm('Delete this instance and its copied files?')) return;
 		// Rebuild discards the container; the workspace copy lives on the host and survives.
@@ -51,11 +69,14 @@
 			!confirm('Recreate this container and re-run setup? The workspace is kept.')
 		)
 			return;
+		const since = instances.find((i) => i.id === id)?.status;
+		if (since) pending = { ...pending, [id]: { action, since } };
 		try {
 			await apiPost(`/api/instances/${id}/${action}`, undefined, `Failed to ${action}`);
-			// The live stream reflects the resulting state.
+			// The live stream reflects the resulting state; the $effect clears the busy overlay.
 		} catch (err) {
 			actionError = (err as Error).message;
+			clearPending(id);
 		}
 	}
 
@@ -138,6 +159,7 @@
 				<InstanceCard
 					{instance}
 					editing={editingId === instance.id}
+					pending={pending[instance.id]?.action ?? null}
 					bind:editingName
 					onact={(action) => act(instance.id, action)}
 					onstartrename={() => startRename(instance)}
