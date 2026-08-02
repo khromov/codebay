@@ -167,9 +167,7 @@
 		font-family: var(--font-mono);
 		font-weight: 600;
 		font-size: 15px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		overflow-wrap: anywhere;
 		/* Reset button chrome so it reads as plain text until hovered. */
 		margin: 0;
 		padding: 2px 4px;

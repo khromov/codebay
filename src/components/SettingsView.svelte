@@ -878,8 +878,8 @@
 					<div class="text">
 						<div class="name">Rebuild running containers (no cache)</div>
 						<div class="desc">
-							Re-run <code>devcontainer up --build-no-cache</code> for every currently-running instance.
-							In-container edits are kept; stopped instances are left alone.
+							Rebuild every currently-running instance from scratch, without using any cached image
+							layers. In-container edits are kept; stopped instances are left alone.
 						</div>
 						{#if rebuildError}
 							<div class="msg error">{rebuildError}</div>
