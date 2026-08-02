@@ -4,9 +4,18 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from 'mochi-framework';
 import { themeHandle } from './lib/theme.server.ts';
+import { PROXY_PREFIX } from './lib/proxy.server.ts';
 
+// Stands in for a proxied code-server document: text/html that themeHandle must not rewrite.
+const proxyPath = `${PROXY_PREFIX}/test/page`;
 const routes = {
-	'/': Mochi.page('./src/__fixtures__/HelloWorld.svelte')
+	'/': Mochi.page('./src/__fixtures__/HelloWorld.svelte'),
+	[proxyPath]: Mochi.api(
+		() =>
+			new Response('<html lang="en">proxied</html>', {
+				headers: { 'Content-Type': 'text/html' }
+			})
+	)
 };
 
 // Mochi.serve() is a process-wide singleton (see mochiConfig.ts), so every
@@ -55,5 +64,10 @@ describe('minimal app', () => {
 	test('GET / renders data-theme="dark" when the theme cookie is dark', async () => {
 		const res = await fetch(base, { headers: { Cookie: 'theme=dark' } });
 		expect(await res.text()).toContain('<html data-theme="dark"');
+	});
+
+	test('leaves proxied code-server HTML untouched even with a theme cookie', async () => {
+		const res = await fetch(`${base}${proxyPath}`, { headers: { Cookie: 'theme=dark' } });
+		expect(await res.text()).not.toContain('data-theme');
 	});
 });

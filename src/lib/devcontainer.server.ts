@@ -62,6 +62,13 @@ const EXCLUDE_MARKER_END = '# <<< codebay <<<';
 
 const CODE_SERVER_SETTINGS = {
 	'workbench.colorTheme': 'Default Dark Modern',
+	// Stop VS Code re-resolving the theme from the OS/browser color scheme at runtime —
+	// that re-resolution (fired on focus/tab-switch) is what randomly flips the editor to
+	// light. Pinning both preferred themes to dark keeps either branch dark even if it does.
+	'window.autoDetectColorScheme': false,
+	'window.autoDetectHighContrast': false,
+	'workbench.preferredDarkColorTheme': 'Default Dark Modern',
+	'workbench.preferredLightColorTheme': 'Default Dark Modern',
 	'workbench.secondarySideBar.defaultVisibility': 'hidden',
 	'chat.commandCenter.enabled': false,
 	// Instances are throwaway sandboxes — never nag to install recommended extensions.
