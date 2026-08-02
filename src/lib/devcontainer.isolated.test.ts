@@ -73,7 +73,7 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
 		// Create-or-attach: -A doubles as the run-once gate and reattaches the live
 		// session (Claude + scrollback) after the browser reaped the previous PTY.
-		expect(terminal.command).toContain("exec tmux new-session -A -s codebay 'claude");
+		expect(terminal.command).toContain("exec tmux new-session -A -s codebay '");
 		// Guarded on tmux actually being installed, and ordered before the fallback.
 		expect(terminal.command).toContain('command -v tmux');
 		expect(terminal.command.indexOf('tmux')).toBeLessThan(
@@ -81,6 +81,20 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		);
 		// $SHELL must be left for tmux's sh -c, not VS Code's ${...} resolver.
 		expect(terminal.command).toContain('exec "$SHELL" -l');
+	});
+
+	test('holds claude until the injections-done sentinel appears, in both launch paths', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		// A claude that starts mid-injection clobbers the trust keys on its next config rewrite.
+		const tmuxPath = terminal.command.split('.codebay-terminal-launched')[0];
+		const fallbackPath = terminal.command.split('.codebay-terminal-launched')[1];
+		for (const path of [tmuxPath, fallbackPath]) {
+			expect(path).toContain('.codebay-injections-done');
+			expect(path.indexOf('.codebay-injections-done')).toBeLessThan(path.indexOf('claude'));
+		}
+		// Bounded: a boot that never writes the sentinel must still yield a terminal.
+		expect(terminal.command).toContain('-ge 60');
 	});
 
 	test('falls back to the first-open marker gate when tmux is missing', async () => {
