@@ -19,11 +19,20 @@ describe('cellsToPixels', () => {
 		expect(cellsToPixels(decode(ukraine))).toEqual(ukraine.pixels);
 	});
 
-	test('emits 8 rows of 8 with only # and .', () => {
+	test('emits 8 rows of 8 with only #, + and .', () => {
 		const rows = cellsToPixels(Array(64).fill(0).fill(1, 0, 3));
 		expect(rows.length).toBe(8);
-		for (const row of rows) expect(row).toMatch(/^[#.]{8}$/);
+		for (const row of rows) expect(row).toMatch(/^[#+.]{8}$/);
 		expect(rows[0]).toBe('###.....');
+	});
+
+	test('serializes gray cells (2) to + and round-trips through decode', () => {
+		const cells = Array(64).fill(0);
+		cells[0] = 1; // on → #
+		cells[1] = 2; // gray → +
+		const rows = cellsToPixels(cells);
+		expect(rows[0]).toBe('#+......');
+		expect(decode({ name: 'x', pixels: rows })).toEqual(cells);
 	});
 });
 
