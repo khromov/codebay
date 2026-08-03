@@ -99,6 +99,14 @@ const WAIT_FOR_INJECTIONS =
 	`i=0; until [ -e "$HOME/${INJECTIONS_DONE_FILE}" ] || [ "$i" -ge 60 ]; do sleep 1; i=$((i + 1)); done; `;
 
 /**
+ * claude scans `~/.claude/ide/*.lock` once at startup and never retries, so it must not race
+ * the code-server extension host writing that lock — hold it briefly until the bridge appears.
+ * Bounded so an offline/uninstalled instance (lock never written) still yields a usable terminal.
+ * No single quotes: this is spliced into the single-quoted tmux command string below.
+ */
+const WAIT_FOR_IDE_BRIDGE = `i=0; until ls "$HOME/.claude/ide/"*.lock >/dev/null 2>&1 || [ "$i" -ge 30 ]; do sleep 1; i=$((i + 1)); done; `;
+
+/**
  * Runs under tmux so Claude survives the browser closing — code-server reaps the
  * detached PTY, which only kills the tmux client. `-A` doubles as the run-once gate.
  */
@@ -107,10 +115,11 @@ const TERMINAL_TASK = {
 	type: 'shell',
 	command:
 		// `"$SHELL"` must reach tmux unexpanded; VS Code would substitute a `${…}` form first.
-		`if command -v tmux >/dev/null 2>&1; then exec tmux new-session -A -s ${TMUX_SESSION} '${WAIT_FOR_INJECTIONS}claude --dangerously-skip-permissions; exec "$SHELL" -l'; fi; ` +
+		`if command -v tmux >/dev/null 2>&1; then exec tmux new-session -A -s ${TMUX_SESSION} '${WAIT_FOR_INJECTIONS}${WAIT_FOR_IDE_BRIDGE}claude --dangerously-skip-permissions; exec "$SHELL" -l'; fi; ` +
 		// Without tmux there's no run-once gate, and folderOpen re-fires on every workspace load.
 		'MARK="$HOME/.codebay-terminal-launched"; [ -e "$MARK" ] && exit 0; touch "$MARK"; ' +
 		WAIT_FOR_INJECTIONS +
+		WAIT_FOR_IDE_BRIDGE +
 		'claude --dangerously-skip-permissions; exec ${env:SHELL} -l',
 	presentation: { reveal: 'always', panel: 'shared', focus: true },
 	runOptions: { runOn: 'folderOpen' },

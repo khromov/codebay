@@ -97,6 +97,22 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		expect(terminal.command).toContain('-ge 60');
 	});
 
+	test('holds claude until the IDE bridge lockfile appears, in both launch paths', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		// claude scans ~/.claude/ide/*.lock once at startup, so it must not race the extension host.
+		const tmuxPath = terminal.command.split('.codebay-terminal-launched')[0];
+		const fallbackPath = terminal.command.split('.codebay-terminal-launched')[1];
+		for (const path of [tmuxPath, fallbackPath]) {
+			expect(path).toContain('.claude/ide/');
+			// Ordered after the injections sentinel and before claude launches.
+			expect(path.indexOf('.codebay-injections-done')).toBeLessThan(path.indexOf('.claude/ide/'));
+			expect(path.indexOf('.claude/ide/')).toBeLessThan(path.indexOf('claude --'));
+		}
+		// Bounded: an offline/uninstalled instance (lock never written) must still yield a terminal.
+		expect(terminal.command).toContain('-ge 30');
+	});
+
 	test('falls back to the first-open marker gate when tmux is missing', async () => {
 		await writeOverrideConfig(dir, 8001);
 		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
