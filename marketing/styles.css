@@ -328,7 +328,7 @@ h1.headline {
 	position: absolute;
 	top: 0;
 	right: 0;
-	transform: translate(35%, -60%);
+	transform: translate(35%, -20%);
 	font-family: var(--font-mono);
 	font-size: 9px;
 	font-weight: 700;
