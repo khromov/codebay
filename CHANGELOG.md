@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.6.0](https://github.com/khromov/codebay/compare/codebay-v0.5.0...codebay-v0.6.0) (2026-08-03)
+
+
+### Features
+
+* add minimal Bun devcontainer ([#87](https://github.com/khromov/codebay/issues/87)) ([87f53fa](https://github.com/khromov/codebay/commit/87f53fae3c2857597b4e388de3a027490f3729e3))
+* auto-install Claude Code IDE extension in every instance ([#101](https://github.com/khromov/codebay/issues/101)) ([e04b697](https://github.com/khromov/codebay/commit/e04b697c198a5b290185d4b57f69938f126b0a04))
+* flag original AI-generated avatars with robot marker ([#81](https://github.com/khromov/codebay/issues/81)) ([6c95530](https://github.com/khromov/codebay/commit/6c95530ae147d865fc041a439625c9f4257c3401))
+* grayscale (third) pixel level for avatars ([#95](https://github.com/khromov/codebay/issues/95)) ([40cf324](https://github.com/khromov/codebay/commit/40cf3241db7e3562d833fecf91511ffc27fd8987))
+* loading state for instance-card actions ([#102](https://github.com/khromov/codebay/issues/102)) ([d47a1ba](https://github.com/khromov/codebay/commit/d47a1ba44ff66c779bf09323bf1ebc8106766274))
+* pre-accept Claude Code startup prompts in containers ([#89](https://github.com/khromov/codebay/issues/89)) ([67260cf](https://github.com/khromov/codebay/commit/67260cf7298e74dc9a861bcdd8769e92981c7a83))
+* warn before leaving the SPA when instances are running ([#93](https://github.com/khromov/codebay/issues/93)) ([a0bfe5f](https://github.com/khromov/codebay/commit/a0bfe5f6eb72f131fbd9941d4273ab7c6b2bc53c))
+
+
+### Bug Fixes
+
+* add node feature so the devcontainer builds ([#92](https://github.com/khromov/codebay/issues/92)) ([40e0aba](https://github.com/khromov/codebay/commit/40e0aba599ba8a460af2c2699a2a341052426d16))
+* auto-scroll boot log with a Follow toggle ([#96](https://github.com/khromov/codebay/issues/96)) ([fd0e414](https://github.com/khromov/codebay/commit/fd0e414a53eb1cfe27c02cc8705a62d37266c372))
+* Claude trust pre-acceptance on claude ≥2.1.220 + injection/launch race ([#100](https://github.com/khromov/codebay/issues/100)) ([51cb671](https://github.com/khromov/codebay/commit/51cb67101b282a06cbc8141341098580da77edd1))
+* force code-server to always render dark theme ([#103](https://github.com/khromov/codebay/issues/103)) ([dbee251](https://github.com/khromov/codebay/commit/dbee2519e199d33662c1482db849bf103050ac3e))
+* wrap long instance names instead of truncating ([#99](https://github.com/khromov/codebay/issues/99)) ([2f9c705](https://github.com/khromov/codebay/commit/2f9c7054336f43e54c913f29f8ba2dfdb3a0e731))
+* wrap long instance names instead of truncating ([#99](https://github.com/khromov/codebay/issues/99)) ([bb51bc4](https://github.com/khromov/codebay/commit/bb51bc4a1153b06467d075b0551a2e3533676c66))
+
 ## [0.5.0](https://github.com/khromov/codebay/compare/codebay-v0.4.0...codebay-v0.5.0) (2026-08-01)
 
 
