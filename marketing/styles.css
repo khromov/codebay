@@ -306,6 +306,8 @@ h1.headline {
 }
 .word-rotator .word {
 	grid-area: 1 / 1;
+	position: relative;
+	justify-self: center;
 	white-space: nowrap;
 	opacity: 0;
 	animation: word-cycle 6s ease-in-out infinite;
@@ -323,17 +325,19 @@ h1.headline {
 	color: var(--ok-line);
 }
 .soon-badge {
-	display: inline-block;
-	vertical-align: middle;
+	position: absolute;
+	top: 0;
+	right: 0;
+	transform: translate(35%, -60%);
 	font-family: var(--font-mono);
-	font-size: 10px;
+	font-size: 9px;
 	font-weight: 700;
-	letter-spacing: 0.06em;
+	letter-spacing: 0.04em;
 	background: var(--warn-bg);
 	border: 1px solid var(--warn-line);
 	color: var(--warn-ink);
-	padding: 3px 6px;
-	margin-left: 8px;
+	padding: 2px 5px;
+	white-space: nowrap;
 }
 @keyframes word-cycle {
 	0%,
