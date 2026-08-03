@@ -27,6 +27,8 @@ ensureMochiKey();
 await Mochi.serve({
 	port: PORT,
 	hostname: HOST,
+	// Bun defaults to 10s and aborts slower form POSTs mid-flight; passed through to Bun.serve.
+	idleTimeout: 120,
 	development: process.env.MODE === 'development',
 	htmlShell: './src/shell.html',
 	handle: sequence(basicAuth, themeHandle),

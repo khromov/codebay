@@ -6,6 +6,7 @@ import { tmux } from '../container-injections/tmux.ts';
 import { gitIdentity } from '../container-injections/git-identity.ts';
 import { claudeCodeCredentials } from '../container-injections/claude-code-credentials.ts';
 import { claudeCodeCustom } from '../container-injections/claude-code-custom.ts';
+import { claudeCodeIdeExtension } from '../container-injections/claude-code-ide-extension.ts';
 import { claudeCodeModels } from '../container-injections/claude-code-models.ts';
 import { githubCredentials } from '../container-injections/github-credentials.ts';
 import { attentionHooks } from '../container-injections/attention-hooks.ts';
@@ -53,6 +54,7 @@ const BASE_INJECTIONS_HEAD: Injection[] = [
 const BASE_INJECTIONS_TAIL: Injection[] = [
 	// Self-skips unless manual override is on and LiteLLM off, so it's safe in the always-run tail.
 	claudeCodeModels,
+	claudeCodeIdeExtension,
 	githubCredentials,
 	attentionHooks,
 	claudeStatusline,

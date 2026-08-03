@@ -47,7 +47,9 @@
 
 <li class="card panel" class:busy={!!pending} aria-busy={!!pending || undefined}>
 	{#if pending}
-		<div class="busy" aria-live="polite"><span class="busy-label">{BUSY_LABEL[pending]}</span></div>
+		<div class="busy-overlay" aria-live="polite">
+			<span class="busy-label">{BUSY_LABEL[pending]}</span>
+		</div>
 	{/if}
 	<div class="card-head">
 		<Avatar id={instance.id} name={instance.name} interactive />
@@ -136,7 +138,7 @@
 		box-shadow: 6px 6px 0 var(--ink);
 	}
 	/* Translucent scrim dims the card body and blocks clicks on the buttons beneath. */
-	.busy {
+	.busy-overlay {
 		position: absolute;
 		inset: 0;
 		z-index: 1;
