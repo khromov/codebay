@@ -1,4 +1,9 @@
-#!/usr/bin/env bun
+#!/bin/sh
+":" //# ; command -v bun >/dev/null 2>&1 || { printf '%s\n' 'codebay requires Bun — install it from https://bun.sh, then run: bunx codebay' >&2; exit 1; }; exec bun "$0" "$@"
+// The line above makes this file a POSIX-sh / Bun polyglot: npm & npx launch the bin through
+// its `#!/bin/sh` shebang, so a missing Bun yields a clear install hint instead of the kernel's
+// cryptic `env: bun: not found`, and when Bun is present sh re-execs this file under it (which
+// reads that line as a no-op string + comment). `bunx`/`bun` load it straight as TypeScript.
 // Entry for `bunx codebay`. The server resolves htmlShell, SSR page components,
 // ./public, and the .mochi manifest relative to process.cwd(), so chdir into the
 // package root before booting. Dynamic import() of a relative specifier resolves
