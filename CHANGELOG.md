@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/khromov/codebay/compare/codebay-v0.6.0...codebay-v0.7.0) (2026-08-05)
+
+
+### Features
+
+* add instance view filter (All | Active | Stopped) to dashboard ([#104](https://github.com/khromov/codebay/issues/104)) ([d810314](https://github.com/khromov/codebay/commit/d8103148a2a0e88610e80c57f99c6d4df1cade75))
+
 ## [0.6.0](https://github.com/khromov/codebay/compare/codebay-v0.5.0...codebay-v0.6.0) (2026-08-03)
 
 
