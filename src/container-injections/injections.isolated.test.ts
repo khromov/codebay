@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { injections, resolveInjections } from '../lib/injections.server.ts';
@@ -22,6 +22,7 @@ import {
 	EXTENSION_ID,
 	INSTALL_SCRIPT as EXT_INSTALL_SCRIPT
 } from './claude-code-ide-extension.ts';
+import { UPDATE_SCRIPT } from './claude-code-update.ts';
 
 describe('injection registry', () => {
 	test('every injection has a unique id', () => {
@@ -114,6 +115,14 @@ describe('injection registry', () => {
 		expect(t!.auth).toBeUndefined();
 	});
 
+	test('claude-code-update is registered with no auth chip and no health check', () => {
+		const update = injections.find((i) => i.id === 'claude-code-update');
+		expect(update).toBeDefined();
+		// A check() would fire an `npm view` network call on every health tick — too costly.
+		expect(update!.auth).toBeUndefined();
+		expect(update!.check).toBeUndefined();
+	});
+
 	test('claude-code-ide-extension is registered with a health check and no auth chip', () => {
 		const ext = injections.find((i) => i.id === 'claude-code-ide-extension');
 		expect(ext).toBeDefined();
@@ -187,6 +196,52 @@ describe('claude-code-ide-extension scripts', () => {
 		} finally {
 			rmSync(home, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('claude-code-update script', () => {
+	test('short-circuits when claude or npm is missing', () => {
+		expect(UPDATE_SCRIPT).toContain('command -v claude >/dev/null 2>&1 || exit 0');
+		expect(UPDATE_SCRIPT).toContain('command -v npm >/dev/null 2>&1 || exit 0');
+	});
+
+	test('reinstalls the latest npm build when behind', () => {
+		expect(UPDATE_SCRIPT).toContain('npm install -g @anthropic-ai/claude-code@latest');
+	});
+
+	// Run the script with fake `claude`/`npm` shims on PATH, exactly as it runs in a container.
+	// The script silences npm output, so `npm install` records itself via a marker file instead.
+	function runUpdate(installed: string, latest: string): { out: string; installed: boolean } {
+		const bin = mkdtempSync(join(tmpdir(), 'codebay-update-'));
+		const marker = join(bin, 'install-called');
+		try {
+			writeFileSync(join(bin, 'claude'), `#!/bin/sh\necho "${installed} (Claude Code)"\n`, {
+				mode: 0o755
+			});
+			writeFileSync(
+				join(bin, 'npm'),
+				`#!/bin/sh\nif [ "$1" = view ]; then echo "${latest}"; else touch "${marker}"; fi\n`,
+				{ mode: 0o755 }
+			);
+			const res = Bun.spawnSync(['bash', '-c', UPDATE_SCRIPT], {
+				env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }
+			});
+			return { out: res.stdout.toString().trim(), installed: existsSync(marker) };
+		} finally {
+			rmSync(bin, { recursive: true, force: true });
+		}
+	}
+
+	test('installs and reports the upgrade when the installed version is behind', () => {
+		const { out, installed } = runUpdate('2.1.0', '2.2.0');
+		expect(installed).toBe(true);
+		expect(out).toContain('updated 2.1.0 -> 2.2.0');
+	});
+
+	test('does not reinstall when already at the latest version', () => {
+		const { out, installed } = runUpdate('2.2.0', '2.2.0');
+		expect(installed).toBe(false);
+		expect(out).toContain('current 2.2.0');
 	});
 });
 
