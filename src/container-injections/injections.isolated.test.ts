@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { injections, resolveInjections } from '../lib/injections.server.ts';
@@ -22,6 +22,7 @@ import {
 	EXTENSION_ID,
 	INSTALL_SCRIPT as EXT_INSTALL_SCRIPT
 } from './claude-code-ide-extension.ts';
+import { UPDATE_SCRIPT } from './claude-code-update.ts';
 
 describe('injection registry', () => {
 	test('every injection has a unique id', () => {
@@ -114,6 +115,14 @@ describe('injection registry', () => {
 		expect(t!.auth).toBeUndefined();
 	});
 
+	test('claude-code-update is registered with no auth chip and no health check', () => {
+		const update = injections.find((i) => i.id === 'claude-code-update');
+		expect(update).toBeDefined();
+		// A check() would fire an `npm view` network call on every health tick — too costly.
+		expect(update!.auth).toBeUndefined();
+		expect(update!.check).toBeUndefined();
+	});
+
 	test('claude-code-ide-extension is registered with a health check and no auth chip', () => {
 		const ext = injections.find((i) => i.id === 'claude-code-ide-extension');
 		expect(ext).toBeDefined();
@@ -187,6 +196,70 @@ describe('claude-code-ide-extension scripts', () => {
 		} finally {
 			rmSync(home, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('claude-code-update script', () => {
+	test('short-circuits when claude or npm is missing', () => {
+		expect(UPDATE_SCRIPT).toContain('command -v claude >/dev/null 2>&1 || exit 0');
+		expect(UPDATE_SCRIPT).toContain('command -v npm >/dev/null 2>&1 || exit 0');
+	});
+
+	test('reinstalls the latest npm build when behind', () => {
+		expect(UPDATE_SCRIPT).toContain('npm install -g @anthropic-ai/claude-code@latest');
+	});
+
+	// Verbatim `claude --version` / `npm view … version` outputs captured from a live container
+	// (claude 2.1.220, npm latest 2.1.222 — 2026-08), so the parse pipeline is pinned to the real
+	// shapes claude emits, not a guessed one.
+	const CLAUDE_VERSION_FIXTURES: { raw: string; version: string }[] = [
+		{ raw: '2.1.220 (Claude Code)', version: '2.1.220' },
+		{ raw: '1.0.5 (Claude Code)', version: '1.0.5' }
+	];
+	const NPM_VIEW_FIXTURE = '2.1.222';
+
+	// Run the script with fake `claude`/`npm` shims on PATH that print the raw fixtures verbatim,
+	// exactly as it runs in a container. The script silences npm output, so `npm install` records
+	// itself via a marker file instead.
+	function runUpdate(rawClaude: string, rawNpmView: string): { out: string; installed: boolean } {
+		const bin = mkdtempSync(join(tmpdir(), 'codebay-update-'));
+		const marker = join(bin, 'install-called');
+		try {
+			writeFileSync(join(bin, 'claude'), `#!/bin/sh\ncat <<'FIXTURE'\n${rawClaude}\nFIXTURE\n`, {
+				mode: 0o755
+			});
+			writeFileSync(
+				join(bin, 'npm'),
+				`#!/bin/sh\nif [ "$1" = view ]; then cat <<'FIXTURE'\n${rawNpmView}\nFIXTURE\nelse touch "${marker}"; fi\n`,
+				{ mode: 0o755 }
+			);
+			const res = Bun.spawnSync(['bash', '-c', UPDATE_SCRIPT], {
+				env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }
+			});
+			return { out: res.stdout.toString().trim(), installed: existsSync(marker) };
+		} finally {
+			rmSync(bin, { recursive: true, force: true });
+		}
+	}
+
+	test('parses the version out of the real `claude --version` output and upgrades when behind', () => {
+		for (const { raw, version } of CLAUDE_VERSION_FIXTURES) {
+			const { out, installed } = runUpdate(raw, NPM_VIEW_FIXTURE);
+			expect(installed).toBe(true);
+			expect(out).toContain(`updated ${version} -> ${NPM_VIEW_FIXTURE}`);
+		}
+	});
+
+	test('does not reinstall when the parsed version already matches npm latest', () => {
+		const { out, installed } = runUpdate(`${NPM_VIEW_FIXTURE} (Claude Code)`, NPM_VIEW_FIXTURE);
+		expect(installed).toBe(false);
+		expect(out).toContain(`current ${NPM_VIEW_FIXTURE}`);
+	});
+
+	test('skips the upgrade when `npm view` returns nothing (offline/firewalled registry)', () => {
+		const { out, installed } = runUpdate('2.1.220 (Claude Code)', '');
+		expect(installed).toBe(false);
+		expect(out).toBe('');
 	});
 });
 
