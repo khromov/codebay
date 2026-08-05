@@ -2,9 +2,10 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import Component from '@lucide/svelte/icons/component';
 	import { isDev } from 'mochi-framework';
-	import type { AuthProvider } from '../types.ts';
+	import type { AuthProvider, InstanceFilter } from '../types.ts';
 	import type { AvatarArt } from '../avatars/index.ts';
 	import Brand from './Brand.svelte';
+	import InstanceFilterControl from './InstanceFilter.svelte';
 	import SettingsCog from './SettingsCog.svelte';
 	import CredMenu from './CredMenu.svelte';
 	import Button from './Button.svelte';
@@ -16,6 +17,8 @@
 		canDelete = false,
 		ready = true,
 		creating = false,
+		filter,
+		onFilter,
 		onNew,
 		onDeleteAll
 	}: {
@@ -24,6 +27,8 @@
 		canDelete?: boolean;
 		ready?: boolean;
 		creating?: boolean;
+		filter?: InstanceFilter;
+		onFilter?: (v: InstanceFilter) => void;
 		onNew?: () => void;
 		onDeleteAll?: () => void;
 	} = $props();
@@ -34,6 +39,9 @@
 	<div class="topbar-actions">
 		{#if isDev}
 			<Button variant="default" size="sm" icon={Component} href="/debug">Debug</Button>
+		{/if}
+		{#if filter && onFilter}
+			<InstanceFilterControl value={filter} onchange={onFilter} />
 		{/if}
 		<SettingsCog />
 		<CredMenu {auth} />

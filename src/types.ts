@@ -25,6 +25,9 @@ export interface Instance {
 	forwarded_ports: PortForward[];
 }
 
+/** Dashboard run-state view filter: All | Active (running/creating) | Stopped (stopped/error). */
+export type InstanceFilter = 'all' | 'active' | 'stopped';
+
 /** Live only — never persisted, so it always reflects the most recent probe. */
 export interface InstanceHealth {
 	containerRunning: boolean;

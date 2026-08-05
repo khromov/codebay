@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { type Instance, type Preflight } from '../types.ts';
+	import { type Instance, type InstanceFilter, type Preflight } from '../types.ts';
 	import type { AvatarArt } from '../avatars/index.ts';
 	import FolderBrowser from './FolderBrowser.svelte';
 	import InstanceCard from './InstanceCard.svelte';
@@ -19,6 +19,7 @@
 	type Action = 'start' | 'stop' | 'delete' | 'rebuild';
 
 	let browserOpen = $state(false);
+	let filter = $state<InstanceFilter>('all');
 	let creating = $state(false);
 	let actionError = $state<string | null>(null);
 	let editingId = $state<string | null>(null);
@@ -28,6 +29,14 @@
 	let pending = $state<Record<string, { action: Action; since: Instance['status'] }>>({});
 
 	const ready = $derived(preflight.docker && preflight.cli);
+
+	const visible = $derived(
+		instances.filter((i) => {
+			if (filter === 'active') return i.status === 'running' || i.status === 'creating';
+			if (filter === 'stopped') return i.status === 'stopped' || i.status === 'error';
+			return true;
+		})
+	);
 
 	// Drop a pending entry once its instance is gone (deleted) or its status has moved on.
 	$effect(() => {
@@ -126,6 +135,8 @@
 	canDelete={instances.length > 0}
 	{ready}
 	{creating}
+	{filter}
+	onFilter={(v) => (filter = v)}
 	onNew={() => (browserOpen = true)}
 	onDeleteAll={deleteAll}
 />
@@ -153,9 +164,11 @@
 				New instance
 			</Button>
 		</div>
+	{:else if visible.length === 0}
+		<div class="empty"><p class="empty-sub">No {filter} instances.</p></div>
 	{:else}
 		<ul class="grid">
-			{#each instances as instance (instance.id)}
+			{#each visible as instance (instance.id)}
 				<InstanceCard
 					{instance}
 					editing={editingId === instance.id}
