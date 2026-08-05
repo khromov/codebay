@@ -209,18 +209,28 @@ describe('claude-code-update script', () => {
 		expect(UPDATE_SCRIPT).toContain('npm install -g @anthropic-ai/claude-code@latest');
 	});
 
-	// Run the script with fake `claude`/`npm` shims on PATH, exactly as it runs in a container.
-	// The script silences npm output, so `npm install` records itself via a marker file instead.
-	function runUpdate(installed: string, latest: string): { out: string; installed: boolean } {
+	// Verbatim `claude --version` / `npm view … version` outputs captured from a live container
+	// (claude 2.1.220, npm latest 2.1.222 — 2026-08), so the parse pipeline is pinned to the real
+	// shapes claude emits, not a guessed one.
+	const CLAUDE_VERSION_FIXTURES: { raw: string; version: string }[] = [
+		{ raw: '2.1.220 (Claude Code)', version: '2.1.220' },
+		{ raw: '1.0.5 (Claude Code)', version: '1.0.5' }
+	];
+	const NPM_VIEW_FIXTURE = '2.1.222';
+
+	// Run the script with fake `claude`/`npm` shims on PATH that print the raw fixtures verbatim,
+	// exactly as it runs in a container. The script silences npm output, so `npm install` records
+	// itself via a marker file instead.
+	function runUpdate(rawClaude: string, rawNpmView: string): { out: string; installed: boolean } {
 		const bin = mkdtempSync(join(tmpdir(), 'codebay-update-'));
 		const marker = join(bin, 'install-called');
 		try {
-			writeFileSync(join(bin, 'claude'), `#!/bin/sh\necho "${installed} (Claude Code)"\n`, {
+			writeFileSync(join(bin, 'claude'), `#!/bin/sh\ncat <<'FIXTURE'\n${rawClaude}\nFIXTURE\n`, {
 				mode: 0o755
 			});
 			writeFileSync(
 				join(bin, 'npm'),
-				`#!/bin/sh\nif [ "$1" = view ]; then echo "${latest}"; else touch "${marker}"; fi\n`,
+				`#!/bin/sh\nif [ "$1" = view ]; then cat <<'FIXTURE'\n${rawNpmView}\nFIXTURE\nelse touch "${marker}"; fi\n`,
 				{ mode: 0o755 }
 			);
 			const res = Bun.spawnSync(['bash', '-c', UPDATE_SCRIPT], {
@@ -232,16 +242,24 @@ describe('claude-code-update script', () => {
 		}
 	}
 
-	test('installs and reports the upgrade when the installed version is behind', () => {
-		const { out, installed } = runUpdate('2.1.0', '2.2.0');
-		expect(installed).toBe(true);
-		expect(out).toContain('updated 2.1.0 -> 2.2.0');
+	test('parses the version out of the real `claude --version` output and upgrades when behind', () => {
+		for (const { raw, version } of CLAUDE_VERSION_FIXTURES) {
+			const { out, installed } = runUpdate(raw, NPM_VIEW_FIXTURE);
+			expect(installed).toBe(true);
+			expect(out).toContain(`updated ${version} -> ${NPM_VIEW_FIXTURE}`);
+		}
 	});
 
-	test('does not reinstall when already at the latest version', () => {
-		const { out, installed } = runUpdate('2.2.0', '2.2.0');
+	test('does not reinstall when the parsed version already matches npm latest', () => {
+		const { out, installed } = runUpdate(`${NPM_VIEW_FIXTURE} (Claude Code)`, NPM_VIEW_FIXTURE);
 		expect(installed).toBe(false);
-		expect(out).toContain('current 2.2.0');
+		expect(out).toContain(`current ${NPM_VIEW_FIXTURE}`);
+	});
+
+	test('skips the upgrade when `npm view` returns nothing (offline/firewalled registry)', () => {
+		const { out, installed } = runUpdate('2.1.220 (Claude Code)', '');
+		expect(installed).toBe(false);
+		expect(out).toBe('');
 	});
 });
 
