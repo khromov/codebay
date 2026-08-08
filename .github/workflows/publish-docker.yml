@@ -1,12 +1,17 @@
 name: publish-docker
 
 # Publishes a multi-arch image to the GitHub Container Registry (GHCR).
-#   - push to main   → ghcr.io/<owner>/codebay:main
-#   - v* tag (cut by release-please) → :<version>, :<major>.<minor>, and :latest
+#   - push to main                       → ghcr.io/<owner>/codebay:main
+#   - codebay-v* tag (cut by release-please) → :<version>, :<major>.<minor>, and :latest
+#
+# release-please (release-type: node) tags releases as `codebay-v0.7.0`, NOT `v0.7.0`,
+# so the trigger and the metadata patterns below both key off the `codebay-v` prefix —
+# an earlier `v*`/`type=semver` setup silently never matched, so no versioned or :latest
+# image was ever published.
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ['codebay-v*']
   workflow_dispatch:
 
 concurrency:
@@ -41,19 +46,57 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/codebay
-          # `latest` is added automatically for the highest semver tag (flavor latest=auto).
+          # type=match strips the `codebay-` prefix that type=semver can't parse.
+          # latest=false so branch/sha builds never claim :latest; the raw line below
+          # adds :latest only on a release tag.
+          flavor: latest=false
           tags: |
             type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=match,pattern=codebay-v(\d+\.\d+\.\d+),group=1
+            type=match,pattern=codebay-v(\d+\.\d+),group=1
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/codebay-v') }}
             type=sha
+
+      # Build the amd64 image into the local daemon and smoke-test it before the
+      # multi-arch push — the Docker equivalent of npm's `bun run verify:package`.
+      # The manager serves static assets without a Docker daemon (its client resolves
+      # lazily), so no socket mount or password is needed here.
+      - name: Build amd64 image for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: codebay:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test — serves the UI and packaged sounds
+        run: |
+          docker run -d --name codebay-ci \
+            -e HOST=0.0.0.0 -e PORT=6969 -e DISABLE_OPEN_BROWSER=1 \
+            -p 6969:6969 codebay:ci
+          base=http://127.0.0.1:6969
+          for i in $(seq 1 40); do
+            curl -sf -o /dev/null "$base/" && break
+            sleep 1
+          done
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$base/sounds/done.wav")
+          if [ "$code" != "200" ]; then
+            echo "::error::GET /sounds/done.wav returned $code — public/ assets are not being served"
+            docker logs codebay-ci
+            docker rm -f codebay-ci
+            exit 1
+          fi
+          echo "OK: /sounds/done.wav served ($code)"
+          docker rm -f codebay-ci
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           # arm64 builds under QEMU emulation, so this job is slow-ish — the GHA
-          # cache below keeps subsequent runs quick.
+          # cache below (shared with the smoke-test build) keeps it quick.
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
