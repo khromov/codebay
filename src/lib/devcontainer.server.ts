@@ -102,9 +102,11 @@ const WAIT_FOR_INJECTIONS =
  * claude scans `~/.claude/ide/*.lock` once at startup and never retries, so it must not race
  * the code-server extension host writing that lock — hold it briefly until the bridge appears.
  * Bounded so an offline/uninstalled instance (lock never written) still yields a usable terminal.
- * No single quotes: this is spliced into the single-quoted tmux command string below.
+ * No single quotes: this is spliced into the single-quoted tmux command string below. The probe
+ * pipes ls through grep instead of globbing — tmux runs this under the user's default shell, and
+ * zsh prints "no matches found" to the terminal on every unmatched-glob iteration.
  */
-const WAIT_FOR_IDE_BRIDGE = `i=0; until ls "$HOME/.claude/ide/"*.lock >/dev/null 2>&1 || [ "$i" -ge 30 ]; do sleep 1; i=$((i + 1)); done; `;
+const WAIT_FOR_IDE_BRIDGE = `i=0; until ls "$HOME/.claude/ide/" 2>/dev/null | grep -q "\\.lock$" || [ "$i" -ge 30 ]; do sleep 1; i=$((i + 1)); done; `;
 
 /**
  * Runs under tmux so Claude survives the browser closing — code-server reaps the
