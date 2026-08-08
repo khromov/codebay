@@ -4,6 +4,7 @@ import { basicAuth } from './lib/auth.server.ts';
 import { themeHandle } from './lib/theme.server.ts';
 import { PROXY_PREFIX } from './lib/proxy.server.ts';
 import {
+	APP_VERSION,
 	BASIC_AUTH_PASSWORD,
 	HOST,
 	PORT,
@@ -66,7 +67,7 @@ await Mochi.serve({
 });
 
 const url = 'http://localhost:' + PORT;
-console.log(`Server running at ${url} (bound to ${HOST})`);
+console.log(`codebay v${APP_VERSION} — server running at ${url} (bound to ${HOST})`);
 
 if (process.env.DISABLE_OPEN_BROWSER !== '1') {
 	const openCmd =
