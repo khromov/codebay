@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0](https://github.com/khromov/codebay/compare/codebay-v0.7.0...codebay-v0.8.0) (2026-08-08)
+
+
+### Features
+
+* keep Claude Code up to date in containers on every boot ([#107](https://github.com/khromov/codebay/issues/107)) ([dce6344](https://github.com/khromov/codebay/commit/dce634456027b0451f70d4b00d186d7b4287332e))
+
+
+### Bug Fixes
+
+* **ci:** publish versioned + :latest Docker images; log version at startup ([#110](https://github.com/khromov/codebay/issues/110)) ([678e173](https://github.com/khromov/codebay/commit/678e173dcd50f779b3f12c13ce5e92fa985bf900))
+* stop zsh unmatched-glob spam while waiting for the IDE bridge lock ([#111](https://github.com/khromov/codebay/issues/111)) ([59f3e1d](https://github.com/khromov/codebay/commit/59f3e1d48888ed48b9fe43469a002f5f266f1aa7))
+
 ## [0.7.0](https://github.com/khromov/codebay/compare/codebay-v0.6.0...codebay-v0.7.0) (2026-08-05)
 
 
