@@ -464,4 +464,18 @@ describe('writeOverrideConfig terminal mode', () => {
 		expect(text).toContain('/.devcontainer/codebay-ttyd/');
 		expect(text).toContain('/.devcontainer/codebay-terminal.sh');
 	});
+
+	test('installs Claude Code even when the source ships its own config', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1' })
+		);
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const features = readDevcontainer().features;
+		// The launcher *is* `claude`, so unlike IDE mode terminal mode can't defer tooling to the
+		// project's config — a bare shell would defeat the whole "just Claude in a terminal" point.
+		expect(features['ghcr.io/anthropics/devcontainer-features/claude-code:1.0']).toBeDefined();
+		expect(features['ghcr.io/devcontainers/features/node:1']).toBeDefined();
+	});
 });

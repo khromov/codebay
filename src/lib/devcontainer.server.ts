@@ -216,10 +216,8 @@ const TTYD_LAUNCH =
 	`export SHELL=\\"\${SHELL:-/bin/bash}\\"; ` +
 	`command -v ttyd >/dev/null 2>&1 || exit 0; ` +
 	`pgrep -x ttyd >/dev/null 2>&1 || ` +
-	// ttyd binds all interfaces by default; --interface expects an iface NAME (e.g. eth0), not
-	// an IP, so passing 0.0.0.0 makes it fail to start. -W/--writable is required for input.
-	// --url-arg forwards the connection URL's `?arg=` values into the launcher's argv, which is how
-	// one ttyd serves both the Claude session and the split view's scratch shell.
+	// --url-arg forwards the connection URL's `?arg=` into the launcher's argv, so one ttyd serves
+	// both the Claude session and the split view's scratch shell (--writable is covered above).
 	`nohup ttyd --port ${TTYD_PORT} --writable --url-arg ` +
 	`bash \\"$PWD/.devcontainer/${TTYD_LAUNCH_SCRIPT_FILE}\\" >/tmp/ttyd.log 2>&1 &"`;
 
@@ -416,17 +414,17 @@ export async function writeOverrideConfig(
 	const tmuxFeatureKey = featureKey(TMUX_FEATURE_DIR);
 	const ttydFeatureKey = featureKey(TTYD_FEATURE_DIR);
 
-	// Terminal mode swaps code-server for ttyd; everything else (tmux, tooling) is identical.
-	// Node/Claude/gh only for the default image — projects with their own config own their tooling.
+	// Terminal mode swaps code-server for ttyd; otherwise (tmux, tooling) the two are identical.
+	// Node/Claude/gh: always in terminal mode (its launcher *is* `claude`), else only the default image.
 	config.features = {
 		...(config.features ?? {}),
 		...(isTerminal
 			? { [ttydFeatureKey]: {} }
 			: { [CODE_SERVER_FEATURE]: { host: '0.0.0.0', port: CODE_SERVER_PORT, auth: 'none' } }),
 		[tmuxFeatureKey]: {},
-		...(hadConfig
-			? {}
-			: { [NODE_FEATURE]: {}, [CLAUDE_CODE_FEATURE]: {}, [GITHUB_CLI_FEATURE]: {} })
+		...(isTerminal || !hadConfig
+			? { [NODE_FEATURE]: {}, [CLAUDE_CODE_FEATURE]: {}, [GITHUB_CLI_FEATURE]: {} }
+			: {})
 	};
 
 	const servedPort = isTerminal ? TTYD_PORT : CODE_SERVER_PORT;
