@@ -3,6 +3,7 @@
 	import '@xterm/xterm/css/xterm.css';
 	import type { Terminal } from '@xterm/xterm';
 	import type { FitAddon } from '@xterm/addon-fit';
+	import RotateCw from '@lucide/svelte/icons/rotate-cw';
 
 	let { id, active }: { id: string; active: boolean } = $props();
 
@@ -13,6 +14,8 @@
 	let retry: ReturnType<typeof setTimeout> | undefined;
 	let disposed = false;
 	let connected = $state(false);
+	// Bumped whenever a socket is abandoned, so its late handlers can't resurrect a retry loop.
+	let gen = 0;
 
 	// ttyd's wire protocol: a single command byte prefixes every frame, sent as binary
 	// (matching ttyd's own client — libwebsockets delivers the raw bytes to the server).
@@ -33,27 +36,69 @@
 	}
 
 	function connect() {
+		const myGen = ++gen;
 		const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
 		// Same-origin through the proxy, which forwards the required `tty` subprotocol to ttyd.
-		ws = new WebSocket(`${proto}//${location.host}/p/${id}/ws`, ['tty']);
-		ws.binaryType = 'arraybuffer';
-		ws.onopen = () => {
+		const sock = new WebSocket(`${proto}//${location.host}/p/${id}/ws`, ['tty']);
+		ws = sock;
+		sock.binaryType = 'arraybuffer';
+		sock.onopen = () => {
+			if (gen !== myGen) return;
 			connected = true;
 			// ttyd's init frame is raw JSON (its leading `{` is the JSON_DATA command byte).
 			send(JSON.stringify({ AuthToken: '', columns: term?.cols ?? 80, rows: term?.rows ?? 24 }));
 		};
-		ws.onmessage = (e) => onFrame(e.data as ArrayBuffer);
-		ws.onclose = () => {
-			connected = false;
-			if (!disposed) retry = setTimeout(connect, 1000);
+		sock.onmessage = (e) => {
+			if (gen === myGen) onFrame(e.data as ArrayBuffer);
 		};
-		ws.onerror = () => {
+		sock.onclose = () => {
+			if (gen !== myGen || disposed) return;
+			connected = false;
+			retry = setTimeout(connect, 1000);
+		};
+		sock.onerror = () => {
 			try {
-				ws?.close();
+				sock.close();
 			} catch {
 				/* already closing */
 			}
 		};
+	}
+
+	/**
+	 * Rebuild only the client half — the socket and xterm's buffer — and reattach to the same tmux
+	 * session, so a wedged socket (dead wifi, resumed laptop) recovers without touching the container.
+	 */
+	function reload() {
+		if (retry) clearTimeout(retry);
+		gen++;
+		connected = false;
+		// tmux repaints the current screen on attach; without a reset that repaint lands under stale output.
+		term?.reset();
+		const old = ws;
+		ws = undefined;
+
+		let started = false;
+		const start = () => {
+			if (started || disposed) return;
+			started = true;
+			fitSafe();
+			connect();
+			if (active) term?.focus();
+		};
+
+		if (old && old.readyState !== WebSocket.CLOSED) {
+			// Let the old tmux client detach first, or tmux sizes the window to the smaller of the two.
+			old.addEventListener('close', start, { once: true });
+			setTimeout(start, 1500);
+			try {
+				old.close();
+			} catch {
+				/* already closing */
+			}
+		} else {
+			start();
+		}
 	}
 
 	function fitSafe() {
@@ -134,9 +179,18 @@
 </script>
 
 <div class="term" bind:this={el}></div>
-{#if !connected}
-	<div class="status">connecting…</div>
-{/if}
+<div class="overlay">
+	{#if !connected}
+		<span class="status">connecting…</span>
+	{/if}
+	<button
+		class="reload"
+		type="button"
+		onclick={reload}
+		title="Reload terminal (reconnects, keeps the session)"
+		aria-label="Reload terminal"><RotateCw size={14} /></button
+	>
+</div>
 
 <style>
 	.term {
@@ -151,15 +205,48 @@
 	.term :global(.xterm-viewport) {
 		height: 100%;
 	}
-	.status {
+	/* Floats over live terminal output, so only the button itself takes clicks. */
+	.overlay {
 		position: absolute;
-		top: 8px;
-		right: 12px;
+		top: 6px;
+		right: 8px;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		pointer-events: none;
+	}
+	.status {
 		font-family: var(--font-mono);
 		font-size: 11px;
 		letter-spacing: 0.05em;
 		text-transform: uppercase;
 		color: var(--ink-faint);
-		pointer-events: none;
+	}
+	.reload {
+		pointer-events: auto;
+		appearance: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		padding: 0;
+		cursor: pointer;
+		background: var(--bg);
+		border: 1px solid var(--rule);
+		color: var(--ink);
+		opacity: 0.3;
+		transition: opacity 0.15s ease;
+	}
+	.reload:hover,
+	.reload:focus-visible {
+		opacity: 1;
+		background: var(--ink);
+		color: var(--bg);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.reload {
+			transition: none;
+		}
 	}
 </style>
