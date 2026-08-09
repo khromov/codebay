@@ -6,7 +6,8 @@ import {
 	DEFAULT_COPY_IGNORE,
 	DEFAULT_IMAGE,
 	INSTANCES_DIR,
-	parseCopyIgnore
+	parseCopyIgnore,
+	TTYD_PORT
 } from './config.server.ts';
 import {
 	allForwards,
@@ -23,6 +24,7 @@ import {
 	recordFolder,
 	updateInstance,
 	usedPorts,
+	type InstanceMode,
 	type InstanceRow,
 	type InstanceStatus
 } from './db.server.ts';
@@ -51,7 +53,7 @@ import { isRepoUrl, parseRepoUrl } from './repo-url.ts';
 import { currentHealthSnapshots, stopHealthMonitor, syncHealthMonitors } from './health.server.ts';
 import { pickFreePort } from './ports.server.ts';
 import type { ServerWebSocket } from 'bun';
-import type { Instance, InstanceHealth } from '../types.ts';
+import { normalizeMode, type Instance, type InstanceHealth } from '../types.ts';
 
 /**
  * `bridge_token` authenticates the no-Basic-Auth `/api/bridge/` endpoint, so it
@@ -291,13 +293,15 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			container_port: f.container_port,
 			host_port: f.host_port
 		}));
-		appendLog(row.id, `Injecting code-server (host port ${row.host_port})\n`);
+		const surface = row.mode === 'terminal' ? 'ttyd terminal' : 'code-server';
+		appendLog(row.id, `Injecting ${surface} (host port ${row.host_port})\n`);
 		const defaultImage = getOption('default_image') ?? DEFAULT_IMAGE;
 		const { imageSource } = await writeOverrideConfig(
 			row.workspace_path,
 			row.host_port,
 			forwards,
-			defaultImage
+			defaultImage,
+			row.mode
 		);
 		updateInstance(row.id, { image_source: imageSource });
 
@@ -370,11 +374,16 @@ function uniqueName(desired: string, excludeId?: string): string {
 	}
 }
 
+/** The global fallback the picker's mode toggle starts on; a per-instance choice overrides it. */
+export function getDefaultMode(): InstanceMode {
+	return normalizeMode(getOption('default_mode'));
+}
+
 /** `source` is either a local folder (copied) or a Git URL (cloned); boot runs in the background. */
 export async function createInstance(
 	source: string,
 	name?: string,
-	opts: { branch?: string } = {}
+	opts: { branch?: string; mode?: InstanceMode } = {}
 ): Promise<InstanceRow> {
 	const parsedRepo = parseRepoUrl(source);
 	if (parsedRepo) {
@@ -399,7 +408,8 @@ export async function createInstance(
 		created_at: Date.now(),
 		bridge_token: crypto.randomUUID().replace(/-/g, ''),
 		remote_user: null,
-		image_source: null
+		image_source: null,
+		mode: opts.mode ?? getDefaultMode()
 	};
 	insertInstance(row);
 	// Strip the de-dup `#2` suffix so the recent-folders list keeps the base name.
@@ -473,8 +483,11 @@ export async function addForwardedPort(id: string, containerPort: number): Promi
 	if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65535) {
 		throw new Error('Port must be an integer between 1 and 65535');
 	}
-	if (containerPort === CODE_SERVER_PORT) {
-		throw new Error(`Port ${CODE_SERVER_PORT} is reserved for code-server`);
+	const reserved = row.mode === 'terminal' ? TTYD_PORT : CODE_SERVER_PORT;
+	if (containerPort === reserved) {
+		throw new Error(
+			`Port ${reserved} is reserved for ${row.mode === 'terminal' ? 'the terminal' : 'code-server'}`
+		);
 	}
 	if (listForwards(id).some((f) => f.container_port === containerPort)) {
 		throw new Error(`Port ${containerPort} is already forwarded`);

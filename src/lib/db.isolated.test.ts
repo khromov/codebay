@@ -29,7 +29,8 @@ function makeInstance(id: string, hostPort: number): InstanceRow {
 		created_at: Date.now(),
 		bridge_token: 'tok',
 		remote_user: null,
-		image_source: null
+		image_source: null,
+		mode: 'ide'
 	};
 }
 

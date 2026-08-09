@@ -50,6 +50,8 @@ interface RelayState {
 	client?: WebSocket;
 	/** Frames received from the browser before the upstream socket is open. */
 	pending: Frame[];
+	/** The client's requested subprotocols, forwarded upstream — ttyd requires its `tty` one. */
+	subprotocols?: string[];
 }
 
 async function proxyHttp(event: MochiApiEvent, port: number, rest: string): Promise<Response> {
@@ -92,18 +94,34 @@ async function proxyHttp(event: MochiApiEvent, port: number, rest: string): Prom
 }
 
 function proxyUpgrade(event: MochiApiEvent, port: number, rest: string): Response {
+	const requested = event.request.headers.get('sec-websocket-protocol');
+	const subprotocols = requested
+		? requested
+				.split(',')
+				.map((s) => s.trim())
+				.filter(Boolean)
+		: undefined;
 	const data: MochiWsData<RelayState> = {
 		__mochiRoutePattern: PROXY_WS_PATTERN,
 		__mochiOpenedAt: performance.now(),
 		__mochiPath: event.url.pathname,
-		user: { upstreamWsUrl: `ws://127.0.0.1:${port}${rest}${event.url.search}`, pending: [] }
+		user: {
+			upstreamWsUrl: `ws://127.0.0.1:${port}${rest}${event.url.search}`,
+			pending: [],
+			subprotocols
+		}
 	};
+	// Echo the first offered subprotocol back so the browser's handshake confirms it (ttyd offers `tty`).
+	const headers = subprotocols?.[0] ? { 'Sec-WebSocket-Protocol': subprotocols[0] } : undefined;
 	// Bun's Server is typed with a fixed WebSocketData; Mochi casts the same way for its own upgrades.
 	const ok = (
 		event.server as unknown as {
-			upgrade: (req: Request, opts: { data: MochiWsData<RelayState> }) => boolean;
+			upgrade: (
+				req: Request,
+				opts: { data: MochiWsData<RelayState>; headers?: Record<string, string> }
+			) => boolean;
 		}
-	).upgrade(event.request, { data });
+	).upgrade(event.request, { data, headers });
 	if (!ok) return new Response('WebSocket upgrade failed', { status: 426 });
 	// Bun already sent the real 101; this is ignored, but Mochi's resolve chain reads a status.
 	return new Response(null, { status: 101 });
@@ -137,7 +155,9 @@ export const proxyRoutes: Record<string, MochiRouteValue> = {
 		upgrade: () => false,
 		open(ws: ServerWebSocket<MochiWsData<RelayState>>) {
 			const state = ws.data.user;
-			const client = new WebSocket(state.upstreamWsUrl);
+			const client = state.subprotocols
+				? new WebSocket(state.upstreamWsUrl, state.subprotocols)
+				: new WebSocket(state.upstreamWsUrl);
 			client.binaryType = 'arraybuffer';
 			state.client = client;
 

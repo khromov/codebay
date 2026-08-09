@@ -41,7 +41,7 @@ async function check(row: InstanceRow): Promise<InstanceHealth> {
 		codeServerAccessible(row.host_port),
 		publishedContainerPorts(row.container_id),
 		Promise.all(
-			resolveInjections()
+			resolveInjections(row.mode)
 				.filter((i) => i.check)
 				.map(async (i) => ({
 					id: i.id,

@@ -27,6 +27,9 @@
 	import CoinButton from './CoinButton.svelte';
 	import Avatar from './Avatar.svelte';
 	import { avatars, findAvatar, type AvatarArt } from '../avatars/index.ts';
+	import type { InstanceMode } from '../types.ts';
+	import Terminal from '@lucide/svelte/icons/terminal';
+	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import { installPopupBackTrap } from '../lib/popup-nav.ts';
 
 	/** Every settings form action fails with the same `{ error }` shape. */
@@ -34,6 +37,7 @@
 
 	let {
 		pet,
+		defaultMode,
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
@@ -66,6 +70,7 @@
 		version
 	}: {
 		pet?: AvatarArt;
+		defaultMode: InstanceMode;
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
@@ -170,6 +175,29 @@
 				};
 			}
 		};
+	}
+
+	// DB-backed, so it initializes from the prop; a per-instance choice in the picker overrides it.
+	// svelte-ignore state_referenced_locally
+	let modeChoice = $state<InstanceMode>(defaultMode);
+	let savingMode = $state(false);
+	let modeError = $state<string | null>(null);
+	let modeFormEl: HTMLFormElement | undefined;
+
+	const defaultModeOpts = saveOpts<{ mode: InstanceMode }>({
+		setSaving: (v) => (savingMode = v),
+		setError: (v) => (modeError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.mode) modeChoice = data.mode;
+		}
+	});
+
+	// Set the bound hidden value then resubmit, mirroring the image reset (flushSync before requestSubmit).
+	function chooseMode(next: InstanceMode) {
+		if (next === modeChoice) return;
+		flushSync(() => (modeChoice = next));
+		modeFormEl?.requestSubmit();
 	}
 
 	// svelte-ignore state_referenced_locally
@@ -605,6 +633,56 @@
 	</AppBar>
 
 	<main class="content">
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/defaultMode"
+				bind:this={modeFormEl}
+				{@attach enhance(defaultModeOpts)}
+			>
+				<div class="label">
+					<Terminal size={20} />
+					<div class="text">
+						<div class="name">Default editor</div>
+						<div class="desc">
+							What new instances start in. <strong>Full IDE</strong> serves browser VS Code;
+							<strong>Terminal</strong> is lighter — just Claude Code in a terminal, no code-server. You
+							can override this per instance when creating one.
+						</div>
+					</div>
+				</div>
+				<input type="hidden" name="mode" value={modeChoice} />
+				<div class="mode-toggle" role="group" aria-label="Default editor mode">
+					<button
+						type="button"
+						class="mode-btn"
+						class:active={modeChoice === 'ide'}
+						aria-pressed={modeChoice === 'ide'}
+						disabled={savingMode}
+						onclick={() => chooseMode('ide')}
+					>
+						<LayoutTemplate size={15} />
+						Full IDE
+					</button>
+					<button
+						type="button"
+						class="mode-btn"
+						class:active={modeChoice === 'terminal'}
+						aria-pressed={modeChoice === 'terminal'}
+						disabled={savingMode}
+						onclick={() => chooseMode('terminal')}
+					>
+						<Terminal size={15} />
+						Terminal
+					</button>
+				</div>
+			</form>
+			{#if modeError}
+				<div class="sub"><div class="msg error">{modeError}</div></div>
+			{/if}
+		</section>
+
 		<section class="card">
 			<form
 				class="row image-row"
@@ -1808,6 +1886,36 @@
 	.pet:focus-visible {
 		outline: 2px solid var(--ink);
 		outline-offset: 1px;
+	}
+	.mode-toggle {
+		display: flex;
+		flex: none;
+		border: 1px solid var(--ink);
+	}
+	.mode-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-family: var(--font-mono);
+		font-weight: 700;
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 7px 14px;
+		border: none;
+		background: var(--bg);
+		color: var(--ink);
+		cursor: pointer;
+	}
+	.mode-btn + .mode-btn {
+		border-left: 1px solid var(--ink);
+	}
+	.mode-btn.active {
+		background: var(--ink);
+		color: var(--bg);
+	}
+	.mode-btn:disabled {
+		cursor: not-allowed;
 	}
 	.switch {
 		position: relative;

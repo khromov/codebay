@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { BrowseResult, FolderHistoryEntry } from '../types.ts';
+	import type { BrowseResult, FolderHistoryEntry, InstanceMode } from '../types.ts';
 	import { isRepoUrl } from '../lib/repo-url.ts';
+	import Terminal from '@lucide/svelte/icons/terminal';
+	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import X from '@lucide/svelte/icons/x';
 	import FolderClock from '@lucide/svelte/icons/folder-clock';
 	import GitBranch from '@lucide/svelte/icons/git-branch';
@@ -12,9 +14,17 @@
 
 	let {
 		onpick,
-		onclose
-	}: { onpick: (source: string, opts?: { branch?: string }) => void; onclose: () => void } =
-		$props();
+		onclose,
+		defaultMode = 'ide'
+	}: {
+		onpick: (source: string, opts?: { branch?: string; mode?: InstanceMode }) => void;
+		onclose: () => void;
+		defaultMode?: InstanceMode;
+	} = $props();
+
+	// Seeded from the global default; a per-instance choice here overrides it for this instance.
+	// svelte-ignore state_referenced_locally
+	let mode = $state<InstanceMode>(defaultMode);
 
 	let result = $state<BrowseResult | null>(null);
 	let loading = $state(true);
@@ -30,7 +40,7 @@
 
 	function cloneRepoUrl() {
 		if (!repoValid) return;
-		onpick(repoUrl.trim(), { branch: repoBranch.trim() || undefined });
+		onpick(repoUrl.trim(), { branch: repoBranch.trim() || undefined, mode });
 	}
 
 	const filtered = $derived(
@@ -103,6 +113,32 @@
 			<button class="x" onclick={onclose} aria-label="Close"><X size={16} /></button>
 		</div>
 
+		<div class="mode">
+			<div class="mode-label">Editor</div>
+			<div class="mode-toggle" role="group" aria-label="Editor mode">
+				<button
+					type="button"
+					class="mode-btn"
+					class:active={mode === 'ide'}
+					aria-pressed={mode === 'ide'}
+					onclick={() => (mode = 'ide')}
+				>
+					<LayoutTemplate size={15} />
+					Full IDE
+				</button>
+				<button
+					type="button"
+					class="mode-btn"
+					class:active={mode === 'terminal'}
+					aria-pressed={mode === 'terminal'}
+					onclick={() => (mode = 'terminal')}
+				>
+					<Terminal size={15} />
+					Terminal
+				</button>
+			</div>
+		</div>
+
 		<div class="clone">
 			<div class="clone-label">Clone a Git repository</div>
 			<div class="clone-row">
@@ -147,7 +183,7 @@
 				<div class="recent-label">Recent</div>
 				{#each shownHistory as entry (entry.source_path)}
 					<div class="recent-row">
-						<button class="recent-pick" onclick={() => onpick(entry.source_path)}>
+						<button class="recent-pick" onclick={() => onpick(entry.source_path, { mode })}>
 							<span class="icon">
 								{#if isRepoUrl(entry.source_path)}<GitBranch size={16} />{:else}<FolderClock
 										size={16}
@@ -221,7 +257,7 @@
 							<span class="ename">{entry.name}</span>
 							{#if entry.hasDevcontainer}<span class="badge">devcontainer</span>{/if}
 						</button>
-						<button class="pick-inline" onclick={() => onpick(entry.path)}>Select</button>
+						<button class="pick-inline" onclick={() => onpick(entry.path, { mode })}>Select</button>
 					</div>
 				{/each}
 			{/if}
@@ -239,7 +275,11 @@
 
 		<div class="foot">
 			<span class="hint">Browse to a folder, then select this folder or any subfolder.</span>
-			<button class="primary" disabled={!result} onclick={() => result && onpick(result.path)}>
+			<button
+				class="primary"
+				disabled={!result}
+				onclick={() => result && onpick(result.path, { mode })}
+			>
 				Select this folder
 			</button>
 		</div>
@@ -292,6 +332,45 @@
 	}
 	.x:hover {
 		opacity: 0.7;
+	}
+	.mode {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 12px 18px;
+		border-bottom: 1px solid var(--rule-soft);
+	}
+	.mode-label {
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--ink-faint);
+	}
+	.mode-toggle {
+		display: flex;
+		border: 1px solid var(--ink);
+	}
+	.mode-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-family: var(--font-mono);
+		font-weight: 700;
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 7px 14px;
+		border: none;
+		background: var(--bg);
+		color: var(--ink);
+		cursor: pointer;
+	}
+	.mode-btn + .mode-btn {
+		border-left: 1px solid var(--ink);
+	}
+	.mode-btn.active {
+		background: var(--ink);
+		color: var(--bg);
 	}
 	.clone {
 		padding: 12px 18px;

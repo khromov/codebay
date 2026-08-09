@@ -19,10 +19,20 @@ export interface Instance {
 	created_at: number;
 	/** `'local'` when the folder shipped its own config; null until provisioned. */
 	image_source: string | null;
+	/** `'ide'` serves full code-server; `'terminal'` serves only ttyd + Claude Code. */
+	mode: InstanceMode;
 	/** Polled per reconcile rather than persisted; null if unknown. */
 	git_branch: string | null;
 	attention: 'done' | 'waiting' | null;
 	forwarded_ports: PortForward[];
+}
+
+/** `'ide'` serves full code-server; `'terminal'` serves only ttyd + Claude Code. */
+export type InstanceMode = 'ide' | 'terminal';
+
+/** Anything that isn't the explicit terminal opt-in falls back to the full IDE. */
+export function normalizeMode(value: unknown): InstanceMode {
+	return value === 'terminal' ? 'terminal' : 'ide';
 }
 
 /** Dashboard run-state view filter: All | Active (running/creating) | Stopped (stopped/error). */
@@ -52,6 +62,8 @@ export interface Preflight {
 	docker: boolean;
 	cli: boolean;
 	auth: AuthProvider[];
+	/** Global default the picker's mode toggle starts on; per-instance override wins. */
+	defaultMode: InstanceMode;
 }
 
 /** Same-origin so the app's Basic Auth covers the editor too. */

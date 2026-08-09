@@ -59,6 +59,9 @@ export const PORT_MAX = 8999;
 /** Inside the container, not on the host. */
 export const CODE_SERVER_PORT = 8080;
 
+/** ttyd's default listen port, used in terminal mode instead of code-server's. */
+export const TTYD_PORT = 7681;
+
 /** `base:ubuntu` is multi-arch, unlike the `universal` images, which are amd64-only. */
 export const DEFAULT_IMAGE = 'mcr.microsoft.com/devcontainers/base:ubuntu';
 

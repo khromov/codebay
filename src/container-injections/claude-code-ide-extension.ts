@@ -21,6 +21,8 @@ export const CHECK_SCRIPT = `ls -d ${EXT_GLOB} >/dev/null 2>&1 && echo 1 || echo
 export const claudeCodeIdeExtension: Injection = {
 	id: 'claude-code-ide-extension',
 	label: 'Claude Code IDE extension',
+	// code-server-only; terminal-mode instances never run the extension host.
+	modes: ['ide'],
 
 	async apply(target, log) {
 		log('Installing Claude Code IDE extension…\n');

@@ -10,6 +10,9 @@ const MIGRATIONS_DIR = join(import.meta.dir, '../../migrations');
 
 export type InstanceStatus = 'creating' | 'running' | 'stopped' | 'error';
 
+/** `'ide'` serves full code-server; `'terminal'` serves only ttyd + Claude Code. */
+export type InstanceMode = 'ide' | 'terminal';
+
 export interface InstanceRow {
 	id: string;
 	name: string;
@@ -27,6 +30,8 @@ export interface InstanceRow {
 	remote_user: string | null;
 	/** `'local'` when the folder shipped its own config, else the injected image; null pre-dates this. */
 	image_source: string | null;
+	/** Fixed at creation: which editor surface this instance provisions and serves. */
+	mode: InstanceMode;
 }
 
 export interface PortForwardRow {
@@ -57,8 +62,8 @@ export function closeDb(): void {
 export function insertInstance(row: InstanceRow): void {
 	db.query(
 		`INSERT INTO instances
-       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source)
-     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source)`
+       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source, mode)
+     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source, $mode)`
 	).run({
 		$id: row.id,
 		$name: row.name,
@@ -72,7 +77,8 @@ export function insertInstance(row: InstanceRow): void {
 		$created_at: row.created_at,
 		$bridge_token: row.bridge_token,
 		$remote_user: row.remote_user,
-		$image_source: row.image_source
+		$image_source: row.image_source,
+		$mode: row.mode
 	});
 }
 

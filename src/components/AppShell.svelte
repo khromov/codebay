@@ -5,6 +5,7 @@
 	import DashboardView from './DashboardView.svelte';
 	import IdeBar from './IdeBar.svelte';
 	import IdeLoader from './IdeLoader.svelte';
+	import TerminalPane from './TerminalPane.svelte';
 	import { playChime, unlockAudio } from '../sound.ts';
 	import { liveStream } from '../live.ts';
 	import { apiPost } from '../api.ts';
@@ -259,14 +260,19 @@
 			{#if visited.has(inst.id)}
 				<div class="pane" class:active={inst.id === active}>
 					{#if mountable(inst.id)}
-						<iframe src={ideUrl(inst)} title={inst.name} onload={() => loadedFrames.add(inst.id)}
-						></iframe>
+						{#if inst.mode === 'terminal'}
+							<TerminalPane id={inst.id} active={inst.id === active} />
+						{:else}
+							<iframe src={ideUrl(inst)} title={inst.name} onload={() => loadedFrames.add(inst.id)}
+							></iframe>
+						{/if}
 					{/if}
-					<!-- Two distinct waits: the health probe is unbounded and gets the override,
-					     the iframe's own `load` is bounded and gets a plain loader. -->
+					<!-- Two distinct waits: the health probe is unbounded and gets the override, the
+					     iframe's own `load` is bounded and gets a plain loader. The terminal has no
+					     `load` event, so once it's mountable its own "connecting…" covers the gap. -->
 					{#if !mountable(inst.id)}
 						<IdeLoader stalledAfterMs={STALLED_AFTER_MS} onoverride={() => forced.add(inst.id)} />
-					{:else if !loadedFrames.has(inst.id)}
+					{:else if inst.mode !== 'terminal' && !loadedFrames.has(inst.id)}
 						<IdeLoader />
 					{/if}
 				</div>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { type Instance } from '../types.ts';
 	import Settings from '@lucide/svelte/icons/settings';
+	import Terminal from '@lucide/svelte/icons/terminal';
 	import Avatar from './Avatar.svelte';
 	import AppBar from './AppBar.svelte';
 	import { withPopupMarker } from '../lib/popup-nav.ts';
@@ -64,6 +65,9 @@
 						>
 							<Avatar id={inst.id} name={inst.name} scale={4} />
 							<span class="tab-name">{inst.name}</span>
+							{#if inst.mode === 'terminal'}
+								<span class="tab-mode" title="Terminal-only instance"><Terminal size={13} /></span>
+							{/if}
 						</button>
 					{/if}
 				</div>
@@ -168,6 +172,12 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+	.tab-mode {
+		display: inline-flex;
+		align-items: center;
+		flex: none;
+		opacity: 0.75;
 	}
 	.tab:not(.active) .tab-label:hover {
 		color: var(--ink);

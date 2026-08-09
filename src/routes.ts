@@ -27,6 +27,7 @@ import {
 	addForwardedPort,
 	broadcastPet,
 	createInstance,
+	getDefaultMode,
 	deleteAllInstances,
 	deleteDatabaseAndShutdown,
 	deleteInstance,
@@ -54,6 +55,7 @@ import { wsUpgradeAllowed } from './lib/auth.server.ts';
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
+import { normalizeMode } from './types.ts';
 
 async function preflight() {
 	const [docker, cli, auth] = await Promise.all([
@@ -75,7 +77,7 @@ async function preflight() {
 				})
 		)
 	]);
-	return { docker, cli, auth };
+	return { docker, cli, auth, defaultMode: getDefaultMode() };
 }
 
 /** The header pet logo, resolved from the DB option. A name that left the catalog reads as "off". */
@@ -139,9 +141,13 @@ export const routes: Record<string, MochiRouteValue> = {
 	'/instances/:id': Mochi.page('./src/pages/Instance.svelte', {
 		serverProps: (_req, params) => {
 			// Only validates existence — the view hydrates its data from the stream.
-			if (!params.id || !getInstance(params.id)) error(404, 'Instance not found');
+			const row = params.id ? getInstance(params.id) : null;
+			if (!row) error(404, 'Instance not found');
 			// Lets the health panel's skeleton render one row per real check before the first snapshot.
-			return { id: params.id, injectionChecks: resolveInjections().filter((i) => i.check).length };
+			return {
+				id: params.id,
+				injectionChecks: resolveInjections(row.mode).filter((i) => i.check).length
+			};
 		},
 		actions: {
 			restart: ({ params }) => {
@@ -169,6 +175,7 @@ export const routes: Record<string, MochiRouteValue> = {
 			const hostEnvVarNames = parseHostEnvVarNames(getOption('host_env_var_names'));
 			return {
 				pet: currentPet(),
+				defaultMode: getDefaultMode(),
 				defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
 				builtinImage: DEFAULT_IMAGE,
 				disableBuildCache: getOption('disable_build_cache') === '1',
@@ -213,6 +220,13 @@ export const routes: Record<string, MochiRouteValue> = {
 			};
 		},
 		actions: {
+			// The default editor surface (full IDE vs terminal) new instances start in.
+			defaultMode: ({ formData }) => {
+				const mode = normalizeMode(str(formData, 'mode'));
+				setOption('default_mode', mode);
+				return success({ mode });
+			},
+
 			// Persist the default container image used when a source folder ships no devcontainer.json.
 			defaultImage: ({ formData }) => {
 				const image = str(formData, 'image');
@@ -397,10 +411,16 @@ export const routes: Record<string, MochiRouteValue> = {
 				sourcePath?: string;
 				name?: string;
 				branch?: string;
+				mode?: string;
 			} | null;
 			if (!body?.sourcePath) return apiError(400, 'sourcePath is required');
 			try {
-				const instance = await createInstance(body.sourcePath, body.name, { branch: body.branch });
+				// An omitted mode falls back to the global default inside createInstance.
+				const mode = body.mode === undefined ? undefined : normalizeMode(body.mode);
+				const instance = await createInstance(body.sourcePath, body.name, {
+					branch: body.branch,
+					mode
+				});
 				return json({ instance: sanitizeInstance(instance) }, { status: 201 });
 			} catch (err) {
 				return apiError(400, (err as Error).message);
