@@ -22,8 +22,9 @@ describe('avatar catalog', () => {
 		expect(new Set(names).size).toBe(names.length);
 	});
 
-	// Pins the flagged set to the original AI batch (commit fda8e80) so the mapping can't drift.
-	test('robot flag marks exactly the original AI-generated sprites', () => {
+	// The flagged set is a subset of the original AI batch (commit fda8e80): a hand-redraw
+	// drops the flag, so the set can only shrink — never grow, and never flag a non-original.
+	test('robot flag only ever marks (a subset of) the original AI-generated sprites', () => {
 		const original = [
 			'anchor',
 			'bear',
@@ -56,11 +57,9 @@ describe('avatar catalog', () => {
 			'tree',
 			'whale'
 		].sort();
-		const flagged = avatars
-			.filter((a) => a.robot)
-			.map((a) => a.name)
-			.sort();
-		expect(flagged).toEqual(original);
+		const originalSet = new Set(original);
+		const flagged = avatars.filter((a) => a.robot).map((a) => a.name);
+		for (const name of flagged) expect(originalSet.has(name)).toBe(true);
 	});
 });
 

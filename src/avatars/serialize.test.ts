@@ -53,4 +53,15 @@ describe('toIssueUrl', () => {
 		for (const row of art.pixels) expect(body).toContain(row);
 		expect(body).toContain(toModuleSource(art).trimEnd());
 	});
+
+	test('edit mode uses an "Avatar edit:" title and a robot-free replacement module', () => {
+		// Seed WITH the flag, so this proves the module strips it, not merely that it's never added.
+		const art = { name: 'dragon', robot: true, pixels: cellsToPixels(decode(ukraine)) };
+		expect(toModuleSource(art)).not.toContain('robot');
+		const url = new URL(toIssueUrl(art, 'edit'));
+		expect(url.searchParams.get('title')).toBe('Avatar edit: dragon');
+		const body = url.searchParams.get('body') ?? '';
+		for (const row of art.pixels) expect(body).toContain(row);
+		expect(body).toContain(toModuleSource(art).trimEnd());
+	});
 });
