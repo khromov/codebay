@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ideUrl, type Instance, type Preflight } from '../types.ts';
+	import { ideUrl, type Instance, type InstanceFilter, type Preflight } from '../types.ts';
 	import { findAvatar, type AvatarArt } from '../avatars/index.ts';
 	import { SvelteSet } from 'svelte/reactivity';
 	import DashboardView from './DashboardView.svelte';
@@ -15,12 +15,14 @@
 		preflight,
 		initialPath,
 		snapshot,
-		pet
+		pet,
+		filter
 	}: {
 		preflight: Preflight;
 		initialPath: string;
 		snapshot: Instance[];
 		pet?: AvatarArt;
+		filter: InstanceFilter;
 	} = $props();
 
 	// Seeding from the SSR snapshot is intentional — the live stream overwrites it.
@@ -32,6 +34,9 @@
 	// Seeded from SSR, then updated live so changing the pet in settings swaps the header without a reload.
 	// svelte-ignore state_referenced_locally
 	let livePet = $state<AvatarArt | undefined>(pet);
+	// Owned here (not in DashboardView) so it survives the dashboard↔IDE tab switches that remount the view.
+	// svelte-ignore state_referenced_locally
+	let liveFilter = $state<InstanceFilter>(filter);
 	// svelte-ignore state_referenced_locally
 	let loaded = $state(snapshot.length > 0);
 	const running = $derived(instances.filter((i) => i.status === 'running'));
@@ -68,6 +73,14 @@
 		} catch (err) {
 			toast.error((err as Error).message);
 		}
+	}
+
+	// Optimistic local update + best-effort persist; the broadcast echo reconciles every open tab.
+	function setFilter(v: InstanceFilter) {
+		liveFilter = v;
+		void apiPost('/api/settings/filter', { value: v }).catch(() => {
+			/* best-effort — the in-memory value already reflects the choice */
+		});
 	}
 
 	// Mochi has no client router, and a document reload would tear down the code-server iframes.
@@ -174,6 +187,10 @@
 					livePet = findAvatar(msg.data.name ?? undefined);
 					return;
 				}
+				if (msg.type === 'filter') {
+					liveFilter = msg.data.value;
+					return;
+				}
 				if (msg.type === 'health') {
 					// A tick in flight when a rebuild starts probes the *old* container and
 					// reports it accessible, which would mount the iframe against the replacement too early.
@@ -250,7 +267,14 @@
 			oncancelrename={cancelRename}
 		/>
 	{:else}
-		<DashboardView preflight={livePreflight} {instances} {loaded} pet={livePet} />
+		<DashboardView
+			preflight={livePreflight}
+			{instances}
+			{loaded}
+			pet={livePet}
+			filter={liveFilter}
+			onFilter={setFilter}
+		/>
 	{/if}
 
 	<!-- Always mounted, only hidden, so the iframes survive navigation. -->
