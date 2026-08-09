@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.0](https://github.com/khromov/codebay/compare/codebay-v0.8.0...codebay-v0.9.0) (2026-08-09)
+
+
+### Features
+
+* edit robot-generated avatars from the editor UI ([#116](https://github.com/khromov/codebay/issues/116)) ([b32640e](https://github.com/khromov/codebay/commit/b32640ea32c12f4c31b95b5b4601a90d93320ae1))
+* lightweight terminal-only instance mode ([#119](https://github.com/khromov/codebay/issues/119)) ([11da86c](https://github.com/khromov/codebay/commit/11da86ce68459bd613c9396cad9216d5f1cca14b))
+* persist the dashboard instance filter across tabs, reloads, and clients ([#117](https://github.com/khromov/codebay/issues/117)) ([ac98889](https://github.com/khromov/codebay/commit/ac9888940a01fee9e239fbb12b347f42ea4ed529))
+
+
+### Bug Fixes
+
+* show avatar name in avatar tooltip ([#112](https://github.com/khromov/codebay/issues/112)) ([06d7c9a](https://github.com/khromov/codebay/commit/06d7c9a15e049056dcd46749a6fecdf9ef326567))
+
 ## [0.8.0](https://github.com/khromov/codebay/compare/codebay-v0.7.0...codebay-v0.8.0) (2026-08-08)
 
 
