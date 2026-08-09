@@ -38,6 +38,10 @@ export function normalizeMode(value: unknown): InstanceMode {
 /** Dashboard run-state view filter: All | Active (running/creating) | Stopped (stopped/error). */
 export type InstanceFilter = 'all' | 'active' | 'stopped';
 
+export function isInstanceFilter(v: unknown): v is InstanceFilter {
+	return v === 'all' || v === 'active' || v === 'stopped';
+}
+
 /** Live only — never persisted, so it always reflects the most recent probe. */
 export interface InstanceHealth {
 	containerRunning: boolean;

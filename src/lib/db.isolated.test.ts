@@ -81,6 +81,14 @@ describe('options key/value helpers', () => {
 		db.setOption('default_image', 'other/image:2');
 		expect(db.getOption('default_image')).toBe('other/image:2');
 	});
+
+	test('instance_filter round-trips through the option store', () => {
+		expect(db.getOption('instance_filter')).toBeNull();
+		db.setOption('instance_filter', 'active');
+		expect(db.getOption('instance_filter')).toBe('active');
+		db.setOption('instance_filter', 'stopped');
+		expect(db.getOption('instance_filter')).toBe('stopped');
+	});
 });
 
 describe('updateInstance image_source + insert round-trip', () => {

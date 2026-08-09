@@ -13,13 +13,21 @@
 		preflight,
 		instances,
 		loaded,
-		pet
-	}: { preflight: Preflight; instances: Instance[]; loaded: boolean; pet?: AvatarArt } = $props();
+		pet,
+		filter,
+		onFilter
+	}: {
+		preflight: Preflight;
+		instances: Instance[];
+		loaded: boolean;
+		pet?: AvatarArt;
+		filter: InstanceFilter;
+		onFilter: (v: InstanceFilter) => void;
+	} = $props();
 
 	type Action = 'start' | 'stop' | 'delete' | 'rebuild';
 
 	let browserOpen = $state(false);
-	let filter = $state<InstanceFilter>('all');
 	let creating = $state(false);
 	let actionError = $state<string | null>(null);
 	let editingId = $state<string | null>(null);
@@ -139,7 +147,7 @@
 	{ready}
 	{creating}
 	{filter}
-	onFilter={(v) => (filter = v)}
+	{onFilter}
 	onNew={() => (browserOpen = true)}
 	onDeleteAll={deleteAll}
 />

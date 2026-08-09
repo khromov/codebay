@@ -25,6 +25,7 @@ import { pickNamePrompt } from './avatars/name-prompts.ts';
 import { avatars, findAvatar } from './avatars/index.ts';
 import {
 	addForwardedPort,
+	broadcastFilter,
 	broadcastPet,
 	createInstance,
 	getDefaultMode,
@@ -55,7 +56,7 @@ import { wsUpgradeAllowed } from './lib/auth.server.ts';
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
-import { normalizeMode } from './types.ts';
+import { isInstanceFilter, normalizeMode, type InstanceFilter } from './types.ts';
 
 async function preflight() {
 	const [docker, cli, auth] = await Promise.all([
@@ -83,6 +84,12 @@ async function preflight() {
 /** The header pet logo, resolved from the DB option. A name that left the catalog reads as "off". */
 function currentPet() {
 	return findAvatar(getOption('pet') ?? undefined);
+}
+
+/** The dashboard run-state filter, resolved from the DB option; an unset/invalid value reads as "all". */
+function currentFilter(): InstanceFilter {
+	const v = getOption('instance_filter');
+	return isInstanceFilter(v) ? v : 'all';
 }
 
 /** Lets a route handler just `throw` for both validation and business-logic failures. */
@@ -122,7 +129,8 @@ export const routes: Record<string, MochiRouteValue> = {
 			preflight: await preflight(),
 			initialPath: '/',
 			snapshot: await listInstances(),
-			pet: currentPet()
+			pet: currentPet(),
+			filter: currentFilter()
 		})
 	}),
 
@@ -133,7 +141,8 @@ export const routes: Record<string, MochiRouteValue> = {
 				preflight: await preflight(),
 				initialPath: `/ide/${params.id}`,
 				snapshot: await listInstances(),
-				pet: currentPet()
+				pet: currentPet(),
+				filter: currentFilter()
 			};
 		}
 	}),
@@ -394,6 +403,16 @@ export const routes: Record<string, MochiRouteValue> = {
 		} catch (err) {
 			return apiError(400, (err as Error).message);
 		}
+	}),
+
+	// Persists the dashboard filter and pushes it to every open tab over the central stream.
+	'/api/settings/filter': Mochi.api(async ({ method, request }) => {
+		if (method !== 'POST') return apiError(405, 'Method Not Allowed');
+		const body = (await request.json().catch(() => null)) as { value?: string } | null;
+		if (!body || !isInstanceFilter(body.value)) return apiError(400, 'Invalid filter');
+		setOption('instance_filter', body.value);
+		broadcastFilter(body.value);
+		return json({ value: body.value });
 	}),
 
 	'/api/stream': Mochi.ws({

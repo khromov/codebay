@@ -34,7 +34,7 @@ Tests that touch server state are named `*.isolated.test.ts`; pure unit tests (e
 
 Both `dev` and `start` execute `src/index.ts` with Bun (Mochi serves SSR pages on the fly); `build` is only needed for a precompiled production bundle. The `dev` script already sets `MODE=development`, `DISABLE_OPEN_BROWSER=1`, and `DATA_DIR=./.codebay` (keeps state inside the repo while developing).
 
-**Port:** the server reads `PORT` (default 6969 — the fallback lives in `src/lib/config.server.ts`; everything else imports `PORT` from there rather than re-reading the env). When _you_ (Claude Code) run the app, use `PORT=4444 DISABLE_OPEN_BROWSER=1 bun run dev` so your instance stays separate from one the user may have running on 6969.
+**Port:** the server reads `PORT` (default 6969 — the fallback lives in `src/lib/config.server.ts`; everything else imports `PORT` from there rather than re-reading the env).
 
 **Browser launch:** on startup the server opens the web UI in the user's default browser. Set `DISABLE_OPEN_BROWSER=1` to skip it — _you_ (Claude Code) should always run with this set (the `dev` script already does).
 

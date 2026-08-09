@@ -2,9 +2,11 @@
 	import Copy from '@lucide/svelte/icons/copy';
 	import Eraser from '@lucide/svelte/icons/eraser';
 	import Contrast from '@lucide/svelte/icons/contrast';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import X from '@lucide/svelte/icons/x';
 	import toast from 'svelte-french-toast';
-	import { ROWS, COLS, ON, OFF, GRAY, type AvatarArt } from '../avatars/types.ts';
+	import { ROWS, COLS, ON, OFF, GRAY, decode, type AvatarArt } from '../avatars/types.ts';
 	import { MODES, nextValue, type Mode } from '../avatars/editor.ts';
 	import {
 		cellsToPixels,
@@ -16,13 +18,26 @@
 	import Button from './Button.svelte';
 
 	// Rolled by the route, not here, so hydration doesn't pick a different word.
-	let { namePlaceholder }: { namePlaceholder: string } = $props();
+	// `editing` seeds the canvas with an existing sprite (a redraw); null is a fresh draw.
+	let {
+		namePlaceholder,
+		editing = null,
+		oncancelEdit
+	}: {
+		namePlaceholder: string;
+		editing?: AvatarArt | null;
+		oncancelEdit?: () => void;
+	} = $props();
 
-	// Same shape `decode()` produces, so the two round-trip.
-	let cells = $state<number[]>(Array(ROWS * COLS).fill(OFF));
-	let avatarName = $state('');
+	// A redraw keeps the sprite's name (it's the catalog key), so the name is fixed then.
+	const isEdit = $derived(editing != null);
 
-	const slug = $derived(normalizeName(avatarName));
+	// Same shape `decode()` produces, so the two round-trip. Seeded once — the parent
+	// remounts this component (keyed) when it switches which sprite is being edited.
+	let cells = $state<number[]>(editing ? decode(editing) : Array(ROWS * COLS).fill(OFF));
+	let avatarName = $state(editing?.name ?? '');
+
+	const slug = $derived(editing ? editing.name : normalizeName(avatarName));
 	const art = $derived<AvatarArt>({ name: slug || 'my-avatar', pixels: cellsToPixels(cells) });
 	// Contributing needs a name and at least one lit pixel — a blank sprite is no sprite.
 	const canContribute = $derived(slug.length > 0 && cells.some((c) => c !== OFF));
@@ -89,6 +104,11 @@
 		cells = Array(ROWS * COLS).fill(OFF);
 	}
 
+	// Only meaningful for a redraw: restore the sprite the edit started from.
+	function reset() {
+		if (editing) cells = decode(editing);
+	}
+
 	// Only swaps off↔on; gray sits in the middle and is left untouched.
 	function invert() {
 		cells = cells.map((c) => (c === ON ? OFF : c === OFF ? ON : c));
@@ -106,7 +126,13 @@
 
 <section class="editor">
 	<div class="head">
-		<h2>Draw your own avatar</h2>
+		<h2>{isEdit ? `Redraw “${editing!.name}”` : 'Draw your own avatar'}</h2>
+		{#if isEdit}
+			<button type="button" class="head-cancel" onclick={() => oncancelEdit?.()}>
+				<X size={14} />
+				<span>New drawing</span>
+			</button>
+		{/if}
 	</div>
 
 	<div class="body">
@@ -141,18 +167,33 @@
 				</div>
 			</div>
 
+			{#if isEdit}
+				<!-- The AI-generated original, so the redraw can be compared against it at a glance. -->
+				<div class="preview before">
+					<div class="preview-label">Before</div>
+					<div class="preview-row">
+						<Avatar art={editing!} name={editing!.name} scale={3} />
+					</div>
+				</div>
+			{/if}
+
 			<label class="name-field">
 				<span class="preview-label">Name</span>
-				<input
-					type="text"
-					bind:value={avatarName}
-					placeholder={namePlaceholder}
-					spellcheck="false"
-					autocapitalize="off"
-					autocorrect="off"
-					autocomplete="off"
-					maxlength="24"
-				/>
+				{#if isEdit}
+					<!-- The name is the catalog key; a redraw keeps it, so it's shown read-only. -->
+					<input type="text" value={editing!.name} readonly aria-readonly="true" />
+				{:else}
+					<input
+						type="text"
+						bind:value={avatarName}
+						placeholder={namePlaceholder}
+						spellcheck="false"
+						autocapitalize="off"
+						autocorrect="off"
+						autocomplete="off"
+						maxlength="24"
+					/>
+				{/if}
 			</label>
 
 			<div class="mode-field">
@@ -177,6 +218,9 @@
 			</div>
 
 			<div class="tools">
+				{#if isEdit}
+					<Button size="sm" icon={RotateCcw} onclick={reset}>Reset</Button>
+				{/if}
 				<Button size="sm" icon={Eraser} onclick={clear}>Clear</Button>
 				<Button size="sm" icon={Contrast} onclick={invert}>Invert</Button>
 			</div>
@@ -184,7 +228,11 @@
 	</div>
 
 	<div class="foot">
-		<span class="hint">Draw something, then open an issue to get it into the official set.</span>
+		<span class="hint">
+			{isEdit
+				? 'Redraw it, then open an issue to replace the AI-generated original.'
+				: 'Draw something, then open an issue to get it into the official set.'}
+		</span>
 		<div class="actions">
 			<Button size="sm" icon={Copy} disabled={!canContribute} onclick={copyModule}>Copy</Button>
 			<Button
@@ -192,7 +240,7 @@
 				variant="primary"
 				icon={ExternalLink}
 				disabled={!canContribute}
-				href={toIssueUrl(art)}
+				href={toIssueUrl(art, isEdit ? 'edit' : 'create')}
 				target="_blank"
 				rel="noopener"
 			>
@@ -214,6 +262,8 @@
 	.head {
 		display: flex;
 		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
 		padding: 14px 18px;
 		border-bottom: 1px solid var(--ink);
 		background: var(--ink);
@@ -226,6 +276,29 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		color: var(--bg);
+	}
+	.head-cancel {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		flex: none;
+		padding: 5px 10px;
+		border: 1px solid var(--bg);
+		background: transparent;
+		color: var(--bg);
+		font-family: var(--font-mono);
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		cursor: pointer;
+	}
+	.head-cancel:hover {
+		background: var(--bg);
+		color: var(--ink);
+	}
+	.head-cancel:focus-visible {
+		outline: none;
+		box-shadow: 0 0 0 2px var(--rule-soft);
 	}
 	.body {
 		display: flex;
@@ -307,6 +380,10 @@
 	}
 	.name-field input::placeholder {
 		color: var(--ink-faint);
+	}
+	.name-field input[readonly] {
+		color: var(--ink-soft);
+		cursor: default;
 	}
 	.name-field input:focus {
 		outline: none;
