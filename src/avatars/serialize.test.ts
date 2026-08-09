@@ -55,13 +55,13 @@ describe('toIssueUrl', () => {
 	});
 
 	test('edit mode uses an "Avatar edit:" title and a robot-free replacement module', () => {
-		const art = { name: 'robot', pixels: cellsToPixels(decode(ukraine)) };
+		// Seed WITH the flag, so this proves the module strips it, not merely that it's never added.
+		const art = { name: 'dragon', robot: true, pixels: cellsToPixels(decode(ukraine)) };
+		expect(toModuleSource(art)).not.toContain('robot');
 		const url = new URL(toIssueUrl(art, 'edit'));
-		expect(url.searchParams.get('title')).toBe('Avatar edit: robot');
+		expect(url.searchParams.get('title')).toBe('Avatar edit: dragon');
 		const body = url.searchParams.get('body') ?? '';
 		for (const row of art.pixels) expect(body).toContain(row);
-		// The pasted replacement carries no `robot` flag — landing it makes the sprite hand-drawn.
 		expect(body).toContain(toModuleSource(art).trimEnd());
-		expect(body).not.toContain('robot: true');
 	});
 });
