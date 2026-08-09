@@ -1,0 +1,1 @@
+ALTER TABLE instances ADD COLUMN mode TEXT NOT NULL DEFAULT 'ide';

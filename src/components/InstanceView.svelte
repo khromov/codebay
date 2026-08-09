@@ -193,6 +193,7 @@
 			{lastFetchedAt}
 			{injectionChecks}
 			active={!instance || instance.status === 'running'}
+			mode={instance?.mode ?? 'ide'}
 		/>
 	</div>
 

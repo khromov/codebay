@@ -3,9 +3,11 @@
 	import '@fontsource-variable/jetbrains-mono';
 	import SettingsView from '../components/SettingsView.svelte';
 	import type { AvatarArt } from '../avatars/index.ts';
+	import type { InstanceMode } from '../types.ts';
 
 	let {
 		pet,
+		defaultMode,
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
@@ -38,6 +40,7 @@
 		version
 	}: {
 		pet?: AvatarArt;
+		defaultMode: InstanceMode;
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
@@ -73,6 +76,7 @@
 
 <SettingsView
 	{pet}
+	{defaultMode}
 	{defaultImage}
 	{builtinImage}
 	{disableBuildCache}

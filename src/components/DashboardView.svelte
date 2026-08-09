@@ -59,14 +59,17 @@
 		pending = rest;
 	}
 
-	async function createFrom(sourcePath: string, opts?: { branch?: string }) {
+	async function createFrom(
+		sourcePath: string,
+		opts?: { branch?: string; mode?: Instance['mode'] }
+	) {
 		browserOpen = false;
 		creating = true;
 		actionError = null;
 		try {
 			await apiPost(
 				'/api/instances',
-				{ sourcePath, branch: opts?.branch },
+				{ sourcePath, branch: opts?.branch, mode: opts?.mode },
 				'Failed to create instance'
 			);
 			// The live stream delivers the new instance.
@@ -193,7 +196,11 @@
 </main>
 
 {#if browserOpen}
-	<FolderBrowser onpick={createFrom} onclose={() => (browserOpen = false)} />
+	<FolderBrowser
+		onpick={createFrom}
+		defaultMode={preflight.defaultMode}
+		onclose={() => (browserOpen = false)}
+	/>
 {/if}
 
 <style>

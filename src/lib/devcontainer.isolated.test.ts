@@ -34,6 +34,11 @@ describe('readDeclaredContainerPorts', () => {
 		expect([...ports].sort((a, b) => a - b)).toEqual([3000, 4000, 5173, 9000]);
 	});
 
+	test('excludes both reserved internal ports (8080 code-server, 7681 ttyd)', async () => {
+		writeConfig(JSON.stringify({ forwardPorts: [8080, 7681, 3000] }));
+		expect(await readDeclaredContainerPorts(dir)).toEqual([3000]);
+	});
+
 	test('parses the host:container appPort form and dedupes', async () => {
 		writeConfig(JSON.stringify({ forwardPorts: [3333], appPort: '8002:3333' }));
 		expect(await readDeclaredContainerPorts(dir)).toEqual([3333]);
@@ -348,5 +353,129 @@ describe('writeOverrideConfig local git excludes', () => {
 	test('is a no-op when the copy is not a git repo', async () => {
 		await writeOverrideConfig(dir, 8001);
 		expect(existsSync(join(dir, '.git'))).toBe(false);
+	});
+});
+
+describe('writeOverrideConfig terminal mode', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-term-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	const readDevcontainer = () =>
+		JSON.parse(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8'));
+	const readLaunch = () => readFileSync(join(dir, '.devcontainer', 'codebay-terminal.sh'), 'utf8');
+
+	test('swaps code-server for the ttyd feature, keeping tmux', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const features = readDevcontainer().features;
+		expect(features['ghcr.io/coder/devcontainer-features/code-server:1']).toBeUndefined();
+		expect(features['./codebay-ttyd']).toEqual({});
+		expect(features['./codebay-tmux']).toEqual({});
+	});
+
+	test('maps the host port to ttyd (7681), not code-server (8080)', async () => {
+		await writeOverrideConfig(
+			dir,
+			8001,
+			[{ host_port: 8002, container_port: 3000 }],
+			undefined,
+			'terminal'
+		);
+		expect(readDevcontainer().appPort).toEqual([
+			'127.0.0.1:8001:7681',
+			`${PUBLISH_HOST}:8002:3000`
+		]);
+	});
+
+	test('launches ttyd (writable, process-guarded) from the staged launcher script', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const cmd = readDevcontainer().postStartCommand as string;
+		expect(cmd).toContain('ttyd --port 7681');
+		expect(cmd).toContain('--writable');
+		expect(cmd).toContain('.devcontainer/codebay-terminal.sh');
+		// No code-server anywhere in a terminal-mode boot.
+		expect(cmd).not.toContain('code-server');
+	});
+
+	test('guards the ttyd launch by process name, not by a self-matching cmdline pattern', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const cmd = readDevcontainer().postStartCommand as string;
+		expect(cmd).toContain('pgrep -x ttyd');
+		// `pgrep -f` matches the launch shell's own cmdline, so the guard would fire every time
+		// and ttyd would never start (nothing ever listening on 7681).
+		expect(cmd).not.toContain('pgrep -f');
+	});
+
+	test('the launcher runs claude under tmux and waits on the injections sentinel', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const script = readLaunch();
+		expect(script.startsWith('#!/usr/bin/env bash')).toBe(true);
+		expect(script).toContain('tmux new-session -A -s codebay');
+		expect(script).toContain('claude --dangerously-skip-permissions');
+		// Holds claude until injections finish, same as the code-server terminal task.
+		expect(script).toContain('.codebay-injections-done');
+		expect(script.indexOf('.codebay-injections-done')).toBeLessThan(script.indexOf('claude'));
+		// No code-server extension host to race, so no IDE-bridge wait.
+		expect(script).not.toContain('.claude/ide/');
+	});
+
+	test('serves the split view by letting the URL pick the session', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		// Without --url-arg ttyd drops the `?arg=` the shell pane sends, and both panes would
+		// attach to the same claude session.
+		expect(readDevcontainer().postStartCommand as string).toContain('--url-arg');
+
+		const script = readLaunch();
+		expect(script).toContain('tmux new-session -A -s codebay-shell');
+		// The scratch shell must not sit behind claude's boot sentinel — it opens on demand.
+		expect(script.indexOf('codebay-shell')).toBeLessThan(
+			script.indexOf('.codebay-injections-done')
+		);
+		// `$1` is attacker-supplied via the URL, so it may only ever be compared, never run.
+		expect(script).toContain('[ "$1" = "shell" ]');
+		expect(script).not.toContain('eval');
+	});
+
+	test('stages the codebay-ttyd feature with a best-effort install script', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const meta = JSON.parse(
+			readFileSync(join(dir, '.devcontainer', 'codebay-ttyd', 'devcontainer-feature.json'), 'utf8')
+		);
+		expect(meta.id).toBe('codebay-ttyd');
+		const install = readFileSync(join(dir, '.devcontainer', 'codebay-ttyd', 'install.sh'), 'utf8');
+		expect(install.startsWith('#!/bin/sh\n')).toBe(true);
+		expect(install).toContain('command -v ttyd');
+		expect(install.trimEnd().endsWith('exit 0')).toBe(true);
+	});
+
+	test('skips the code-server settings file and the VS Code Terminal task', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		expect(existsSync(join(dir, '.devcontainer', 'code-server-settings.json'))).toBe(false);
+		expect(existsSync(join(dir, '.vscode', 'tasks.json'))).toBe(false);
+	});
+
+	test('excludes the terminal-mode artifacts from git', async () => {
+		mkdirSync(join(dir, '.git'), { recursive: true });
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const text = readFileSync(join(dir, '.git', 'info', 'exclude'), 'utf8');
+		expect(text).toContain('/.devcontainer/codebay-ttyd/');
+		expect(text).toContain('/.devcontainer/codebay-terminal.sh');
+	});
+
+	test('installs Claude Code even when the source ships its own config', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1' })
+		);
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const features = readDevcontainer().features;
+		// The launcher *is* `claude`, so unlike IDE mode terminal mode can't defer tooling to the
+		// project's config — a bare shell would defeat the whole "just Claude in a terminal" point.
+		expect(features['ghcr.io/anthropics/devcontainer-features/claude-code:1.0']).toBeDefined();
+		expect(features['ghcr.io/devcontainers/features/node:1']).toBeDefined();
 	});
 });

@@ -3,15 +3,18 @@ import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT as TMUX_INSTALL_SCRIPT } from '../container-injections/tmux.ts';
+import { INSTALL_SCRIPT as TTYD_INSTALL_SCRIPT } from '../container-injections/ttyd.ts';
 import { EXTENSION_ID as CLAUDE_CODE_EXTENSION_ID } from '../container-injections/claude-code-ide-extension.ts';
 import {
 	CODE_SERVER_PORT,
 	DEFAULT_IMAGE,
 	PUBLISH_HOST,
+	TTYD_PORT,
 	devcontainerBin,
 	dockerEnv
 } from './config.server.ts';
 import { spawnCapture } from './spawn.server.ts';
+import type { InstanceMode } from './db.server.ts';
 import type { PortForward } from '../types.ts';
 
 const CODE_SERVER_FEATURE = 'ghcr.io/coder/devcontainer-features/code-server:1';
@@ -49,11 +52,32 @@ const TMUX_FEATURE_INSTALL =
 	') || echo "codebay-tmux: install failed (non-fatal); the manager retries after the container starts"\n' +
 	'exit 0\n';
 
+/** Relative to .devcontainer/. Only written for terminal-mode instances. */
+const TTYD_FEATURE_DIR = 'codebay-ttyd';
+
+const TTYD_FEATURE_METADATA = {
+	id: 'codebay-ttyd',
+	version: '1.0.0',
+	name: 'ttyd (Codebay, best-effort)',
+	description:
+		'Installs ttyd at image build time so the terminal is reachable in a firewalled container. Never fails the build.'
+};
+
+/** Best-effort like tmux: build time is the only reliable moment to fetch in an egress-firewalled container. */
+const TTYD_FEATURE_INSTALL =
+	'#!/bin/sh\n' +
+	'(\n' +
+	`${TTYD_INSTALL_SCRIPT}\n` +
+	') || echo "codebay-ttyd: install failed (non-fatal); the manager retries after the container starts"\n' +
+	'exit 0\n';
+
 /** Manager-dropped files the project's own .gitignore won't cover, kept out of git status. */
 const MANAGER_GIT_EXCLUDES = [
 	'/.devcontainer/code-server-settings.json',
 	'/.devcontainer/devcontainer-lock.json',
 	'/.devcontainer/codebay-tmux/',
+	'/.devcontainer/codebay-ttyd/',
+	'/.devcontainer/codebay-terminal.sh',
 	'/.vscode/tasks.json'
 ];
 
@@ -85,6 +109,9 @@ const CODE_SERVER_SETTINGS = {
 };
 
 const TMUX_SESSION = 'codebay';
+
+/** The split view's right-hand pane: a plain shell, kept apart from the Claude session. */
+const TMUX_SHELL_SESSION = 'codebay-shell';
 
 /** Written to `$HOME` when the post-up injection sequence finishes; the terminal launcher waits on it. */
 export const INJECTIONS_DONE_FILE = '.codebay-injections-done';
@@ -147,6 +174,52 @@ const CODE_SERVER_LAUNCH =
 	`pgrep -f 'code-server.*${CODE_SERVER_PORT}' >/dev/null 2>&1 || ` +
 	`nohup code-server --bind-addr 0.0.0.0:${CODE_SERVER_PORT} --auth none ` +
 	`--disable-workspace-trust \\"$PWD\\" >/tmp/code-server.log 2>&1 &"`;
+
+/** Staged next to the config; ttyd runs it as its command so the nested quoting stays in a real file. */
+const TTYD_LAUNCH_SCRIPT_FILE = 'codebay-terminal.sh';
+
+/** The one `?arg=` value ttyd is allowed to act on; anything else falls through to Claude. */
+export const TTYD_SHELL_ARG = 'shell';
+
+/**
+ * ttyd runs this per browser connection. `tmux -A` attaches to the shared `codebay` session
+ * (or creates it), so Claude survives reconnects. No WAIT_FOR_IDE_BRIDGE — terminal mode has
+ * no code-server extension host to race. Kept in a file so the tmux command's own quoting isn't
+ * nested inside the postStartCommand's shell quoting.
+ *
+ * `$1` comes from the URL's `?arg=` (ttyd's --url-arg), so it is untrusted — hence a literal
+ * compare and never an eval. The shell branch sits above the injections wait so the split view's
+ * scratch shell opens immediately instead of blocking on Claude's boot sentinel.
+ */
+const TTYD_LAUNCH_SCRIPT =
+	'#!/usr/bin/env bash\n' +
+	'export SHELL="${SHELL:-/bin/bash}"\n' +
+	`if [ "$1" = "${TTYD_SHELL_ARG}" ]; then\n` +
+	'  if command -v tmux >/dev/null 2>&1; then\n' +
+	`    exec tmux new-session -A -s ${TMUX_SHELL_SESSION}\n` +
+	'  fi\n' +
+	'  exec "$SHELL" -l\n' +
+	'fi\n' +
+	WAIT_FOR_INJECTIONS +
+	'\n' +
+	`if command -v tmux >/dev/null 2>&1; then\n` +
+	`  exec tmux new-session -A -s ${TMUX_SESSION} 'claude --dangerously-skip-permissions; exec "$SHELL" -l'\n` +
+	'fi\n' +
+	'claude --dangerously-skip-permissions\n' +
+	'exec "$SHELL" -l\n';
+
+// ttyd defaults to read-only, so --writable is required for keyboard input. Guarded by `pgrep -x`
+// (process name) so a folderOpen/rebuild can't stack a second daemon — never `pgrep -f`, whose
+// cmdline match also matches this very shell, which would skip the launch every time.
+const TTYD_LAUNCH =
+	`bash -c "` +
+	`export SHELL=\\"\${SHELL:-/bin/bash}\\"; ` +
+	`command -v ttyd >/dev/null 2>&1 || exit 0; ` +
+	`pgrep -x ttyd >/dev/null 2>&1 || ` +
+	// --url-arg forwards the connection URL's `?arg=` into the launcher's argv, so one ttyd serves
+	// both the Claude session and the split view's scratch shell (--writable is covered above).
+	`nohup ttyd --port ${TTYD_PORT} --writable --url-arg ` +
+	`bash \\"$PWD/.devcontainer/${TTYD_LAUNCH_SCRIPT_FILE}\\" >/tmp/ttyd.log 2>&1 &"`;
 
 export async function devcontainerCliAvailable(): Promise<boolean> {
 	return (await spawnCapture([devcontainerBin(), '--version'])) !== null;
@@ -288,7 +361,15 @@ export async function readDeclaredContainerPorts(workspaceDir: string): Promise<
 	const ports = new Set<number>();
 	for (const entry of entries) {
 		const port = containerPortOf(entry);
-		if (Number.isInteger(port) && port > 0 && port <= 65535 && port !== CODE_SERVER_PORT) {
+		// Both reserved internal ports are excluded regardless of mode, so neither can be
+		// double-mapped when writeOverrideConfig renders its own appPort entry for it.
+		if (
+			Number.isInteger(port) &&
+			port > 0 &&
+			port <= 65535 &&
+			port !== CODE_SERVER_PORT &&
+			port !== TTYD_PORT
+		) {
 			ports.add(port);
 		}
 	}
@@ -303,8 +384,10 @@ export async function writeOverrideConfig(
 	workspaceDir: string,
 	hostPort: number,
 	forwards: PortForward[] = [],
-	defaultImage: string = DEFAULT_IMAGE
+	defaultImage: string = DEFAULT_IMAGE,
+	mode: InstanceMode = 'ide'
 ): Promise<{ imageSource: string }> {
+	const isTerminal = mode === 'terminal';
 	const target = configPath(workspaceDir);
 	let config: DevcontainerConfig = {};
 
@@ -326,23 +409,30 @@ export async function writeOverrideConfig(
 	}
 
 	// A local feature is addressed relative to the config, which sits at one of two depths.
-	const tmuxFeatureKey = `./${relative(dirname(target), join(workspaceDir, '.devcontainer', TMUX_FEATURE_DIR))}`;
+	const featureKey = (dir: string) =>
+		`./${relative(dirname(target), join(workspaceDir, '.devcontainer', dir))}`;
+	const tmuxFeatureKey = featureKey(TMUX_FEATURE_DIR);
+	const ttydFeatureKey = featureKey(TTYD_FEATURE_DIR);
 
-	// Node/Claude/gh only for the default image — projects with their own config own their tooling.
+	// Terminal mode swaps code-server for ttyd; otherwise (tmux, tooling) the two are identical.
+	// Node/Claude/gh: always in terminal mode (its launcher *is* `claude`), else only the default image.
 	config.features = {
 		...(config.features ?? {}),
-		[CODE_SERVER_FEATURE]: { host: '0.0.0.0', port: CODE_SERVER_PORT, auth: 'none' },
+		...(isTerminal
+			? { [ttydFeatureKey]: {} }
+			: { [CODE_SERVER_FEATURE]: { host: '0.0.0.0', port: CODE_SERVER_PORT, auth: 'none' } }),
 		[tmuxFeatureKey]: {},
-		...(hadConfig
-			? {}
-			: { [NODE_FEATURE]: {}, [CLAUDE_CODE_FEATURE]: {}, [GITHUB_CLI_FEATURE]: {} })
+		...(isTerminal || !hadConfig
+			? { [NODE_FEATURE]: {}, [CLAUDE_CODE_FEATURE]: {}, [GITHUB_CLI_FEATURE]: {} }
+			: {})
 	};
 
+	const servedPort = isTerminal ? TTYD_PORT : CODE_SERVER_PORT;
 	// Rendered from scratch rather than merged, so removing a forward actually drops its mapping.
-	// code-server stays loopback even under HOST=0.0.0.0 — it has no auth of its own, so the LAN
-	// reaches it only through the Basic-Auth-gated /p/:id/ proxy.
+	// The served port stays loopback even under HOST=0.0.0.0 — neither code-server nor ttyd has
+	// auth of its own, so the LAN reaches it only through the Basic-Auth-gated /p/:id/ proxy.
 	config.appPort = [
-		`127.0.0.1:${hostPort}:${CODE_SERVER_PORT}`,
+		`127.0.0.1:${hostPort}:${servedPort}`,
 		...forwards.map((f) => `${PUBLISH_HOST}:${f.host_port}:${f.container_port}`)
 	];
 
@@ -351,25 +441,29 @@ export async function writeOverrideConfig(
 	runArgs.add(HOST_GATEWAY_ARG);
 	config.runArgs = [...runArgs];
 
+	const launch = isTerminal ? TTYD_LAUNCH : CODE_SERVER_LAUNCH;
 	const existing = config.postStartCommand;
 	config.postStartCommand =
-		typeof existing === 'string' && existing.trim()
-			? `${existing} && ${CODE_SERVER_LAUNCH}`
-			: CODE_SERVER_LAUNCH;
+		typeof existing === 'string' && existing.trim() ? `${existing} && ${launch}` : launch;
 
 	await mkdir(join(workspaceDir, '.devcontainer'), { recursive: true }).catch(() => {});
 	await writeFile(target, JSON.stringify(config, null, 2) + '\n', 'utf8');
 
-	// Staged next to the config; CODE_SERVER_LAUNCH copies it into the user-data dir on first start.
-	await writeFile(
-		join(workspaceDir, '.devcontainer', CODE_SERVER_SETTINGS_FILE),
-		JSON.stringify(CODE_SERVER_SETTINGS, null, 2) + '\n',
-		'utf8'
-	);
+	if (isTerminal) {
+		await writeTtydFeature(workspaceDir);
+		await writeTerminalLaunchScript(workspaceDir);
+	} else {
+		// Staged next to the config; CODE_SERVER_LAUNCH copies it into the user-data dir on first start.
+		await writeFile(
+			join(workspaceDir, '.devcontainer', CODE_SERVER_SETTINGS_FILE),
+			JSON.stringify(CODE_SERVER_SETTINGS, null, 2) + '\n',
+			'utf8'
+		);
+		// The VS Code Terminal task is code-server-only; ttyd runs its own launcher script instead.
+		await writeTerminalTask(workspaceDir);
+	}
 
 	await writeTmuxFeature(workspaceDir);
-
-	await writeTerminalTask(workspaceDir);
 
 	await writeLocalGitExclude(workspaceDir);
 
@@ -458,6 +552,26 @@ async function writeTmuxFeature(workspaceDir: string): Promise<void> {
 	await writeFile(installPath, TMUX_FEATURE_INSTALL, 'utf8');
 	// writeFile's mode only applies on creation; chmod covers rewrites too.
 	await chmod(installPath, 0o755);
+}
+
+async function writeTtydFeature(workspaceDir: string): Promise<void> {
+	const dir = join(workspaceDir, '.devcontainer', TTYD_FEATURE_DIR);
+	await mkdir(dir, { recursive: true }).catch(() => {});
+	await writeFile(
+		join(dir, 'devcontainer-feature.json'),
+		JSON.stringify(TTYD_FEATURE_METADATA, null, 2) + '\n',
+		'utf8'
+	);
+	const installPath = join(dir, 'install.sh');
+	await writeFile(installPath, TTYD_FEATURE_INSTALL, 'utf8');
+	await chmod(installPath, 0o755);
+}
+
+/** Staged next to the config; TTYD_LAUNCH runs it as ttyd's command. */
+async function writeTerminalLaunchScript(workspaceDir: string): Promise<void> {
+	const path = join(workspaceDir, '.devcontainer', TTYD_LAUNCH_SCRIPT_FILE);
+	await writeFile(path, TTYD_LAUNCH_SCRIPT, 'utf8');
+	await chmod(path, 0o755);
 }
 
 /** Replaces the managed task rather than skipping it, so a rebuild picks up command changes. */

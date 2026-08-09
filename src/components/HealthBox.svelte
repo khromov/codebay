@@ -1,17 +1,15 @@
 <script lang="ts">
 	import Check from '@lucide/svelte/icons/check';
 	import X from '@lucide/svelte/icons/x';
-	import type { InstanceHealth } from '../types.ts';
+	import type { InstanceHealth, InstanceMode } from '../types.ts';
 	import Skeleton from './Skeleton.svelte';
-
-	// Intrinsic to every instance, independent of any injection.
-	const FIXED_CHECKS = ['Container running', 'Code-server reachable'] as const;
 
 	let {
 		health = null,
 		lastFetchedAt = null,
 		active = true,
-		injectionChecks = 0
+		injectionChecks = 0,
+		mode = 'ide'
 	}: {
 		/** Latest health snapshot, or null while the first check is pending. */
 		health?: InstanceHealth | null;
@@ -21,7 +19,16 @@
 		active?: boolean;
 		/** Registry-derived, so the skeleton renders one row per real check. */
 		injectionChecks?: number;
+		/** Terminal instances serve ttyd, not code-server, so the reachability label differs. */
+		mode?: InstanceMode;
 	} = $props();
+
+	// Intrinsic to every instance, independent of any injection. The second label tracks the
+	// served surface — the probe underneath is the same host-port reachability check either way.
+	const FIXED_CHECKS = $derived([
+		'Container running',
+		mode === 'terminal' ? 'Terminal reachable' : 'Code-server reachable'
+	] as const);
 
 	// The value word stays uniform because the tick/cross icon already conveys pass vs fail.
 	const checks = $derived.by((): { label: string; ok: boolean; value: string }[] => {

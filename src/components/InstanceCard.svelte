@@ -94,7 +94,9 @@
 	{/if}
 	<div class="actions">
 		{#if instance.status === 'running'}
-			<Button variant="primary" size="sm" href={`/ide/${instance.id}`}>Open IDE</Button>
+			<Button variant="primary" size="sm" href={`/ide/${instance.id}`}>
+				{instance.mode === 'terminal' ? 'Open terminal' : 'Open IDE'}
+			</Button>
 			<Button size="sm" onclick={() => onact('stop')}>Stop</Button>
 		{:else if instance.status === 'stopped' || (instance.status === 'error' && instance.container_id)}
 			<Button size="sm" onclick={() => onact('start')}>Start</Button>

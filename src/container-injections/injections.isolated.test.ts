@@ -17,6 +17,7 @@ import { NO_COAUTHOR_SETTINGS } from './claude-no-coauthor.ts';
 import { claudeTrustConfig, CLAUDE_TRUST_SETTINGS } from './claude-trust.ts';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
+import { INSTALL_SCRIPT as TTYD_INSTALL_SCRIPT } from './ttyd.ts';
 import {
 	CHECK_SCRIPT as EXT_CHECK_SCRIPT,
 	EXTENSION_ID,
@@ -137,6 +138,48 @@ describe('injection registry', () => {
 		// Terminal task falls back to non-persistent mode until it lands.
 		expect(injections[0]!.id).toBe('git-safe-directory');
 		expect(injections[1]!.id).toBe('tmux');
+	});
+
+	test('ttyd is registered as a terminal-only injection with a health check', () => {
+		const t = injections.find((i) => i.id === 'ttyd');
+		expect(t).toBeDefined();
+		expect(t!.modes).toEqual(['terminal']);
+		expect(typeof t!.check).toBe('function');
+		expect(t!.auth).toBeUndefined();
+	});
+});
+
+describe('resolveInjections — mode filtering', () => {
+	test('terminal mode adds ttyd and drops the code-server IDE extension', () => {
+		const ids = resolveInjections('terminal').map((i) => i.id);
+		expect(ids).toContain('ttyd');
+		expect(ids).not.toContain('claude-code-ide-extension');
+	});
+
+	test('ide mode adds the IDE extension and drops ttyd', () => {
+		const ids = resolveInjections('ide').map((i) => i.id);
+		expect(ids).toContain('claude-code-ide-extension');
+		expect(ids).not.toContain('ttyd');
+	});
+
+	test('mode-agnostic (no argument) keeps every injection', () => {
+		const ids = resolveInjections().map((i) => i.id);
+		expect(ids).toContain('ttyd');
+		expect(ids).toContain('claude-code-ide-extension');
+	});
+});
+
+describe('ttyd injection script', () => {
+	test('short-circuits when ttyd is already present', () => {
+		expect(
+			TTYD_INSTALL_SCRIPT.startsWith('if command -v ttyd >/dev/null 2>&1; then exit 0; fi;')
+		).toBe(true);
+	});
+
+	test('tries package managers and falls back to the upstream static binary', () => {
+		expect(TTYD_INSTALL_SCRIPT).toContain('apt-get');
+		expect(TTYD_INSTALL_SCRIPT).toContain('apk');
+		expect(TTYD_INSTALL_SCRIPT).toContain('releases/latest/download/ttyd.');
 	});
 });
 
