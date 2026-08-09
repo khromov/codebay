@@ -76,7 +76,8 @@ async function proxyHttp(event: MochiApiEvent, port: number, rest: string): Prom
 	headers.set('host', `127.0.0.1:${port}`);
 	headers.delete('accept-encoding'); // ask for an unencoded body so we can stream it verbatim
 	// code-server runs with `--auth none`, so forwarding this would only leak the app password.
-	// `cookie` is deliberately kept: the manager sets none, so every cookie here is code-server's.
+	// `cookie` is deliberately kept: the manager's only same-origin cookie is the UI theme, so
+	// anything else here belongs to the upstream and has to survive the round trip.
 	headers.delete('authorization');
 	const hasBody = event.method !== 'GET' && event.method !== 'HEAD';
 	let upstream: Response;
