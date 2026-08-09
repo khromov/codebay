@@ -359,7 +359,7 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			instance: row
 		};
 		// Swallow per-injection failures so one bad injection can't abort the rest of provisioning.
-		for (const injection of resolveInjections()) {
+		for (const injection of resolveInjections(row.mode)) {
 			try {
 				await injection.apply(target, (msg) => appendLog(row.id, msg));
 			} catch (err) {

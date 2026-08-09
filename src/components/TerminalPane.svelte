@@ -14,13 +14,15 @@
 	let disposed = false;
 	let connected = $state(false);
 
-	// ttyd's wire protocol: a single command byte prefixes every frame.
+	// ttyd's wire protocol: a single command byte prefixes every frame, sent as binary
+	// (matching ttyd's own client — libwebsockets delivers the raw bytes to the server).
 	const CMD_INPUT = '0';
 	const CMD_RESIZE = '1';
 	const OUTPUT = 0x30; // '0'
+	const encoder = new TextEncoder();
 
 	function send(data: string) {
-		if (ws?.readyState === WebSocket.OPEN) ws.send(data);
+		if (ws?.readyState === WebSocket.OPEN) ws.send(encoder.encode(data));
 	}
 
 	function onFrame(data: ArrayBuffer) {

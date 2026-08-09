@@ -199,7 +199,9 @@ const TTYD_LAUNCH =
 	`export SHELL=\\"\${SHELL:-/bin/bash}\\"; ` +
 	`command -v ttyd >/dev/null 2>&1 || exit 0; ` +
 	`pgrep -f 'ttyd.*${TTYD_PORT}' >/dev/null 2>&1 || ` +
-	`nohup ttyd --port ${TTYD_PORT} --interface 0.0.0.0 --writable ` +
+	// ttyd binds all interfaces by default; --interface expects an iface NAME (e.g. eth0), not
+	// an IP, so passing 0.0.0.0 makes it fail to start. -W/--writable is required for input.
+	`nohup ttyd --port ${TTYD_PORT} --writable ` +
 	`bash \\"$PWD/.devcontainer/${TTYD_LAUNCH_SCRIPT_FILE}\\" >/tmp/ttyd.log 2>&1 &"`;
 
 export async function devcontainerCliAvailable(): Promise<boolean> {
