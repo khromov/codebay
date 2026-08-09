@@ -25,6 +25,7 @@ import { pickNamePrompt } from './avatars/name-prompts.ts';
 import { avatars, findAvatar } from './avatars/index.ts';
 import {
 	addForwardedPort,
+	broadcastDefaultMode,
 	broadcastFilter,
 	broadcastPet,
 	createInstance,
@@ -233,6 +234,7 @@ export const routes: Record<string, MochiRouteValue> = {
 			defaultMode: ({ formData }) => {
 				const mode = normalizeMode(str(formData, 'mode'));
 				setOption('default_mode', mode);
+				broadcastDefaultMode(mode);
 				return success({ mode });
 			},
 

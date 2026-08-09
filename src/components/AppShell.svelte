@@ -192,6 +192,10 @@
 					liveFilter = msg.data.value;
 					return;
 				}
+				if (msg.type === 'default-mode') {
+					livePreflight = { ...livePreflight, defaultMode: msg.data.mode };
+					return;
+				}
 				if (msg.type === 'health') {
 					// A tick in flight when a rebuild starts probes the *old* container and
 					// reports it accessible, which would mount the iframe against the replacement too early.

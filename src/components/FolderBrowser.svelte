@@ -22,9 +22,10 @@
 		defaultMode?: InstanceMode;
 	} = $props();
 
-	// Seeded from the global default; a per-instance choice here overrides it for this instance.
-	// svelte-ignore state_referenced_locally
-	let mode = $state<InstanceMode>(defaultMode);
+	// Follows the global default live — settings opens in its own popup, so the toggle there can
+	// move while this picker is open. An explicit choice here wins and is never yanked back.
+	let modeOverride = $state<InstanceMode | null>(null);
+	const mode = $derived(modeOverride ?? defaultMode);
 
 	let result = $state<BrowseResult | null>(null);
 	let loading = $state(true);
@@ -121,7 +122,7 @@
 					class="mode-btn"
 					class:active={mode === 'ide'}
 					aria-pressed={mode === 'ide'}
-					onclick={() => (mode = 'ide')}
+					onclick={() => (modeOverride = 'ide')}
 				>
 					<LayoutTemplate size={15} />
 					Full IDE
@@ -131,7 +132,7 @@
 					class="mode-btn"
 					class:active={mode === 'terminal'}
 					aria-pressed={mode === 'terminal'}
-					onclick={() => (mode = 'terminal')}
+					onclick={() => (modeOverride = 'terminal')}
 				>
 					<Terminal size={15} />
 					Terminal

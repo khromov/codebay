@@ -118,7 +118,9 @@ export type StreamEvent =
 	// `name` is the chosen sprite, or null for the default box logo. Lets the header swap live.
 	| { type: 'pet'; data: { name: string | null } }
 	// The dashboard run-state filter, so a change in one tab propagates to every open client.
-	| { type: 'filter'; data: { value: InstanceFilter } };
+	| { type: 'filter'; data: { value: InstanceFilter } }
+	// The global default editor surface, so the picker's toggle follows a settings change.
+	| { type: 'default-mode'; data: { mode: InstanceMode } };
 
 interface StreamHub {
 	sockets: Set<ServerWebSocket<unknown>>;
@@ -174,6 +176,11 @@ export function broadcastFilter(value: InstanceFilter): void {
 	broadcast({ type: 'filter', data: { value } });
 }
 
+/** Settings opens in its own popup, so the dashboard behind it needs the new default pushed. */
+export function broadcastDefaultMode(mode: InstanceMode): void {
+	broadcast({ type: 'default-mode', data: { mode } });
+}
+
 async function reconcileInstances(force = false): Promise<void> {
 	const list = await listInstances();
 	const listJson = JSON.stringify(list);
@@ -221,6 +228,8 @@ export function streamOpen(ws: ServerWebSocket<unknown>): void {
 		type: 'filter',
 		data: { value: isInstanceFilter(savedFilter) ? savedFilter : 'all' }
 	});
+	// Same, for the default mode the picker's toggle seeds from.
+	sendTo(ws, { type: 'default-mode', data: { mode: getDefaultMode() } });
 }
 
 export function streamClose(ws: ServerWebSocket<unknown>): void {
