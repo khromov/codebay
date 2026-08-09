@@ -50,25 +50,8 @@ interface RelayState {
 	client?: WebSocket;
 	/** Frames received from the browser before the upstream socket is open. */
 	pending: Frame[];
-	/** Frames the upstream sent before the browser socket existed (connect-first path only). */
-	inbound?: Frame[];
 	/** The client's requested subprotocols, forwarded upstream — ttyd requires its `tty` one. */
 	subprotocols?: string[];
-}
-
-/** Opens the upstream socket and buffers anything it emits until the browser socket is wired up. */
-function connectUpstream(
-	url: string,
-	subprotocols: string[]
-): Promise<{ client: WebSocket; inbound: Frame[] }> {
-	return new Promise((resolve, reject) => {
-		const client = new WebSocket(url, subprotocols);
-		client.binaryType = 'arraybuffer';
-		const inbound: Frame[] = [];
-		client.onmessage = (e) => inbound.push(e.data as Frame);
-		client.onopen = () => resolve({ client, inbound });
-		client.onerror = () => reject(new Error('upstream websocket error'));
-	});
 }
 
 async function proxyHttp(event: MochiApiEvent, port: number, rest: string): Promise<Response> {
@@ -110,7 +93,7 @@ async function proxyHttp(event: MochiApiEvent, port: number, rest: string): Prom
 	});
 }
 
-async function proxyUpgrade(event: MochiApiEvent, port: number, rest: string): Promise<Response> {
+function proxyUpgrade(event: MochiApiEvent, port: number, rest: string): Response {
 	const requested = event.request.headers.get('sec-websocket-protocol');
 	const subprotocols = requested
 		? requested
@@ -118,32 +101,18 @@ async function proxyUpgrade(event: MochiApiEvent, port: number, rest: string): P
 				.map((s) => s.trim())
 				.filter(Boolean)
 		: undefined;
-	const upstreamWsUrl = `ws://127.0.0.1:${port}${rest}${event.url.search}`;
-
-	const state: RelayState = { upstreamWsUrl, pending: [], subprotocols };
-	let selected: string | undefined;
-
-	// When subprotocols are in play, open the upstream first so the 101 echoes the one it actually
-	// negotiated instead of guessing its first offer — a mismatch would leave the browser and
-	// upstream disagreeing on the protocol. code-server offers none and connects lazily in open().
-	if (subprotocols) {
-		try {
-			const { client, inbound } = await connectUpstream(upstreamWsUrl, subprotocols);
-			state.client = client;
-			state.inbound = inbound;
-			selected = client.protocol || undefined;
-		} catch {
-			return new Response('Upstream WebSocket unreachable', { status: 502 });
-		}
-	}
-
 	const data: MochiWsData<RelayState> = {
 		__mochiRoutePattern: PROXY_WS_PATTERN,
 		__mochiOpenedAt: performance.now(),
 		__mochiPath: event.url.pathname,
-		user: state
+		user: {
+			upstreamWsUrl: `ws://127.0.0.1:${port}${rest}${event.url.search}`,
+			pending: [],
+			subprotocols
+		}
 	};
-	const headers = selected ? { 'Sec-WebSocket-Protocol': selected } : undefined;
+	// Echo the first offered subprotocol back so the browser's handshake confirms it (ttyd offers `tty`).
+	const headers = subprotocols?.[0] ? { 'Sec-WebSocket-Protocol': subprotocols[0] } : undefined;
 	// Bun's Server is typed with a fixed WebSocketData; Mochi casts the same way for its own upgrades.
 	const ok = (
 		event.server as unknown as {
@@ -153,10 +122,7 @@ async function proxyUpgrade(event: MochiApiEvent, port: number, rest: string): P
 			) => boolean;
 		}
 	).upgrade(event.request, { data, headers });
-	if (!ok) {
-		if (state.client) safeClose(state.client, 1000, ''); // don't orphan the pre-opened upstream
-		return new Response('WebSocket upgrade failed', { status: 426 });
-	}
+	if (!ok) return new Response('WebSocket upgrade failed', { status: 426 });
 	// Bun already sent the real 101; this is ignored, but Mochi's resolve chain reads a status.
 	return new Response(null, { status: 101 });
 }
@@ -179,7 +145,7 @@ export const proxyRoutes: Record<string, MochiRouteValue> = {
 
 		// An upgrade is a GET carrying `Upgrade: websocket`, so Bun routes it here too.
 		if (event.request.headers.get('upgrade')?.toLowerCase() === 'websocket') {
-			return await proxyUpgrade(event, port, rest);
+			return proxyUpgrade(event, port, rest);
 		}
 		return proxyHttp(event, port, rest);
 	}),
@@ -189,27 +155,16 @@ export const proxyRoutes: Record<string, MochiRouteValue> = {
 		upgrade: () => false,
 		open(ws: ServerWebSocket<MochiWsData<RelayState>>) {
 			const state = ws.data.user;
-			// Pre-opened during the handshake when a subprotocol was negotiated; otherwise connect now.
-			const client =
-				state.client ??
-				(state.subprotocols
-					? new WebSocket(state.upstreamWsUrl, state.subprotocols)
-					: new WebSocket(state.upstreamWsUrl));
+			const client = state.subprotocols
+				? new WebSocket(state.upstreamWsUrl, state.subprotocols)
+				: new WebSocket(state.upstreamWsUrl);
 			client.binaryType = 'arraybuffer';
 			state.client = client;
 
-			// Drain whatever the upstream sent before this socket existed (connect-first path only).
-			if (state.inbound) {
-				for (const frame of state.inbound) {
-					try {
-						ws.send(frame as never);
-					} catch {
-						/* browser socket closed */
-					}
-				}
-				state.inbound = undefined;
-			}
-
+			client.onopen = () => {
+				for (const frame of state.pending) sendFrame(client, frame);
+				state.pending = [];
+			};
 			client.onmessage = (e) => {
 				try {
 					ws.send(e.data);
@@ -219,17 +174,6 @@ export const proxyRoutes: Record<string, MochiRouteValue> = {
 			};
 			client.onclose = (e) => safeClose(ws, e.code, e.reason);
 			client.onerror = () => safeClose(ws, 1011, 'upstream error');
-
-			// A pre-opened socket already fired `onopen`, so flush now; a lazy one flushes on open.
-			if (client.readyState === WebSocket.OPEN) {
-				for (const frame of state.pending) sendFrame(client, frame);
-				state.pending = [];
-			} else {
-				client.onopen = () => {
-					for (const frame of state.pending) sendFrame(client, frame);
-					state.pending = [];
-				};
-			}
 		},
 		message(ws: ServerWebSocket<MochiWsData<RelayState>>, message) {
 			const state = ws.data.user;
