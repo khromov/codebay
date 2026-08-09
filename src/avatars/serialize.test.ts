@@ -53,4 +53,15 @@ describe('toIssueUrl', () => {
 		for (const row of art.pixels) expect(body).toContain(row);
 		expect(body).toContain(toModuleSource(art).trimEnd());
 	});
+
+	test('edit mode uses an "Avatar edit:" title and a robot-free replacement module', () => {
+		const art = { name: 'robot', pixels: cellsToPixels(decode(ukraine)) };
+		const url = new URL(toIssueUrl(art, 'edit'));
+		expect(url.searchParams.get('title')).toBe('Avatar edit: robot');
+		const body = url.searchParams.get('body') ?? '';
+		for (const row of art.pixels) expect(body).toContain(row);
+		// The pasted replacement carries no `robot` flag — landing it makes the sprite hand-drawn.
+		expect(body).toContain(toModuleSource(art).trimEnd());
+		expect(body).not.toContain('robot: true');
+	});
 });
