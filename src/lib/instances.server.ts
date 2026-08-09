@@ -524,6 +524,10 @@ export async function addForwardedPort(id: string, containerPort: number): Promi
 	if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65535) {
 		throw new Error('Port must be an integer between 1 and 65535');
 	}
+	// Forwards publish on PUBLISH_HOST (0.0.0.0 under HOST=0.0.0.0), so forwarding the port the
+	// instance is actually served on would republish code-server/ttyd — neither of which has auth
+	// of its own — outside the Basic-Auth-gated proxy. Scoped to the live surface on purpose: in
+	// terminal mode nothing listens on 8080, and it's far too common an app port to reserve.
 	const reserved = row.mode === 'terminal' ? TTYD_PORT : CODE_SERVER_PORT;
 	if (containerPort === reserved) {
 		throw new Error(
