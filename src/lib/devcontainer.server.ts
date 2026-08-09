@@ -192,13 +192,14 @@ const TTYD_LAUNCH_SCRIPT =
 	'claude --dangerously-skip-permissions\n' +
 	'exec "$SHELL" -l\n';
 
-// ttyd defaults to read-only, so --writable is required for keyboard input. Guarded by pgrep so
-// a folderOpen/rebuild can't stack a second daemon on the port.
+// ttyd defaults to read-only, so --writable is required for keyboard input. Guarded by `pgrep -x`
+// (process name) so a folderOpen/rebuild can't stack a second daemon — never `pgrep -f`, whose
+// cmdline match also matches this very shell, which would skip the launch every time.
 const TTYD_LAUNCH =
 	`bash -c "` +
 	`export SHELL=\\"\${SHELL:-/bin/bash}\\"; ` +
 	`command -v ttyd >/dev/null 2>&1 || exit 0; ` +
-	`pgrep -f 'ttyd.*${TTYD_PORT}' >/dev/null 2>&1 || ` +
+	`pgrep -x ttyd >/dev/null 2>&1 || ` +
 	// ttyd binds all interfaces by default; --interface expects an iface NAME (e.g. eth0), not
 	// an IP, so passing 0.0.0.0 makes it fail to start. -W/--writable is required for input.
 	`nohup ttyd --port ${TTYD_PORT} --writable ` +

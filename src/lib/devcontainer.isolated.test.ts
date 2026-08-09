@@ -390,15 +390,23 @@ describe('writeOverrideConfig terminal mode', () => {
 		]);
 	});
 
-	test('launches ttyd (writable, port-guarded) from the staged launcher script', async () => {
+	test('launches ttyd (writable, process-guarded) from the staged launcher script', async () => {
 		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
 		const cmd = readDevcontainer().postStartCommand as string;
 		expect(cmd).toContain('ttyd --port 7681');
 		expect(cmd).toContain('--writable');
-		expect(cmd).toContain("pgrep -f 'ttyd.*7681'");
 		expect(cmd).toContain('.devcontainer/codebay-terminal.sh');
 		// No code-server anywhere in a terminal-mode boot.
 		expect(cmd).not.toContain('code-server');
+	});
+
+	test('guards the ttyd launch by process name, not by a self-matching cmdline pattern', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const cmd = readDevcontainer().postStartCommand as string;
+		expect(cmd).toContain('pgrep -x ttyd');
+		// `pgrep -f` matches the launch shell's own cmdline, so the guard would fire every time
+		// and ttyd would never start (nothing ever listening on 7681).
+		expect(cmd).not.toContain('pgrep -f');
 	});
 
 	test('the launcher runs claude under tmux and waits on the injections sentinel', async () => {
