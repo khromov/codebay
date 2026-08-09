@@ -51,7 +51,12 @@ import { isRepoUrl, parseRepoUrl } from './repo-url.ts';
 import { currentHealthSnapshots, stopHealthMonitor, syncHealthMonitors } from './health.server.ts';
 import { pickFreePort } from './ports.server.ts';
 import type { ServerWebSocket } from 'bun';
-import type { Instance, InstanceHealth } from '../types.ts';
+import {
+	isInstanceFilter,
+	type Instance,
+	type InstanceFilter,
+	type InstanceHealth
+} from '../types.ts';
 
 /**
  * `bridge_token` authenticates the no-Basic-Auth `/api/bridge/` endpoint, so it
@@ -108,7 +113,9 @@ export type StreamEvent =
 	| { type: 'health'; data: { id: string; health: InstanceHealth } }
 	| { type: 'preflight'; data: { docker: boolean; cli: boolean } }
 	// `name` is the chosen sprite, or null for the default box logo. Lets the header swap live.
-	| { type: 'pet'; data: { name: string | null } };
+	| { type: 'pet'; data: { name: string | null } }
+	// The dashboard run-state filter, so a change in one tab propagates to every open client.
+	| { type: 'filter'; data: { value: InstanceFilter } };
 
 interface StreamHub {
 	sockets: Set<ServerWebSocket<unknown>>;
@@ -159,6 +166,11 @@ export function broadcastPet(name: string | null): void {
 	broadcast({ type: 'pet', data: { name } });
 }
 
+/** Called when the filter changes so every open dashboard reflects it without a reload. */
+export function broadcastFilter(value: InstanceFilter): void {
+	broadcast({ type: 'filter', data: { value } });
+}
+
 async function reconcileInstances(force = false): Promise<void> {
 	const list = await listInstances();
 	const listJson = JSON.stringify(list);
@@ -200,6 +212,12 @@ export function streamOpen(ws: ServerWebSocket<unknown>): void {
 	void backgroundPreflight().then((pf) => sendTo(ws, { type: 'preflight', data: pf }));
 	// Keeps a reconnecting client correct even if the pet changed while it was away.
 	sendTo(ws, { type: 'pet', data: { name: getOption('pet') || null } });
+	// Same, for the filter, so a client that reconnects picks up a change made while it was away.
+	const savedFilter = getOption('instance_filter');
+	sendTo(ws, {
+		type: 'filter',
+		data: { value: isInstanceFilter(savedFilter) ? savedFilter : 'all' }
+	});
 }
 
 export function streamClose(ws: ServerWebSocket<unknown>): void {
