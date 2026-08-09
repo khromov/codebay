@@ -437,7 +437,8 @@ export async function createInstance(
 		bridge_token: crypto.randomUUID().replace(/-/g, ''),
 		remote_user: null,
 		image_source: null,
-		mode: opts.mode ?? getDefaultMode()
+		mode: opts.mode ?? getDefaultMode(),
+		terminal_split: 0
 	};
 	insertInstance(row);
 	// Strip the de-dup `#2` suffix so the recent-folders list keeps the base name.
@@ -491,6 +492,18 @@ export async function listInstances(): Promise<Instance[]> {
 		attention: getAttention(row.id),
 		forwarded_ports: forwards.get(row.id) ?? []
 	}));
+}
+
+/**
+ * Remembers whether the terminal's scratch-shell pane was left open. Deliberately skips
+ * `triggerReconcile()` — it's a per-instance UI preference read once at page load, so pushing the
+ * whole instance list to every socket on each toggle would be pure noise.
+ */
+export function setTerminalSplit(id: string, open: boolean): InstanceRow {
+	const row = getInstance(id);
+	if (!row) throw new Error('Instance not found');
+	updateInstance(id, { terminal_split: open ? 1 : 0 });
+	return getInstance(id)!;
 }
 
 export function renameInstance(id: string, name: string): InstanceRow {

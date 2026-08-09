@@ -30,7 +30,8 @@ function makeInstance(id: string, hostPort: number): InstanceRow {
 		bridge_token: 'tok',
 		remote_user: null,
 		image_source: null,
-		mode: 'ide'
+		mode: 'ide',
+		terminal_split: 0
 	};
 }
 
@@ -99,5 +100,12 @@ describe('updateInstance image_source + insert round-trip', () => {
 		expect(db.getInstance('img')?.image_source).toBe('local');
 		db.updateInstance('img', { image_source: 'mcr.microsoft.com/devcontainers/universal:2' });
 		expect(db.getInstance('img')?.image_source).toBe('mcr.microsoft.com/devcontainers/universal:2');
+	});
+
+	test('terminal_split defaults to closed and round-trips', () => {
+		db.insertInstance(makeInstance('split', 8102));
+		expect(db.getInstance('split')?.terminal_split).toBe(0);
+		db.updateInstance('split', { terminal_split: 1 });
+		expect(db.getInstance('split')?.terminal_split).toBe(1);
 	});
 });

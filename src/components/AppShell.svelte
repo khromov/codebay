@@ -5,7 +5,7 @@
 	import DashboardView from './DashboardView.svelte';
 	import IdeBar from './IdeBar.svelte';
 	import IdeLoader from './IdeLoader.svelte';
-	import TerminalPane from './TerminalPane.svelte';
+	import TerminalSplit from './TerminalSplit.svelte';
 	import { playChime, unlockAudio } from '../sound.ts';
 	import { liveStream } from '../live.ts';
 	import { apiPost } from '../api.ts';
@@ -289,7 +289,11 @@
 				<div class="pane" class:active={inst.id === active}>
 					{#if mountable(inst.id)}
 						{#if inst.mode === 'terminal'}
-							<TerminalPane id={inst.id} active={inst.id === active} />
+							<TerminalSplit
+								id={inst.id}
+								active={inst.id === active}
+								initialOpen={inst.terminal_split === 1}
+							/>
 						{:else}
 							<iframe src={ideUrl(inst)} title={inst.name} onload={() => loadedFrames.add(inst.id)}
 							></iframe>

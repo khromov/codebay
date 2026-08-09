@@ -110,6 +110,9 @@ const CODE_SERVER_SETTINGS = {
 
 const TMUX_SESSION = 'codebay';
 
+/** The split view's right-hand pane: a plain shell, kept apart from the Claude session. */
+const TMUX_SHELL_SESSION = 'codebay-shell';
+
 /** Written to `$HOME` when the post-up injection sequence finishes; the terminal launcher waits on it. */
 export const INJECTIONS_DONE_FILE = '.codebay-injections-done';
 
@@ -175,15 +178,28 @@ const CODE_SERVER_LAUNCH =
 /** Staged next to the config; ttyd runs it as its command so the nested quoting stays in a real file. */
 const TTYD_LAUNCH_SCRIPT_FILE = 'codebay-terminal.sh';
 
+/** The one `?arg=` value ttyd is allowed to act on; anything else falls through to Claude. */
+export const TTYD_SHELL_ARG = 'shell';
+
 /**
  * ttyd runs this per browser connection. `tmux -A` attaches to the shared `codebay` session
  * (or creates it), so Claude survives reconnects. No WAIT_FOR_IDE_BRIDGE — terminal mode has
  * no code-server extension host to race. Kept in a file so the tmux command's own quoting isn't
  * nested inside the postStartCommand's shell quoting.
+ *
+ * `$1` comes from the URL's `?arg=` (ttyd's --url-arg), so it is untrusted — hence a literal
+ * compare and never an eval. The shell branch sits above the injections wait so the split view's
+ * scratch shell opens immediately instead of blocking on Claude's boot sentinel.
  */
 const TTYD_LAUNCH_SCRIPT =
 	'#!/usr/bin/env bash\n' +
 	'export SHELL="${SHELL:-/bin/bash}"\n' +
+	`if [ "$1" = "${TTYD_SHELL_ARG}" ]; then\n` +
+	'  if command -v tmux >/dev/null 2>&1; then\n' +
+	`    exec tmux new-session -A -s ${TMUX_SHELL_SESSION}\n` +
+	'  fi\n' +
+	'  exec "$SHELL" -l\n' +
+	'fi\n' +
 	WAIT_FOR_INJECTIONS +
 	'\n' +
 	`if command -v tmux >/dev/null 2>&1; then\n` +
@@ -202,7 +218,9 @@ const TTYD_LAUNCH =
 	`pgrep -x ttyd >/dev/null 2>&1 || ` +
 	// ttyd binds all interfaces by default; --interface expects an iface NAME (e.g. eth0), not
 	// an IP, so passing 0.0.0.0 makes it fail to start. -W/--writable is required for input.
-	`nohup ttyd --port ${TTYD_PORT} --writable ` +
+	// --url-arg forwards the connection URL's `?arg=` values into the launcher's argv, which is how
+	// one ttyd serves both the Claude session and the split view's scratch shell.
+	`nohup ttyd --port ${TTYD_PORT} --writable --url-arg ` +
 	`bash \\"$PWD/.devcontainer/${TTYD_LAUNCH_SCRIPT_FILE}\\" >/tmp/ttyd.log 2>&1 &"`;
 
 export async function devcontainerCliAvailable(): Promise<boolean> {

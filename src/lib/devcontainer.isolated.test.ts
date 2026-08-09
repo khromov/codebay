@@ -422,6 +422,23 @@ describe('writeOverrideConfig terminal mode', () => {
 		expect(script).not.toContain('.claude/ide/');
 	});
 
+	test('serves the split view by letting the URL pick the session', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		// Without --url-arg ttyd drops the `?arg=` the shell pane sends, and both panes would
+		// attach to the same claude session.
+		expect(readDevcontainer().postStartCommand as string).toContain('--url-arg');
+
+		const script = readLaunch();
+		expect(script).toContain('tmux new-session -A -s codebay-shell');
+		// The scratch shell must not sit behind claude's boot sentinel — it opens on demand.
+		expect(script.indexOf('codebay-shell')).toBeLessThan(
+			script.indexOf('.codebay-injections-done')
+		);
+		// `$1` is attacker-supplied via the URL, so it may only ever be compared, never run.
+		expect(script).toContain('[ "$1" = "shell" ]');
+		expect(script).not.toContain('eval');
+	});
+
 	test('stages the codebay-ttyd feature with a best-effort install script', async () => {
 		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
 		const meta = JSON.parse(

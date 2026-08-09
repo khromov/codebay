@@ -21,6 +21,8 @@ export interface Instance {
 	image_source: string | null;
 	/** `'ide'` serves full code-server; `'terminal'` serves only ttyd + Claude Code. */
 	mode: InstanceMode;
+	/** Terminal mode only: 1 when the scratch-shell pane was left open, so a reload restores it. */
+	terminal_split: number;
 	/** Polled per reconcile rather than persisted; null if unknown. */
 	git_branch: string | null;
 	attention: 'done' | 'waiting' | null;

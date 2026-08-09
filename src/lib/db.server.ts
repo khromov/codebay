@@ -32,6 +32,8 @@ export interface InstanceRow {
 	image_source: string | null;
 	/** Fixed at creation: which editor surface this instance provisions and serves. */
 	mode: InstanceMode;
+	/** Terminal mode only: 1 when the scratch-shell pane was left open, so a reload restores it. */
+	terminal_split: number;
 }
 
 export interface PortForwardRow {
@@ -62,8 +64,8 @@ export function closeDb(): void {
 export function insertInstance(row: InstanceRow): void {
 	db.query(
 		`INSERT INTO instances
-       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source, mode)
-     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source, $mode)`
+       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source, mode, terminal_split)
+     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source, $mode, $terminal_split)`
 	).run({
 		$id: row.id,
 		$name: row.name,
@@ -78,7 +80,8 @@ export function insertInstance(row: InstanceRow): void {
 		$bridge_token: row.bridge_token,
 		$remote_user: row.remote_user,
 		$image_source: row.image_source,
-		$mode: row.mode
+		$mode: row.mode,
+		$terminal_split: row.terminal_split
 	});
 }
 
@@ -139,7 +142,8 @@ const UPDATABLE_COLUMNS = [
 	'status',
 	'error',
 	'remote_user',
-	'image_source'
+	'image_source',
+	'terminal_split'
 ] as const;
 
 type UpdatableColumn = (typeof UPDATABLE_COLUMNS)[number];

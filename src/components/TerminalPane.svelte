@@ -1,11 +1,26 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import '@xterm/xterm/css/xterm.css';
 	import type { Terminal } from '@xterm/xterm';
 	import type { FitAddon } from '@xterm/addon-fit';
 	import RotateCw from '@lucide/svelte/icons/rotate-cw';
 
-	let { id, active }: { id: string; active: boolean } = $props();
+	let {
+		id,
+		active,
+		/** ttyd `--url-arg` value selecting which session to attach to; omitted means Claude's. */
+		arg,
+		/** Split view: only one of the two panes may claim the keyboard when the tab activates. */
+		focus = true,
+		/** Extra overlay buttons, rendered left of this pane's own reload button. */
+		actions
+	}: {
+		id: string;
+		active: boolean;
+		arg?: string;
+		focus?: boolean;
+		actions?: Snippet;
+	} = $props();
 
 	let el: HTMLDivElement;
 	let term: Terminal | undefined;
@@ -38,8 +53,10 @@
 	function connect() {
 		const myGen = ++gen;
 		const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-		// Same-origin through the proxy, which forwards the required `tty` subprotocol to ttyd.
-		const sock = new WebSocket(`${proto}//${location.host}/p/${id}/ws`, ['tty']);
+		// Same-origin through the proxy, which forwards the required `tty` subprotocol to ttyd
+		// and passes the query string through untouched.
+		const query = arg ? `?arg=${encodeURIComponent(arg)}` : '';
+		const sock = new WebSocket(`${proto}//${location.host}/p/${id}/ws${query}`, ['tty']);
 		ws = sock;
 		sock.binaryType = 'arraybuffer';
 		sock.onopen = () => {
@@ -84,7 +101,7 @@
 			started = true;
 			fitSafe();
 			connect();
-			if (active) term?.focus();
+			if (active && focus) term?.focus();
 		};
 
 		if (old && old.readyState !== WebSocket.CLOSED) {
@@ -149,15 +166,17 @@
 				attributeFilter: ['data-theme']
 			});
 			connect();
-			if (active) term.focus();
+			if (active && focus) term.focus();
 		})();
 
-		const onResize = () => fitSafe();
-		window.addEventListener('resize', onResize);
+		// Observing the element rather than the window also covers split-divider drags and the
+		// split opening or closing, which don't resize the window at all.
+		const sizeObs = new ResizeObserver(() => fitSafe());
+		sizeObs.observe(el);
 
 		return () => {
 			disposed = true;
-			window.removeEventListener('resize', onResize);
+			sizeObs.disconnect();
 			themeObs?.disconnect();
 			if (retry) clearTimeout(retry);
 			try {
@@ -173,7 +192,7 @@
 	$effect(() => {
 		if (active && term) {
 			fitSafe();
-			term.focus();
+			if (focus) term.focus();
 		}
 	});
 </script>
@@ -183,8 +202,8 @@
 	{#if !connected}
 		<span class="status">connecting…</span>
 	{/if}
+	{@render actions?.()}
 	<button
-		class="reload"
 		type="button"
 		onclick={reload}
 		title="Reload terminal (reconnects, keeps the session)"
@@ -222,7 +241,9 @@
 		text-transform: uppercase;
 		color: var(--ink-faint);
 	}
-	.reload {
+	/* `:global` so buttons handed in through the `actions` snippet — which carry the parent
+	   component's scope, not ours — pick up the same styling. */
+	.overlay :global(button) {
 		pointer-events: auto;
 		appearance: none;
 		display: inline-flex;
@@ -238,14 +259,15 @@
 		opacity: 0.3;
 		transition: opacity 0.15s ease;
 	}
-	.reload:hover,
-	.reload:focus-visible {
+	.overlay :global(button:hover),
+	.overlay :global(button:focus-visible),
+	.overlay :global(button[aria-pressed='true']) {
 		opacity: 1;
 		background: var(--ink);
 		color: var(--bg);
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.reload {
+		.overlay :global(button) {
 			transition: none;
 		}
 	}

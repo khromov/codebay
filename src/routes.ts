@@ -39,6 +39,7 @@ import {
 	removeForwardedPort,
 	renameInstance,
 	sanitizeInstance,
+	setTerminalSplit,
 	startInstance,
 	stopInstance,
 	streamClose,
@@ -472,6 +473,13 @@ export const routes: Record<string, MochiRouteValue> = {
 		const body = (await request.json().catch(() => null)) as { name?: string } | null;
 		if (!body?.name) throw new Error('name is required');
 		return { instance: sanitizeInstance(renameInstance(params.id!, body.name)) };
+	}),
+
+	// Terminal mode's split-view toggle; purely a remembered UI preference.
+	'/api/instances/:id/split': mutationRoute('POST', async ({ params, request }) => {
+		const body = (await request.json().catch(() => null)) as { open?: boolean } | null;
+		if (typeof body?.open !== 'boolean') throw new Error('open (boolean) is required');
+		return { instance: sanitizeInstance(setTerminalSplit(params.id!, body.open)) };
 	}),
 
 	// Both port routes only mutate the persisted set; /rebuild is what applies it.
