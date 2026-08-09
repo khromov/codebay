@@ -57,8 +57,8 @@ describe('injection registry', () => {
 		expect(typeof identity!.check).toBe('function');
 	});
 
-	test('claude-skip-permissions is registered with a health check', () => {
-		const alias = injections.find((i) => i.id === 'claude-skip-permissions');
+	test('claude-permission-mode is registered with a health check', () => {
+		const alias = injections.find((i) => i.id === 'claude-permission-mode');
 		expect(alias).toBeDefined();
 		expect(typeof alias!.check).toBe('function');
 		expect(alias!.auth).toBeUndefined();

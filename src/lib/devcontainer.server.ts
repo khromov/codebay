@@ -5,6 +5,9 @@ import { homedir } from 'node:os';
 import { INSTALL_SCRIPT as TMUX_INSTALL_SCRIPT } from '../container-injections/tmux.ts';
 import { INSTALL_SCRIPT as TTYD_INSTALL_SCRIPT } from '../container-injections/ttyd.ts';
 import { EXTENSION_ID as CLAUDE_CODE_EXTENSION_ID } from '../container-injections/claude-code-ide-extension.ts';
+import { ENV_FILE_NAME as CUSTOM_ENV_FILE } from '../container-injections/claude-code-custom.ts';
+import { ENV_FILE_NAME as MODELS_ENV_FILE } from '../container-injections/claude-code-models.ts';
+import { ENV_FILE_NAME as HOST_ENV_FILE } from '../container-injections/host-env-vars.ts';
 import {
 	CODE_SERVER_PORT,
 	DEFAULT_IMAGE,
@@ -15,7 +18,7 @@ import {
 } from './config.server.ts';
 import { spawnCapture } from './spawn.server.ts';
 import type { InstanceMode } from './db.server.ts';
-import type { PortForward } from '../types.ts';
+import { claudePermissionFlags, type ClaudePermissionMode, type PortForward } from '../types.ts';
 
 const CODE_SERVER_FEATURE = 'ghcr.io/coder/devcontainer-features/code-server:1';
 
@@ -136,24 +139,39 @@ const WAIT_FOR_INJECTIONS =
 const WAIT_FOR_IDE_BRIDGE = `i=0; until ls "$HOME/.claude/ide/" 2>/dev/null | grep -q "\\.lock$" || [ "$i" -ge 30 ]; do sleep 1; i=$((i + 1)); done; `;
 
 /**
+ * The injections deliver `ANTHROPIC_*` (and host) env vars through `~/.bashrc`/`~/.zshrc`, which no
+ * auto-launch path reads — ttyd runs `bash <script>` and tmux runs its command via `$SHELL -c`, both
+ * non-interactive. LiteLLM first, so it wins over the manual override if both files somehow exist.
+ * An explicit list, never a glob: tmux runs this under the user's shell, and zsh would print
+ * "no matches found" when a file is absent.
+ */
+const SOURCE_INJECTED_ENV = `for f in ${[CUSTOM_ENV_FILE, MODELS_ENV_FILE, HOST_ENV_FILE]
+	.map((name) => `"$HOME/${name}"`)
+	.join(' ')}; do [ -r "$f" ] && . "$f"; done; `;
+
+/** The label/`runOn` pair that identifies our task in a project's own tasks.json. */
+const TERMINAL_TASK_LABEL = 'Terminal';
+
+/**
  * Runs under tmux so Claude survives the browser closing — code-server reaps the
  * detached PTY, which only kills the tmux client. `-A` doubles as the run-once gate.
  */
-const TERMINAL_TASK = {
-	label: 'Terminal',
+const terminalTask = (permissionMode: ClaudePermissionMode) => ({
+	label: TERMINAL_TASK_LABEL,
 	type: 'shell',
 	command:
 		// `"$SHELL"` must reach tmux unexpanded; VS Code would substitute a `${…}` form first.
-		`if command -v tmux >/dev/null 2>&1; then exec tmux new-session -A -s ${TMUX_SESSION} '${WAIT_FOR_INJECTIONS}${WAIT_FOR_IDE_BRIDGE}claude --dangerously-skip-permissions; exec "$SHELL" -l'; fi; ` +
+		`if command -v tmux >/dev/null 2>&1; then exec tmux new-session -A -s ${TMUX_SESSION} '${WAIT_FOR_INJECTIONS}${WAIT_FOR_IDE_BRIDGE}${SOURCE_INJECTED_ENV}claude ${claudePermissionFlags(permissionMode)}; exec "$SHELL" -l'; fi; ` +
 		// Without tmux there's no run-once gate, and folderOpen re-fires on every workspace load.
 		'MARK="$HOME/.codebay-terminal-launched"; [ -e "$MARK" ] && exit 0; touch "$MARK"; ' +
 		WAIT_FOR_INJECTIONS +
 		WAIT_FOR_IDE_BRIDGE +
-		'claude --dangerously-skip-permissions; exec ${env:SHELL} -l',
+		SOURCE_INJECTED_ENV +
+		`claude ${claudePermissionFlags(permissionMode)}; exec \${env:SHELL} -l`,
 	presentation: { reveal: 'always', panel: 'shared', focus: true },
 	runOptions: { runOn: 'folderOpen' },
 	problemMatcher: []
-};
+});
 
 const CODE_SERVER_APPLY_SETTINGS =
 	`mkdir -p ~/.local/share/code-server/User && ` +
@@ -191,7 +209,7 @@ export const TTYD_SHELL_ARG = 'shell';
  * compare and never an eval. The shell branch sits above the injections wait so the split view's
  * scratch shell opens immediately instead of blocking on Claude's boot sentinel.
  */
-const TTYD_LAUNCH_SCRIPT =
+const ttydLaunchScript = (permissionMode: ClaudePermissionMode): string =>
 	'#!/usr/bin/env bash\n' +
 	'export SHELL="${SHELL:-/bin/bash}"\n' +
 	`if [ "$1" = "${TTYD_SHELL_ARG}" ]; then\n` +
@@ -203,9 +221,11 @@ const TTYD_LAUNCH_SCRIPT =
 	WAIT_FOR_INJECTIONS +
 	'\n' +
 	`if command -v tmux >/dev/null 2>&1; then\n` +
-	`  exec tmux new-session -A -s ${TMUX_SESSION} 'claude --dangerously-skip-permissions; exec "$SHELL" -l'\n` +
+	`  exec tmux new-session -A -s ${TMUX_SESSION} '${SOURCE_INJECTED_ENV}claude ${claudePermissionFlags(permissionMode)}; exec "$SHELL" -l'\n` +
 	'fi\n' +
-	'claude --dangerously-skip-permissions\n' +
+	SOURCE_INJECTED_ENV +
+	'\n' +
+	`claude ${claudePermissionFlags(permissionMode)}\n` +
 	'exec "$SHELL" -l\n';
 
 // ttyd defaults to read-only, so --writable is required for keyboard input. Guarded by `pgrep -x`
@@ -385,7 +405,8 @@ export async function writeOverrideConfig(
 	hostPort: number,
 	forwards: PortForward[] = [],
 	defaultImage: string = DEFAULT_IMAGE,
-	mode: InstanceMode = 'ide'
+	mode: InstanceMode = 'ide',
+	permissionMode: ClaudePermissionMode = 'default'
 ): Promise<{ imageSource: string }> {
 	const isTerminal = mode === 'terminal';
 	const target = configPath(workspaceDir);
@@ -451,7 +472,7 @@ export async function writeOverrideConfig(
 
 	if (isTerminal) {
 		await writeTtydFeature(workspaceDir);
-		await writeTerminalLaunchScript(workspaceDir);
+		await writeTerminalLaunchScript(workspaceDir, permissionMode);
 	} else {
 		// Staged next to the config; CODE_SERVER_LAUNCH copies it into the user-data dir on first start.
 		await writeFile(
@@ -460,7 +481,7 @@ export async function writeOverrideConfig(
 			'utf8'
 		);
 		// The VS Code Terminal task is code-server-only; ttyd runs its own launcher script instead.
-		await writeTerminalTask(workspaceDir);
+		await writeTerminalTask(workspaceDir, permissionMode);
 	}
 
 	await writeTmuxFeature(workspaceDir);
@@ -568,14 +589,20 @@ async function writeTtydFeature(workspaceDir: string): Promise<void> {
 }
 
 /** Staged next to the config; TTYD_LAUNCH runs it as ttyd's command. */
-async function writeTerminalLaunchScript(workspaceDir: string): Promise<void> {
+async function writeTerminalLaunchScript(
+	workspaceDir: string,
+	permissionMode: ClaudePermissionMode
+): Promise<void> {
 	const path = join(workspaceDir, '.devcontainer', TTYD_LAUNCH_SCRIPT_FILE);
-	await writeFile(path, TTYD_LAUNCH_SCRIPT, 'utf8');
+	await writeFile(path, ttydLaunchScript(permissionMode), 'utf8');
 	await chmod(path, 0o755);
 }
 
 /** Replaces the managed task rather than skipping it, so a rebuild picks up command changes. */
-async function writeTerminalTask(workspaceDir: string): Promise<void> {
+async function writeTerminalTask(
+	workspaceDir: string,
+	permissionMode: ClaudePermissionMode
+): Promise<void> {
 	const tasksPath = join(workspaceDir, '.vscode', 'tasks.json');
 	let config: { version?: string; tasks?: unknown[] } = {};
 
@@ -593,9 +620,9 @@ async function writeTerminalTask(workspaceDir: string): Promise<void> {
 	const isManagedTask = (t: unknown) =>
 		typeof t === 'object' &&
 		t !== null &&
-		(t as Record<string, unknown>).label === TERMINAL_TASK.label &&
+		(t as Record<string, unknown>).label === TERMINAL_TASK_LABEL &&
 		((t as Record<string, { runOn?: string }>).runOptions?.runOn ?? '') === 'folderOpen';
-	config.tasks = [...tasks.filter((t) => !isManagedTask(t)), TERMINAL_TASK];
+	config.tasks = [...tasks.filter((t) => !isManagedTask(t)), terminalTask(permissionMode)];
 
 	await mkdir(join(workspaceDir, '.vscode'), { recursive: true }).catch(() => {});
 	await writeFile(tasksPath, JSON.stringify(config, null, 2) + '\n', 'utf8');

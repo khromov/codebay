@@ -2,6 +2,7 @@
 	import { type Instance } from '../types.ts';
 	import Settings from '@lucide/svelte/icons/settings';
 	import Terminal from '@lucide/svelte/icons/terminal';
+	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import Avatar from './Avatar.svelte';
 	import AppBar from './AppBar.svelte';
 	import { withPopupMarker } from '../lib/popup-nav.ts';
@@ -67,6 +68,8 @@
 							<span class="tab-name">{inst.name}</span>
 							{#if inst.mode === 'terminal'}
 								<span class="tab-mode" title="Terminal-only instance"><Terminal size={13} /></span>
+							{:else}
+								<span class="tab-mode" title="Full IDE instance"><LayoutTemplate size={13} /></span>
 							{/if}
 						</button>
 					{/if}

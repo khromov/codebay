@@ -37,6 +37,28 @@ export function normalizeMode(value: unknown): InstanceMode {
 	return value === 'terminal' ? 'terminal' : 'ide';
 }
 
+/** The permission mode Claude Code starts in. `'default'` keeps the historical bypass behaviour. */
+export type ClaudePermissionMode = 'default' | 'manual' | 'auto' | 'plan';
+
+export const CLAUDE_PERMISSION_MODES: ClaudePermissionMode[] = [
+	'default',
+	'manual',
+	'auto',
+	'plan'
+];
+
+/** Anything unrecognised falls back to the historical behaviour. */
+export function normalizePermissionMode(value: unknown): ClaudePermissionMode {
+	return CLAUDE_PERMISSION_MODES.includes(value as ClaudePermissionMode)
+		? (value as ClaudePermissionMode)
+		: 'default';
+}
+
+/** The flags every managed `claude` invocation carries — the launchers and the shell alias share them. */
+export function claudePermissionFlags(mode: ClaudePermissionMode): string {
+	return mode === 'default' ? '--dangerously-skip-permissions' : `--permission-mode ${mode}`;
+}
+
 /** Dashboard run-state view filter: All | Active (running/creating) | Stopped (stopped/error). */
 export type InstanceFilter = 'all' | 'active' | 'stopped';
 

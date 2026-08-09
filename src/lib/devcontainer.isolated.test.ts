@@ -223,6 +223,32 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		expect(existsSync(join(dir, '.devcontainer', 'codebay-tmux', 'install.sh'))).toBe(true);
 	});
 
+	test('sources the injected env files before launching claude', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const command = readTasks().tasks[0].command as string;
+		// The injections deliver ANTHROPIC_* through the rc files, which a `bash -c` task never
+		// reads — without this the auto-launched claude ignores the model/LiteLLM settings.
+		for (const file of ['.codebay-claude-env', '.codebay-claude-models-env', '.codebay-host-env']) {
+			expect(command).toContain(`"$HOME/${file}"`);
+		}
+		expect(command.indexOf('.codebay-host-env')).toBeLessThan(command.indexOf('claude --'));
+		// A glob would make zsh print "no matches found" when a file is absent.
+		expect(command).not.toContain('.codebay-*');
+	});
+
+	test('renders the permission mode into the terminal task', async () => {
+		await writeOverrideConfig(dir, 8001);
+		expect(readTasks().tasks[0].command as string).toContain(
+			'claude --dangerously-skip-permissions'
+		);
+
+		await writeOverrideConfig(dir, 8001, [], undefined, 'ide', 'plan');
+		const planned = readTasks().tasks[0].command as string;
+		expect(planned).toContain('claude --permission-mode plan');
+		// The skip flag silently overrides --permission-mode, so the two must never be combined.
+		expect(planned).not.toContain('--dangerously-skip-permissions');
+	});
+
 	test('replaces a malformed tasks.json rather than throwing', async () => {
 		mkdirSync(join(dir, '.vscode'), { recursive: true });
 		writeFileSync(join(dir, '.vscode', 'tasks.json'), 'not json at all');
@@ -420,6 +446,26 @@ describe('writeOverrideConfig terminal mode', () => {
 		expect(script.indexOf('.codebay-injections-done')).toBeLessThan(script.indexOf('claude'));
 		// No code-server extension host to race, so no IDE-bridge wait.
 		expect(script).not.toContain('.claude/ide/');
+	});
+
+	test('sources the injected env files before launching claude', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const script = readLaunch();
+		for (const file of ['.codebay-claude-env', '.codebay-claude-models-env', '.codebay-host-env']) {
+			expect(script).toContain(`"$HOME/${file}"`);
+		}
+		// ttyd runs `bash <script>` and tmux runs its command via `$SHELL -c`, so nothing here
+		// reads the rc files the injections write to — the sourcing must be explicit.
+		expect(script.indexOf('.codebay-host-env')).toBeLessThan(script.indexOf('claude --'));
+		expect(script).not.toContain('.codebay-*');
+	});
+
+	test('renders the permission mode into the launcher', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal', 'plan');
+		const script = readLaunch();
+		expect(script).toContain('claude --permission-mode plan');
+		// The skip flag silently overrides --permission-mode, so the two must never be combined.
+		expect(script).not.toContain('--dangerously-skip-permissions');
 	});
 
 	test('serves the split view by letting the URL pick the session', async () => {

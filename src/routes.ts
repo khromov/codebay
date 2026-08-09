@@ -20,6 +20,7 @@ import {
 } from './container-injections/claude-code-custom.ts';
 import { hostEnvVarPresence, parseHostEnvVarNames } from './container-injections/host-env-vars.ts';
 import { gitIdentityEnabled } from './container-injections/git-identity.ts';
+import { getClaudePermissionMode } from './container-injections/claude-permission-mode.ts';
 import { browse } from './lib/picker.server.ts';
 import { pickNamePrompt } from './avatars/name-prompts.ts';
 import { avatars, findAvatar } from './avatars/index.ts';
@@ -58,7 +59,12 @@ import { wsUpgradeAllowed } from './lib/auth.server.ts';
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
-import { isInstanceFilter, normalizeMode, type InstanceFilter } from './types.ts';
+import {
+	isInstanceFilter,
+	normalizeMode,
+	normalizePermissionMode,
+	type InstanceFilter
+} from './types.ts';
 
 async function preflight() {
 	const [docker, cli, auth] = await Promise.all([
@@ -187,6 +193,7 @@ export const routes: Record<string, MochiRouteValue> = {
 			return {
 				pet: currentPet(),
 				defaultMode: getDefaultMode(),
+				claudePermissionMode: getClaudePermissionMode(),
 				defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
 				builtinImage: DEFAULT_IMAGE,
 				disableBuildCache: getOption('disable_build_cache') === '1',
@@ -236,6 +243,13 @@ export const routes: Record<string, MochiRouteValue> = {
 				const mode = normalizeMode(str(formData, 'mode'));
 				setOption('default_mode', mode);
 				broadcastDefaultMode(mode);
+				return success({ mode });
+			},
+
+			// Baked into the container launcher at provision time, so it lands on create/rebuild.
+			claudePermissionMode: ({ formData }) => {
+				const mode = normalizePermissionMode(str(formData, 'mode'));
+				setOption('claude_permission_mode', mode);
 				return success({ mode });
 			},
 
