@@ -52,7 +52,7 @@ import {
 } from './lib/db.server.ts';
 import { APP_VERSION, DEFAULT_COPY_IGNORE, DEFAULT_IMAGE } from './lib/config.server.ts';
 import { wsUpgradeAllowed } from './lib/auth.server.ts';
-import { clearAttention, setAttention } from './lib/bridge.server.ts';
+import { clearAttention, setAttention, setTask } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
 import { isInstanceFilter, type InstanceFilter } from './types.ts';
@@ -78,6 +78,21 @@ async function preflight() {
 		)
 	]);
 	return { docker, cli, auth };
+}
+
+/**
+ * Pull the `prompt` out of a Claude UserPromptSubmit hook body forwarded to the bridge.
+ * Bounded read + defensive parse: a missing, oversized, or non-JSON body just yields null.
+ */
+async function readHookPrompt(request: Request): Promise<string | null> {
+	try {
+		const body = (await request.text()).slice(0, 100_000);
+		if (!body) return null;
+		const parsed = JSON.parse(body) as { prompt?: unknown };
+		return typeof parsed.prompt === 'string' && parsed.prompt.trim() ? parsed.prompt : null;
+	} catch {
+		return null;
+	}
 }
 
 /** The header pet logo, resolved from the DB option. A name that left the catalog reads as "off". */
@@ -513,6 +528,10 @@ export const routes: Record<string, MochiRouteValue> = {
 		if (state === 'done') setAttention(id, 'done');
 		else if (state === 'waiting') setAttention(id, 'waiting');
 		else clearAttention(id); // 'busy' / anything else → Claude resumed, dismiss the pulse
+		// The UserPromptSubmit hook forwards its stdin JSON here; parse it host-side so the
+		// container needs no jq/node, and surface the prompt as the card's "current task".
+		const prompt = await readHookPrompt(request);
+		if (prompt) setTask(id, prompt);
 		console.log(
 			`[bridge] accepted id=${id} → attention=${state === 'done' || state === 'waiting' ? state : 'cleared'}`
 		);

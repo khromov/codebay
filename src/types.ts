@@ -22,6 +22,8 @@ export interface Instance {
 	/** Polled per reconcile rather than persisted; null if unknown. */
 	git_branch: string | null;
 	attention: 'done' | 'waiting' | null;
+	/** Most recent prompt handed to Claude in the container; null until one arrives. Live-only. */
+	task: string | null;
 	forwarded_ports: PortForward[];
 }
 

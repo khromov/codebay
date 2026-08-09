@@ -21,12 +21,15 @@ const HOOK_LOG = '${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.bridge-hook.log';
  * `-f` is deliberately absent so a 4xx still yields an HTTP status to log rather than
  * curl bailing early; `curl_exit` then separates "unreachable" from "answered with a status".
  */
-function hookFor(id: string, state: 'done' | 'waiting' | 'busy') {
+function hookFor(id: string, state: 'done' | 'waiting' | 'busy', forwardStdin = false) {
 	const url = `${bridgeUrl()}?id=${encodeURIComponent(id)}&state=${state}`;
+	// UserPromptSubmit pipes its stdin (the hook JSON) through so the bridge can read the
+	// prompt; other hooks send no body. `@-` reads stdin, which Claude always supplies here.
+	const body = forwardStdin ? '--data-binary @- ' : '';
 	const command =
 		`log="${HOOK_LOG}"; ` +
 		// The Content-Type is for Mochi's CSRF guard, which reads a bodiless POST as a form submit.
-		`http=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H @"${HEADER_FILE}" '${url}' 2>>"$log"); ` +
+		`http=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' -X POST ${body}-H 'Content-Type: application/json' -H @"${HEADER_FILE}" '${url}' 2>>"$log"); ` +
 		`rc=$?; ` +
 		`printf '[%s] state=${state} http=%s curl_exit=%s\\n' "$(date -Is 2>/dev/null || date)" "$http" "$rc" >> "$log" 2>/dev/null; ` +
 		// Keep the log bounded without a race window that could lose the file.
@@ -50,7 +53,7 @@ export function attentionHookSettings(id: string): Record<string, unknown> {
 		hooks: {
 			Stop: hookFor(id, 'done'),
 			Notification: hookFor(id, 'waiting'),
-			UserPromptSubmit: hookFor(id, 'busy')
+			UserPromptSubmit: hookFor(id, 'busy', true)
 		}
 	};
 }

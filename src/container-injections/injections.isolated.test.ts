@@ -275,6 +275,17 @@ describe('attentionHookSettings', () => {
 		// mode-600 header file at runtime, keeping it off curl's argv (and out of ps).
 		expect(json).toContain('.bridge-header');
 	});
+
+	test('only UserPromptSubmit forwards its stdin, so the prompt reaches the bridge', () => {
+		const hooks = attentionHookSettings('inst-123').hooks as Record<
+			string,
+			{ hooks: { command: string }[] }[]
+		>;
+		const cmd = (event: string) => hooks[event]![0]!.hooks[0]!.command;
+		expect(cmd('UserPromptSubmit')).toContain('--data-binary @-');
+		expect(cmd('Stop')).not.toContain('--data-binary');
+		expect(cmd('Notification')).not.toContain('--data-binary');
+	});
 });
 
 describe('hasAttentionHook', () => {

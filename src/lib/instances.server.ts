@@ -43,7 +43,7 @@ import {
 	writeOverrideConfig
 } from './devcontainer.server.ts';
 import { writeContainerFile } from './container-files.server.ts';
-import { clearAttention, getAttention } from './bridge.server.ts';
+import { clearAttention, getAttention, getTask } from './bridge.server.ts';
 import { proxyPathFor } from './proxy.server.ts';
 import { resolveInjections } from './injections.server.ts';
 import { cloneRepo, readGitBranch } from './git.server.ts';
@@ -469,6 +469,7 @@ export async function listInstances(): Promise<Instance[]> {
 		...sanitizeInstance(row),
 		git_branch: branches.get(row.id) ?? null,
 		attention: getAttention(row.id),
+		task: getTask(row.id),
 		forwarded_ports: forwards.get(row.id) ?? []
 	}));
 }

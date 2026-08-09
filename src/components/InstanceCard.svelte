@@ -82,6 +82,9 @@
 		{/if}
 		<StatusBadge status={instance.status} />
 	</div>
+	{#if instance.task}
+		<p class="task" title={instance.task}>{instance.task}</p>
+	{/if}
 	<div class="path" title={instance.source_path}>{instance.source_path}</div>
 	{#if instance.status === 'running'}
 		<PortsBox ports={instance.forwarded_ports} />
@@ -243,6 +246,23 @@
 		background: var(--bg);
 		color: var(--ink);
 		outline: none;
+	}
+	.task {
+		margin: 8px 0 0;
+		font-size: 13px;
+		font-style: italic;
+		color: var(--ink);
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	.task::before {
+		content: open-quote;
+	}
+	.task::after {
+		content: close-quote;
 	}
 	.path {
 		margin-top: 10px;
