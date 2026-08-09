@@ -67,7 +67,8 @@
 	// 0.5px is a crisp single device-pixel at 2×; at 1× the cells can't spare any gutter.
 	const gap = $derived(s >= 2 ? 0.5 : 0);
 
-	const cells = $derived(decode(art ?? pickAvatar(id)));
+	const resolved = $derived(art ?? pickAvatar(id));
+	const cells = $derived(decode(resolved));
 	// The 10×10 outer ring is unlit LED cells — a bezel of real dots, not blank padding.
 	const grid = $derived(
 		Array.from({ length: 100 }, (_, i) => {
@@ -86,7 +87,7 @@
 	class:ghosting
 	role="img"
 	aria-label={name}
-	title={name}
+	title={resolved.name}
 	style="width:{10 * s}px;height:{10 *
 		s}px;--gap:{gap}px;--bx:{bx};--by:{by};--spin:{spin}deg;--hue:{hue}deg"
 	{onpointerdown}
