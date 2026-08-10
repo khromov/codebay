@@ -453,8 +453,11 @@ export async function writeOverrideConfig(
 			: { [CODE_SERVER_FEATURE]: { host: '0.0.0.0', port: CODE_SERVER_PORT, auth: 'none' } }),
 		[tmuxFeatureKey]: {},
 		...(needsClaude ? { [GITHUB_CLI_FEATURE]: {} } : {}),
-		...(needsClaude && !hadConfig ? { [NODE_FEATURE]: {}, [CLAUDE_CODE_FEATURE]: {} } : {}),
-		...(needsClaude && hadConfig ? { [claudeFeatureKey]: {} } : {})
+		...(!hadConfig
+			? { [NODE_FEATURE]: {}, [CLAUDE_CODE_FEATURE]: {} }
+			: isTerminal
+				? { [claudeFeatureKey]: {} }
+				: {})
 	};
 
 	const servedPort = isTerminal ? TTYD_PORT : CODE_SERVER_PORT;
@@ -495,7 +498,7 @@ export async function writeOverrideConfig(
 
 	await writeTmuxFeature(workspaceDir);
 
-	if (needsClaude && hadConfig) await writeClaudeFeature(workspaceDir);
+	if (isTerminal && hadConfig) await writeClaudeFeature(workspaceDir);
 
 	await writeLocalGitExclude(workspaceDir);
 
