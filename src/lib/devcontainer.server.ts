@@ -4,6 +4,7 @@ import { basename, dirname, join, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT as TMUX_INSTALL_SCRIPT } from '../container-injections/tmux.ts';
 import { INSTALL_SCRIPT as TTYD_INSTALL_SCRIPT } from '../container-injections/ttyd.ts';
+import { INSTALL_SCRIPT as CLAUDE_INSTALL_SCRIPT } from '../container-injections/claude-code-install.ts';
 import { EXTENSION_ID as CLAUDE_CODE_EXTENSION_ID } from '../container-injections/claude-code-ide-extension.ts';
 import {
 	CODE_SERVER_PORT,
@@ -19,7 +20,11 @@ import type { PortForward } from '../types.ts';
 
 const CODE_SERVER_FEATURE = 'ghcr.io/coder/devcontainer-features/code-server:1';
 
-/** Installs the Claude Code CLI into the default image. Needs Node — supplied by NODE_FEATURE. */
+/**
+ * Installs the Claude Code CLI into the default image. Needs Node — supplied by NODE_FEATURE.
+ * Default-image only: NODE_FEATURE installs via nvm, which refuses to run when the image sets
+ * NPM_CONFIG_PREFIX, so a project-supplied image gets the sniffing CLAUDE_FEATURE_DIR instead.
+ */
 const CLAUDE_CODE_FEATURE = 'ghcr.io/anthropics/devcontainer-features/claude-code:1.0';
 
 /** Node.js — required by the Claude Code feature, which no longer bundles it. */
@@ -71,12 +76,32 @@ const TTYD_FEATURE_INSTALL =
 	') || echo "codebay-ttyd: install failed (non-fatal); the manager retries after the container starts"\n' +
 	'exit 0\n';
 
+/** Relative to .devcontainer/. Only written for terminal-mode instances on a project-supplied config. */
+const CLAUDE_FEATURE_DIR = 'codebay-claude';
+
+const CLAUDE_FEATURE_METADATA = {
+	id: 'codebay-claude',
+	version: '1.0.0',
+	name: 'Claude Code (Codebay, best-effort)',
+	description:
+		"Installs Claude Code at image build time when the project's own image doesn't already ship it. Never fails the build."
+};
+
+/** Best-effort like tmux/ttyd: build time is the only reliable moment to fetch in an egress-firewalled container. */
+const CLAUDE_FEATURE_INSTALL =
+	'#!/bin/sh\n' +
+	'(\n' +
+	`${CLAUDE_INSTALL_SCRIPT}\n` +
+	') || echo "codebay-claude: install failed (non-fatal); the manager retries after the container starts"\n' +
+	'exit 0\n';
+
 /** Manager-dropped files the project's own .gitignore won't cover, kept out of git status. */
 const MANAGER_GIT_EXCLUDES = [
 	'/.devcontainer/code-server-settings.json',
 	'/.devcontainer/devcontainer-lock.json',
 	'/.devcontainer/codebay-tmux/',
 	'/.devcontainer/codebay-ttyd/',
+	'/.devcontainer/codebay-claude/',
 	'/.devcontainer/codebay-terminal.sh',
 	'/.vscode/tasks.json'
 ];
@@ -413,18 +438,23 @@ export async function writeOverrideConfig(
 		`./${relative(dirname(target), join(workspaceDir, '.devcontainer', dir))}`;
 	const tmuxFeatureKey = featureKey(TMUX_FEATURE_DIR);
 	const ttydFeatureKey = featureKey(TTYD_FEATURE_DIR);
+	const claudeFeatureKey = featureKey(CLAUDE_FEATURE_DIR);
 
 	// Terminal mode swaps code-server for ttyd; otherwise (tmux, tooling) the two are identical.
-	// Node/Claude/gh: always in terminal mode (its launcher *is* `claude`), else only the default image.
+	// Claude Code: the default image needs the upstream features, while terminal mode on a
+	// project-supplied image gets the local one, which installs only what that image lacks — the
+	// upstream Node feature would run nvm, which any image setting NPM_CONFIG_PREFIX breaks on.
+	// IDE mode on a project config stays hands-off: the project owns its tooling.
+	const needsClaude = isTerminal || !hadConfig;
 	config.features = {
 		...(config.features ?? {}),
 		...(isTerminal
 			? { [ttydFeatureKey]: {} }
 			: { [CODE_SERVER_FEATURE]: { host: '0.0.0.0', port: CODE_SERVER_PORT, auth: 'none' } }),
 		[tmuxFeatureKey]: {},
-		...(isTerminal || !hadConfig
-			? { [NODE_FEATURE]: {}, [CLAUDE_CODE_FEATURE]: {}, [GITHUB_CLI_FEATURE]: {} }
-			: {})
+		...(needsClaude ? { [GITHUB_CLI_FEATURE]: {} } : {}),
+		...(needsClaude && !hadConfig ? { [NODE_FEATURE]: {}, [CLAUDE_CODE_FEATURE]: {} } : {}),
+		...(needsClaude && hadConfig ? { [claudeFeatureKey]: {} } : {})
 	};
 
 	const servedPort = isTerminal ? TTYD_PORT : CODE_SERVER_PORT;
@@ -464,6 +494,8 @@ export async function writeOverrideConfig(
 	}
 
 	await writeTmuxFeature(workspaceDir);
+
+	if (needsClaude && hadConfig) await writeClaudeFeature(workspaceDir);
 
 	await writeLocalGitExclude(workspaceDir);
 
@@ -551,6 +583,19 @@ async function writeTmuxFeature(workspaceDir: string): Promise<void> {
 	const installPath = join(dir, 'install.sh');
 	await writeFile(installPath, TMUX_FEATURE_INSTALL, 'utf8');
 	// writeFile's mode only applies on creation; chmod covers rewrites too.
+	await chmod(installPath, 0o755);
+}
+
+async function writeClaudeFeature(workspaceDir: string): Promise<void> {
+	const dir = join(workspaceDir, '.devcontainer', CLAUDE_FEATURE_DIR);
+	await mkdir(dir, { recursive: true }).catch(() => {});
+	await writeFile(
+		join(dir, 'devcontainer-feature.json'),
+		JSON.stringify(CLAUDE_FEATURE_METADATA, null, 2) + '\n',
+		'utf8'
+	);
+	const installPath = join(dir, 'install.sh');
+	await writeFile(installPath, CLAUDE_FEATURE_INSTALL, 'utf8');
 	await chmod(installPath, 0o755);
 }
 
