@@ -108,6 +108,14 @@ describe('injection registry', () => {
 		expect(typeof model!.check).toBe('function');
 	});
 
+	test('claude-effort-level is registered with a health check and no auth chip', () => {
+		const effort = injections.find((i) => i.id === 'claude-effort-level');
+		expect(effort).toBeDefined();
+		// Writes a settings.json default from the app option; no host dependency, so no chip.
+		expect(effort!.auth).toBeUndefined();
+		expect(typeof effort!.check).toBe('function');
+	});
+
 	test('host-env-vars is registered with a health check and no auth chip', () => {
 		const hostEnvVars = injections.find((i) => i.id === 'host-env-vars');
 		expect(hostEnvVars).toBeDefined();
@@ -171,6 +179,7 @@ describe('resolveInjectionStages — clobber safety', () => {
 		'claude-code-ide-extension': ['extensions-dir'],
 		'git-identity': ['gitconfig'],
 		'github-credentials': ['gh-hosts', 'gitconfig'],
+		'claude-effort-level': ['settings-json'],
 		'attention-hooks': ['bridge-header', 'settings-json'],
 		'claude-statusline': ['statusline-script', 'settings-json'],
 		'claude-code-models': ['models-env-file', 'rc'],
@@ -219,6 +228,7 @@ describe('resolveInjectionStages — clobber safety', () => {
 		expect(at.get('git-safe-directory')!).toBeLessThan(at.get('git-identity')!);
 		expect(at.get('git-identity')!).toBeLessThan(at.get('github-credentials')!);
 		// ~/.claude/settings.json merge chain.
+		expect(at.get('claude-effort-level')!).toBeLessThan(at.get('attention-hooks')!);
 		expect(at.get('attention-hooks')!).toBeLessThan(at.get('claude-statusline')!);
 		expect(at.get('claude-statusline')!).toBeLessThan(at.get('claude-model')!);
 		expect(at.get('claude-model')!).toBeLessThan(at.get('claude-trust')!);

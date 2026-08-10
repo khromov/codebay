@@ -33,12 +33,15 @@
 	import { avatars, findAvatar, type AvatarArt } from '../avatars/index.ts';
 	import {
 		CLAUDE_PERMISSION_MODES,
+		CLAUDE_EFFORT_LEVELS,
 		type ClaudePermissionMode,
+		type ClaudeEffortLevel,
 		type InstanceMode
 	} from '../types.ts';
 	import Terminal from '@lucide/svelte/icons/terminal';
 	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
+	import Gauge from '@lucide/svelte/icons/gauge';
 	import { installPopupBackTrap } from '../lib/popup-nav.ts';
 
 	/** Every settings form action fails with the same `{ error }` shape. */
@@ -48,6 +51,7 @@
 		pet,
 		defaultMode,
 		claudePermissionMode,
+		claudeEffortLevel,
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
@@ -85,6 +89,7 @@
 		pet?: AvatarArt;
 		defaultMode: InstanceMode;
 		claudePermissionMode: ClaudePermissionMode;
+		claudeEffortLevel: ClaudeEffortLevel;
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
@@ -243,6 +248,35 @@
 		if (next === permissionChoice) return;
 		flushSync(() => (permissionChoice = next));
 		permissionFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let effortChoice = $state<ClaudeEffortLevel>(claudeEffortLevel);
+	let savingEffort = $state(false);
+	let effortError = $state<string | null>(null);
+	let effortFormEl: HTMLFormElement | undefined;
+
+	const effortLevelOpts = saveOpts<{ level: ClaudeEffortLevel }>({
+		setSaving: (v) => (savingEffort = v),
+		setError: (v) => (effortError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.level) effortChoice = data.level;
+		}
+	});
+
+	const EFFORT_LABELS: Record<ClaudeEffortLevel, string> = {
+		low: 'Low',
+		medium: 'Medium',
+		high: 'High',
+		xhigh: 'X-High',
+		max: 'Max'
+	};
+
+	function chooseEffort(next: ClaudeEffortLevel) {
+		if (next === effortChoice) return;
+		flushSync(() => (effortChoice = next));
+		effortFormEl?.requestSubmit();
 	}
 
 	// svelte-ignore state_referenced_locally
@@ -809,6 +843,46 @@
 			</form>
 			{#if permissionError}
 				<div class="sub"><div class="msg error">{permissionError}</div></div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/claudeEffortLevel"
+				bind:this={effortFormEl}
+				{@attach enhance(effortLevelOpts)}
+			>
+				<div class="label">
+					<Gauge size={20} />
+					<div class="text">
+						<div class="name">Claude effort level</div>
+						<div class="desc">
+							The default reasoning effort Claude Code starts new sessions at inside instances,
+							written to <code>~/.claude/settings.json</code>. Applies on create and rebuild, not to
+							already-running instances.
+						</div>
+					</div>
+				</div>
+				<input type="hidden" name="level" value={effortChoice} />
+				<div class="mode-toggle" role="group" aria-label="Claude effort level">
+					{#each CLAUDE_EFFORT_LEVELS as option (option)}
+						<button
+							type="button"
+							class="mode-btn"
+							class:active={effortChoice === option}
+							aria-pressed={effortChoice === option}
+							disabled={savingEffort}
+							onclick={() => chooseEffort(option)}
+						>
+							{EFFORT_LABELS[option]}
+						</button>
+					{/each}
+				</div>
+			</form>
+			{#if effortError}
+				<div class="sub"><div class="msg error">{effortError}</div></div>
 			{/if}
 		</section>
 

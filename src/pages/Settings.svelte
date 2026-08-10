@@ -3,12 +3,13 @@
 	import '@fontsource-variable/jetbrains-mono';
 	import SettingsView from '../components/SettingsView.svelte';
 	import type { AvatarArt } from '../avatars/index.ts';
-	import type { ClaudePermissionMode, InstanceMode } from '../types.ts';
+	import type { ClaudeEffortLevel, ClaudePermissionMode, InstanceMode } from '../types.ts';
 
 	let {
 		pet,
 		defaultMode,
 		claudePermissionMode,
+		claudeEffortLevel,
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
@@ -46,6 +47,7 @@
 		pet?: AvatarArt;
 		defaultMode: InstanceMode;
 		claudePermissionMode: ClaudePermissionMode;
+		claudeEffortLevel: ClaudeEffortLevel;
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
@@ -86,6 +88,7 @@
 	{pet}
 	{defaultMode}
 	{claudePermissionMode}
+	{claudeEffortLevel}
 	{defaultImage}
 	{builtinImage}
 	{disableBuildCache}
