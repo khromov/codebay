@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { type Instance } from '../types.ts';
 	import Settings from '@lucide/svelte/icons/settings';
+	import RotateCw from '@lucide/svelte/icons/rotate-cw';
 	import Terminal from '@lucide/svelte/icons/terminal';
 	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import Avatar from './Avatar.svelte';
@@ -13,6 +14,7 @@
 		attention,
 		editingId,
 		editingName = $bindable(),
+		onreload,
 		onselect,
 		onstartrename,
 		oncommitrename,
@@ -23,6 +25,8 @@
 		attention: Record<string, 'done' | 'waiting' | null>;
 		editingId: string | null;
 		editingName: string;
+		/** Absent for terminal tabs, which carry their own reload, and until the iframe exists. */
+		onreload?: () => void;
 		onselect: (id: string) => void;
 		onstartrename: (instance: Instance) => void;
 		oncommitrename: (id: string) => void;
@@ -77,28 +81,55 @@
 			{/each}
 		</nav>
 	{/if}
-	<a
-		class="cog"
-		href={withPopupMarker('/settings')}
-		target="_blank"
-		rel="noopener noreferrer"
-		title="Settings"
-		aria-label="Settings"><Settings size={18} /></a
-	>
+	<div class="right">
+		{#if onreload}
+			<button
+				type="button"
+				class="reload"
+				onclick={onreload}
+				title="Reload editor"
+				aria-label="Reload editor"><RotateCw size={18} /></button
+			>
+		{/if}
+		<a
+			class="cog"
+			href={withPopupMarker('/settings')}
+			target="_blank"
+			rel="noopener noreferrer"
+			title="Settings"
+			aria-label="Settings"><Settings size={18} /></a
+		>
+	</div>
 </AppBar>
 
 <style>
-	.cog {
+	/* Grouped so the auto-margin doesn't have to move when the reload button comes and goes. */
+	.right {
+		display: flex;
+		align-items: stretch;
+		margin-left: auto;
+	}
+	.cog,
+	.reload {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		width: 48px;
 		flex: none;
-		margin-left: auto;
 		color: var(--ink);
 		border-left: 1px solid var(--rule);
 	}
-	.cog:hover {
+	.reload {
+		appearance: none;
+		background: transparent;
+		border-top: 0;
+		border-right: 0;
+		border-bottom: 0;
+		padding: 0;
+		cursor: pointer;
+	}
+	.cog:hover,
+	.reload:hover {
 		background: var(--ink);
 		color: var(--bg);
 	}

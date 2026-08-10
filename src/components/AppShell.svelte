@@ -160,9 +160,23 @@
 
 	const STALLED_AFTER_MS = 10_000;
 
+	const activeInstance = $derived(running.find((i) => i.id === active));
+
+	// A pane opened with "Open anyway" before code-server was up is stuck on the proxy's 503
+	// forever, and a document reload would tear down every other tab's editor.
+	const frames: Record<string, HTMLIFrameElement | null> = {};
+
+	function reloadActive() {
+		const inst = activeInstance;
+		if (!inst || inst.mode === 'terminal') return;
+		loadedFrames.delete(inst.id);
+		// `location.replace`, not `src =`: assigning src pushes a parent session-history entry,
+		// which would break the shell's pushState back button.
+		frames[inst.id]?.contentWindow?.location.replace(ideUrl(inst));
+	}
+
 	$effect(() => {
-		const inst = running.find((i) => i.id === active);
-		document.title = onIde && inst ? `${inst.name} — Codebay` : 'Codebay';
+		document.title = onIde && activeInstance ? `${activeInstance.name} — Codebay` : 'Codebay';
 	});
 
 	// Browsers block audio until the page has been interacted with.
@@ -266,6 +280,9 @@
 			{attention}
 			{editingId}
 			bind:editingName
+			onreload={activeInstance && activeInstance.mode !== 'terminal' && mountable(active)
+				? reloadActive
+				: undefined}
 			onselect={(id) => navigate(`/ide/${id}`)}
 			onstartrename={startRename}
 			oncommitrename={commitRename}
@@ -295,7 +312,11 @@
 								initialOpen={inst.terminal_split === 1}
 							/>
 						{:else}
-							<iframe src={ideUrl(inst)} title={inst.name} onload={() => loadedFrames.add(inst.id)}
+							<iframe
+								bind:this={frames[inst.id]}
+								src={ideUrl(inst)}
+								title={inst.name}
+								onload={() => loadedFrames.add(inst.id)}
 							></iframe>
 						{/if}
 					{/if}
