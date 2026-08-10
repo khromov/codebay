@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import {
+	mkdtempSync,
+	rmSync,
+	mkdirSync,
+	writeFileSync,
+	readFileSync,
+	existsSync,
+	statSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PUBLISH_HOST } from './config.server.ts';
@@ -462,6 +470,7 @@ describe('writeOverrideConfig terminal mode', () => {
 		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
 		const text = readFileSync(join(dir, '.git', 'info', 'exclude'), 'utf8');
 		expect(text).toContain('/.devcontainer/codebay-ttyd/');
+		expect(text).toContain('/.devcontainer/codebay-claude/');
 		expect(text).toContain('/.devcontainer/codebay-terminal.sh');
 	});
 
@@ -475,7 +484,50 @@ describe('writeOverrideConfig terminal mode', () => {
 		const features = readDevcontainer().features;
 		// The launcher *is* `claude`, so unlike IDE mode terminal mode can't defer tooling to the
 		// project's config — a bare shell would defeat the whole "just Claude in a terminal" point.
+		expect(features['./codebay-claude']).toBeDefined();
+		// But not via the upstream features: their nvm-based Node install fails outright on any
+		// project image that sets NPM_CONFIG_PREFIX. The local feature sniffs instead.
+		expect(features['ghcr.io/devcontainers/features/node:1']).toBeUndefined();
+		expect(features['ghcr.io/anthropics/devcontainer-features/claude-code:1.0']).toBeUndefined();
+		// gh is a plain package install with no such hazard, so it stays.
+		expect(features['ghcr.io/devcontainers/features/github-cli:1']).toBeDefined();
+	});
+
+	test('stages the codebay-claude feature with a best-effort, nvm-free install script', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1' })
+		);
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const featureDir = join(dir, '.devcontainer', 'codebay-claude');
+		const meta = JSON.parse(readFileSync(join(featureDir, 'devcontainer-feature.json'), 'utf8'));
+		expect(meta.id).toBe('codebay-claude');
+		const install = readFileSync(join(featureDir, 'install.sh'), 'utf8');
+		expect(install.startsWith('#!/bin/sh\n')).toBe(true);
+		expect(install).toContain('command -v claude');
+		expect(install).not.toContain('nvm');
+		// Wrapped so a failed install can never break the build; the injection retries at boot.
+		expect(install.trimEnd().endsWith('exit 0')).toBe(true);
+		expect(statSync(join(featureDir, 'install.sh')).mode & 0o111).toBeGreaterThan(0);
+	});
+
+	test('uses the upstream Claude features, not the local one, for the default image', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const features = readDevcontainer().features;
 		expect(features['ghcr.io/anthropics/devcontainer-features/claude-code:1.0']).toBeDefined();
-		expect(features['ghcr.io/devcontainers/features/node:1']).toBeDefined();
+		expect(features['./codebay-claude']).toBeUndefined();
+		expect(existsSync(join(dir, '.devcontainer', 'codebay-claude'))).toBe(false);
+	});
+
+	test('never stages the codebay-claude feature in IDE mode', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1' })
+		);
+		await writeOverrideConfig(dir, 8001);
+		expect(readDevcontainer().features['./codebay-claude']).toBeUndefined();
+		expect(existsSync(join(dir, '.devcontainer', 'codebay-claude'))).toBe(false);
 	});
 });
