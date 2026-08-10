@@ -51,6 +51,9 @@ export const APP_VERSION: string = (() => {
 /** Per-instance working copies live here: <INSTANCES_DIR>/<id>/workspace. */
 export const INSTANCES_DIR = join(DATA_DIR, 'instances');
 
+/** Extracted Claude Code logs, in one flat folder that outlives the instances they came from. */
+export const LOGS_DIR = join(DATA_DIR, 'logs');
+
 export const DB_PATH = join(DATA_DIR, 'app.sqlite');
 
 export const PORT_BASE = 8001;

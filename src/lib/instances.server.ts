@@ -60,6 +60,7 @@ import {
 	surfaceAccessible,
 	syncHealthMonitors
 } from './health.server.ts';
+import { stopLogCapture, syncLogCapture } from './log-capture.server.ts';
 import { isHostPortBindable, pickBindablePort } from './ports.server.ts';
 import type { ServerWebSocket } from 'bun';
 import {
@@ -528,6 +529,7 @@ export async function listInstances(): Promise<Instance[]> {
 	);
 	// Reconcile is the only place that knows the current running set.
 	syncHealthMonitors(rows);
+	syncLogCapture(rows);
 	// Distinguishes a forward that's live from one still pending a rebuild.
 	const openPorts = new Map<string, Set<number>>();
 	for (const { id, health } of currentHealthSnapshots()) {
@@ -714,6 +716,8 @@ export async function deleteInstance(id: string): Promise<void> {
 	deleteInstanceRow(id);
 	registry.delete(id);
 	stopHealthMonitor(id);
+	// Stop capturing but leave <LOGS_DIR>/*-<id>.jsonl on disk — retention outlives the instance.
+	stopLogCapture(id);
 	clearAttention(id);
 	triggerReconcile();
 }
