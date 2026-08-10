@@ -48,9 +48,8 @@
 					{#if editingId === inst.id}
 						<div class="tab-label editing">
 							<Avatar
-								id={inst.id}
 								name={inst.name}
-								art={findAvatar(inst.avatar ?? undefined)}
+								art={findAvatar(inst.avatar ?? undefined) ?? null}
 								scale={4}
 							/>
 							<!-- svelte-ignore a11y_autofocus -->
@@ -75,9 +74,8 @@
 							title={inst.name}
 						>
 							<Avatar
-								id={inst.id}
 								name={inst.name}
-								art={findAvatar(inst.avatar ?? undefined)}
+								art={findAvatar(inst.avatar ?? undefined) ?? null}
 								scale={4}
 							/>
 							<span class="tab-name">{inst.name}</span>

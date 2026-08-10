@@ -554,6 +554,9 @@ export async function listInstances(): Promise<Instance[]> {
 	}
 	return rows.map((row) => ({
 		...sanitizeInstance(row),
+		// Resolve legacy null rows to their hashed sprite here so the client only sees an
+		// unresolvable name when a persisted sprite was actually removed from the catalog.
+		avatar: effectiveAvatarName(row),
 		git_branch: branches.get(row.id) ?? null,
 		attention: getAttention(row.id),
 		forwarded_ports: forwards.get(row.id) ?? []

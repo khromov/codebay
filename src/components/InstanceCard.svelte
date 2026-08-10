@@ -54,9 +54,8 @@
 	{/if}
 	<div class="card-head">
 		<Avatar
-			id={instance.id}
 			name={instance.name}
-			art={findAvatar(instance.avatar ?? undefined)}
+			art={findAvatar(instance.avatar ?? undefined) ?? null}
 			interactive
 		/>
 		{#if editing}
