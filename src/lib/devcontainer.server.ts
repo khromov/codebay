@@ -160,20 +160,23 @@ const CODE_SERVER_APPLY_SETTINGS =
 	`cp -f \\"$PWD/.devcontainer/${CODE_SERVER_SETTINGS_FILE}\\" ` +
 	`~/.local/share/code-server/User/settings.json 2>/dev/null;`;
 
-// Runs before code-server first launches so the extension host activates it on the first window
-// (the /ide bridge, in-container over localhost); best-effort, offline-tolerant, skipped if present.
+// Fully detached (redirects + </dev/null + &) because `devcontainer up` waits for postStart's
+// pipes to close — an attached download would keep the whole boot on the Open VSX critical path.
 const CODE_SERVER_INSTALL_EXT =
-	`ls -d ~/.local/share/code-server/extensions/${CLAUDE_CODE_EXTENSION_ID}-* >/dev/null 2>&1 || ` +
-	`code-server --install-extension ${CLAUDE_CODE_EXTENSION_ID} >/tmp/code-server-ext.log 2>&1 || true; `;
+	`( ls -d ~/.local/share/code-server/extensions/${CLAUDE_CODE_EXTENSION_ID}-* >/dev/null 2>&1 || ` +
+	`code-server --install-extension ${CLAUDE_CODE_EXTENSION_ID} ) ` +
+	`>/tmp/code-server-ext.log 2>&1 </dev/null &`;
 
+// The extension installs in the background after launch, so the first window may need a reload to
+// activate it; the claude-code-ide-extension injection waits out this install as the fallback.
 const CODE_SERVER_LAUNCH =
 	`bash -c "${CODE_SERVER_APPLY_SETTINGS} ` +
-	`${CODE_SERVER_INSTALL_EXT} ` +
 	// The bare default image may not export SHELL, which the Terminal task needs.
 	`export SHELL=\\"\${SHELL:-/bin/bash}\\"; ` +
 	`pgrep -f 'code-server.*${CODE_SERVER_PORT}' >/dev/null 2>&1 || ` +
 	`nohup code-server --bind-addr 0.0.0.0:${CODE_SERVER_PORT} --auth none ` +
-	`--disable-workspace-trust \\"$PWD\\" >/tmp/code-server.log 2>&1 &"`;
+	`--disable-workspace-trust \\"$PWD\\" >/tmp/code-server.log 2>&1 & ` +
+	`${CODE_SERVER_INSTALL_EXT}"`;
 
 /** Staged next to the config; ttyd runs it as its command so the nested quoting stays in a real file. */
 const TTYD_LAUNCH_SCRIPT_FILE = 'codebay-terminal.sh';
@@ -610,12 +613,7 @@ export interface UpResult {
 	description?: string;
 }
 
-/** Streams all output to `onLog` and returns the parsed final result line. */
-export async function devcontainerUp(
-	workspaceDir: string,
-	onLog: (chunk: string) => void,
-	opts: { noCache?: boolean } = {}
-): Promise<UpResult> {
+export function devcontainerUpArgs(workspaceDir: string, opts: { noCache?: boolean } = {}) {
 	const args = [
 		devcontainerBin(),
 		'up',
@@ -625,11 +623,26 @@ export async function devcontainerUp(
 	];
 	// Only takes effect because --remove-existing-container drops the container before the build.
 	if (opts.noCache) args.push('--build-no-cache');
-	const proc = Bun.spawn(args, {
+	return args;
+}
+
+/** Defaults only — the spread lets an explicit user env win. BuildKit is standard on modern
+ * daemons; forcing it here just keeps feature-layer caching on older ones. */
+export function devcontainerUpEnv(): Record<string, string | undefined> {
+	return { DOCKER_BUILDKIT: '1', COMPOSE_DOCKER_CLI_BUILD: '1', ...dockerEnv() };
+}
+
+/** Streams all output to `onLog` and returns the parsed final result line. */
+export async function devcontainerUp(
+	workspaceDir: string,
+	onLog: (chunk: string) => void,
+	opts: { noCache?: boolean } = {}
+): Promise<UpResult> {
+	const proc = Bun.spawn(devcontainerUpArgs(workspaceDir, opts), {
 		cwd: workspaceDir,
 		stdout: 'pipe',
 		stderr: 'pipe',
-		env: dockerEnv()
+		env: devcontainerUpEnv()
 	});
 
 	let stdoutText = '';

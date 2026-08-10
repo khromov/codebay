@@ -2,7 +2,7 @@ import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { injections, resolveInjections } from '../lib/injections.server.ts';
+import { injections, resolveInjections, resolveInjectionStages } from '../lib/injections.server.ts';
 import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings, hasAttentionHook } from './attention-hooks.ts';
 import { isValid, LIVE_CREDENTIALS_TEST, tokenCredentials } from './claude-code-credentials.ts';
@@ -132,12 +132,12 @@ describe('injection registry', () => {
 		expect(ext!.auth).toBeUndefined();
 	});
 
-	test('tmux runs second, right after git-safe-directory', () => {
-		// git safe.directory must stay first (later git-touching steps depend on it);
-		// tmux is next because its package install is the slowest injection and the
-		// Terminal task falls back to non-persistent mode until it lands.
-		expect(injections[0]!.id).toBe('git-safe-directory');
-		expect(injections[1]!.id).toBe('tmux');
+	test('git-safe-directory and tmux start in the first stage', () => {
+		// safe.directory must precede every later git-touching step, and tmux's package
+		// install is the slowest injection, so both must kick off immediately.
+		const firstStage = resolveInjectionStages()[0]!.map((i) => i.id);
+		expect(firstStage).toContain('git-safe-directory');
+		expect(firstStage).toContain('tmux');
 	});
 
 	test('ttyd is registered as a terminal-only injection with a health check', () => {
@@ -146,6 +146,92 @@ describe('injection registry', () => {
 		expect(t!.modes).toEqual(['terminal']);
 		expect(typeof t!.check).toBe('function');
 		expect(t!.auth).toBeUndefined();
+	});
+});
+
+describe('resolveInjectionStages — clobber safety', () => {
+	// Container resources each apply() writes. Two same-stage writers of one resource would race:
+	// every JSON/rc edit is an unguarded read-modify-write, and parallel apt-gets fight the dpkg lock.
+	const WRITES: Record<string, string[]> = {
+		'git-safe-directory': ['gitconfig'],
+		tmux: ['apt', 'tmux-conf'],
+		ttyd: ['apt', 'usr-local-bin'],
+		'claude-code-update': ['npm-global'],
+		'claude-code-credentials': ['claude-credentials', 'claude-json'],
+		'claude-code-custom': ['claude-env-file', 'rc', 'claude-json'],
+		'claude-code-ide-extension': ['extensions-dir'],
+		'git-identity': ['gitconfig'],
+		'github-credentials': ['gh-hosts', 'gitconfig'],
+		'attention-hooks': ['bridge-header', 'settings-json'],
+		'claude-statusline': ['statusline-script', 'settings-json'],
+		'claude-code-models': ['models-env-file', 'rc'],
+		'claude-model': ['settings-json'],
+		'claude-skip-permissions': ['rc'],
+		'claude-trust': ['claude-json', 'settings-json'],
+		'claude-aliases': ['rc'],
+		'claude-no-coauthor': ['settings-json'],
+		'host-env-vars': ['host-env-file', 'rc']
+	};
+
+	function stageOf(stages: { id: string }[][]): Map<string, number> {
+		const index = new Map<string, number>();
+		stages.forEach((stage, n) => stage.forEach((i) => index.set(i.id, n)));
+		return index;
+	}
+
+	function assertNoSameStageClobber(stages: { id: string }[][]) {
+		for (const stage of stages) {
+			const seen = new Map<string, string>();
+			for (const injection of stage) {
+				const writes = WRITES[injection.id];
+				// A new injection must be added to the map, or this test can't vouch for it.
+				expect(writes).toBeDefined();
+				for (const resource of writes!) {
+					expect(`${resource} ← ${seen.get(resource) ?? ''}`).toBe(`${resource} ← `);
+					seen.set(resource, injection.id);
+				}
+			}
+		}
+	}
+
+	test('no two injections in one stage write the same resource (both Claude slots, both modes)', () => {
+		for (const enabled of ['0', '1']) {
+			setOption('custom_endpoint_enabled', enabled);
+			for (const mode of [undefined, 'ide', 'terminal'] as const) {
+				assertNoSameStageClobber(resolveInjectionStages(mode));
+			}
+		}
+		setOption('custom_endpoint_enabled', '0');
+	});
+
+	test('shared resources keep their pre-parallelization write order across stages', () => {
+		const at = stageOf(resolveInjectionStages());
+		// gitconfig: safe.directory before identity before gh's credential helper rewrite.
+		expect(at.get('git-safe-directory')!).toBeLessThan(at.get('git-identity')!);
+		expect(at.get('git-identity')!).toBeLessThan(at.get('github-credentials')!);
+		// ~/.claude/settings.json merge chain.
+		expect(at.get('attention-hooks')!).toBeLessThan(at.get('claude-statusline')!);
+		expect(at.get('claude-statusline')!).toBeLessThan(at.get('claude-model')!);
+		expect(at.get('claude-model')!).toBeLessThan(at.get('claude-trust')!);
+		expect(at.get('claude-trust')!).toBeLessThan(at.get('claude-no-coauthor')!);
+		// rc-file append chain.
+		expect(at.get('claude-code-models')!).toBeLessThan(at.get('claude-skip-permissions')!);
+		expect(at.get('claude-skip-permissions')!).toBeLessThan(at.get('claude-aliases')!);
+		expect(at.get('claude-aliases')!).toBeLessThan(at.get('host-env-vars')!);
+		// ~/.claude.json: the Claude slot seeds it before trust merges into it.
+		expect(at.get('claude-code-credentials')!).toBeLessThan(at.get('claude-trust')!);
+		// apt/dpkg lock: tmux and ttyd can never run side by side.
+		expect(at.get('tmux')!).toBeLessThan(at.get('ttyd')!);
+	});
+
+	test('the custom Claude slot (an rc writer) stays ahead of every other rc writer', () => {
+		setOption('custom_endpoint_enabled', '1');
+		try {
+			const at = stageOf(resolveInjectionStages());
+			expect(at.get('claude-code-custom')!).toBeLessThan(at.get('claude-code-models')!);
+		} finally {
+			setOption('custom_endpoint_enabled', '0');
+		}
 	});
 });
 
@@ -218,6 +304,17 @@ describe('claude-code-ide-extension scripts', () => {
 				'if ls -d ~/.local/share/code-server/extensions/anthropic.claude-code-*'
 			)
 		).toBe(true);
+	});
+
+	test('install script waits out the launch line’s background install before falling back', () => {
+		// The bracket keeps pgrep from matching this script's own `bash -lc` argv.
+		expect(EXT_INSTALL_SCRIPT).toContain("pgrep -f 'install-extensio[n] anthropic.claude-code'");
+		// Bounded wait, then a re-check so a completed background install exits without a second download.
+		expect(EXT_INSTALL_SCRIPT).toContain('{1..90}');
+		const waitAt = EXT_INSTALL_SCRIPT.indexOf('pgrep');
+		const recheckAt = EXT_INSTALL_SCRIPT.lastIndexOf('if ls -d');
+		expect(waitAt).toBeLessThan(recheckAt);
+		expect(recheckAt).toBeLessThan(EXT_INSTALL_SCRIPT.indexOf('code-server --install-extension'));
 	});
 
 	// Run the probe against a temp home, exactly as `checkPresence` would in a container.

@@ -7,9 +7,14 @@ export const EXTENSION_ID = 'anthropic.claude-code';
 const EXT_GLOB = '~/.local/share/code-server/extensions/anthropic.claude-code-*';
 
 /** Idempotent (skips if already present); best-effort — needs Open VSX egress. */
+// The bracketed `install-extensio[n]` keeps pgrep from matching this script's own `bash -lc` argv,
+// so it only sees the launch line's real background install (which it waits out before falling back).
 export const INSTALL_SCRIPT =
 	`if ls -d ${EXT_GLOB} >/dev/null 2>&1; then exit 0; fi; ` +
 	`command -v code-server >/dev/null 2>&1 || { echo "code-server not found" >&2; exit 1; }; ` +
+	`for _ in {1..90}; do ` +
+	`pgrep -f 'install-extensio[n] ${EXTENSION_ID}' >/dev/null 2>&1 || break; sleep 1; done; ` +
+	`if ls -d ${EXT_GLOB} >/dev/null 2>&1; then exit 0; fi; ` +
 	`code-server --install-extension ${EXTENSION_ID}`;
 
 export const CHECK_SCRIPT = `ls -d ${EXT_GLOB} >/dev/null 2>&1 && echo 1 || echo 0`;

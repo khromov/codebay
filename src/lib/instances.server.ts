@@ -47,7 +47,7 @@ import {
 import { writeContainerFile } from './container-files.server.ts';
 import { clearAttention, getAttention } from './bridge.server.ts';
 import { proxyPathFor } from './proxy.server.ts';
-import { resolveInjections } from './injections.server.ts';
+import { resolveInjectionStages } from './injections.server.ts';
 import { cloneRepo, readGitBranch } from './git.server.ts';
 import { isRepoUrl, parseRepoUrl } from './repo-url.ts';
 import { currentHealthSnapshots, stopHealthMonitor, syncHealthMonitors } from './health.server.ts';
@@ -270,6 +270,10 @@ async function assertDir(path: string): Promise<void> {
 	if (!info.isDirectory()) throw new Error(`Not a folder: ${path}`);
 }
 
+function elapsed(startMs: number): string {
+	return `${((Date.now() - startMs) / 1000).toFixed(1)}s`;
+}
+
 function failInstance(id: string, err: unknown): void {
 	const message = (err as Error).message;
 	updateInstance(id, { status: 'error', error: message });
@@ -279,15 +283,18 @@ function failInstance(id: string, err: unknown): void {
 
 async function boot(row: InstanceRow, opts: { branch?: string } = {}): Promise<void> {
 	try {
+		const sourceStart = Date.now();
 		if (isRepoUrl(row.source_path)) {
 			appendLog(row.id, `Cloning ${row.source_path} → ${row.workspace_path}\n`);
 			await cloneRepo(row.source_path, row.workspace_path, (chunk) => appendLog(row.id, chunk), {
 				branch: opts.branch
 			});
+			appendLog(row.id, `⏱ clone: ${elapsed(sourceStart)}\n`);
 		} else {
 			appendLog(row.id, `Copying ${row.source_path} → ${row.workspace_path}\n`);
 			const ignore = parseCopyIgnore(getOption('copy_ignore_patterns') ?? DEFAULT_COPY_IGNORE);
 			await copyWorkspace(row.source_path, row.workspace_path, ignore);
+			appendLog(row.id, `⏱ copy: ${elapsed(sourceStart)}\n`);
 		}
 		await seedDeclaredPorts(row);
 	} catch (err) {
@@ -337,9 +344,11 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		if (noCache) appendLog(row.id, `Building without cache (--build-no-cache)\n`);
 
 		appendLog(row.id, `Starting devcontainer…\n`);
+		const upStart = Date.now();
 		const result = await devcontainerUp(row.workspace_path, (chunk) => appendLog(row.id, chunk), {
 			noCache
 		});
+		appendLog(row.id, `⏱ devcontainer up: ${elapsed(upStart)}\n`);
 
 		if (result.outcome !== 'success' || !result.containerId) {
 			throw new Error(
@@ -362,19 +371,30 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		row.remote_user = result.remoteUser ?? null;
 		row.status = 'running';
 
+		// Start the health monitor now so the IDE mounts as soon as code-server answers,
+		// instead of after every injection plus a full reconcile/health poll cycle.
+		triggerReconcile();
+
 		const target = {
 			containerId: result.containerId,
 			remoteUser: result.remoteUser,
 			instance: row
 		};
-		// Swallow per-injection failures so one bad injection can't abort the rest of provisioning.
-		for (const injection of resolveInjections(row.mode)) {
-			try {
-				await injection.apply(target, (msg) => appendLog(row.id, msg));
-			} catch (err) {
-				appendLog(row.id, `⚠ ${injection.label} injection failed: ${(err as Error).message}\n`);
-			}
+		// Stages parallelize independent injections; per-injection failures are still swallowed
+		// so one bad injection can't abort the rest of provisioning.
+		const injectionsStart = Date.now();
+		for (const stage of resolveInjectionStages(row.mode)) {
+			await Promise.all(
+				stage.map(async (injection) => {
+					try {
+						await injection.apply(target, (msg) => appendLog(row.id, msg));
+					} catch (err) {
+						appendLog(row.id, `⚠ ${injection.label} injection failed: ${(err as Error).message}\n`);
+					}
+				})
+			);
 		}
+		appendLog(row.id, `⏱ injections: ${elapsed(injectionsStart)}\n`);
 
 		// Unblocks the terminal launcher's wait; written even after ⚠s — its timeout is the fallback.
 		await writeContainerFile(target, { dir: '$HOME', name: INJECTIONS_DONE_FILE }, 'done\n').catch(

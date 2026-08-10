@@ -46,49 +46,43 @@ export interface Injection {
 	check?(target: ContainerTarget): Promise<boolean>;
 }
 
-/** Split around the Claude slot, which `resolveInjections()` fills at call time. */
-const BASE_INJECTIONS_HEAD: Injection[] = [
-	// Must stay first — every later git-touching injection depends on safe.directory.
-	gitSafeDirectory,
-	// The package install is the slowest injection, so start it before a folderOpen can find tmux missing.
-	tmux,
-	// Terminal-mode only (filtered by resolveInjections); a download, so run it early like tmux.
-	ttyd,
-	gitIdentity
-];
-
-const BASE_INJECTIONS_TAIL: Injection[] = [
-	// Refresh the binary to latest before the other claude-config steps run against it.
-	claudeCodeUpdate,
-	// Self-skips unless manual override is on and LiteLLM off, so it's safe in the always-run tail.
-	claudeCodeModels,
-	claudeCodeIdeExtension,
-	githubCredentials,
-	attentionHooks,
-	claudeStatusline,
-	claudeModel,
-	claudeSkipPermissions,
-	claudeTrust,
-	claudeAliases,
-	claudeNoCoauthor,
-	hostEnvVars
-];
+/**
+ * Injections within a stage apply in parallel, so no two of them may write the same container
+ * resource; the stage boundaries serialize each shared resource in the same relative order the
+ * old flat list ran it (gitconfig, ~/.claude/settings.json, rc files, ~/.claude.json, apt/dpkg).
+ */
+function buildStages(claudeInjection: Injection): Injection[][] {
+	return [
+		// Disjoint resources — and all the slow network installs (apt tmux, npm claude, Open VSX
+		// extension) start immediately instead of queueing behind one another.
+		[gitSafeDirectory, tmux, claudeCodeUpdate, claudeInjection, claudeCodeIdeExtension],
+		// git-identity needs stage 1's safe.directory; ttyd shares the apt/dpkg lock with tmux.
+		[gitIdentity, attentionHooks, claudeCodeModels, ttyd],
+		[githubCredentials, claudeStatusline, claudeSkipPermissions],
+		[claudeModel, claudeAliases],
+		// claude-trust edits ~/.claude.json, which the stage-1 Claude slot also writes.
+		[claudeTrust, hostEnvVars],
+		[claudeNoCoauthor]
+	];
+}
 
 /**
  * Resolved per call so toggling the custom-endpoint setting takes effect without a restart.
  * `mode` drops injections that don't apply to it (e.g. ttyd off IDE instances, the IDE
  * extension off terminal ones); omit it in mode-agnostic contexts to keep every injection.
  */
-export function resolveInjections(mode?: InstanceMode): Injection[] {
+export function resolveInjectionStages(mode?: InstanceMode): Injection[][] {
 	const claudeInjection =
 		getOption('custom_endpoint_enabled') === '1' ? claudeCodeCustom : claudeCodeCredentials;
-	const all = [...BASE_INJECTIONS_HEAD, claudeInjection, ...BASE_INJECTIONS_TAIL];
-	return mode ? all.filter((i) => !i.modes || i.modes.includes(mode)) : all;
+	return buildStages(claudeInjection)
+		.map((stage) => (mode ? stage.filter((i) => !i.modes || i.modes.includes(mode)) : stage))
+		.filter((stage) => stage.length > 0);
+}
+
+/** Flat view of `resolveInjectionStages()` for order-insensitive consumers (health, auth chips). */
+export function resolveInjections(mode?: InstanceMode): Injection[] {
+	return resolveInjectionStages(mode).flat();
 }
 
 /** @deprecated Use `resolveInjections()`; this ignores settings/mode and is kept for the tests. */
-export const injections: Injection[] = [
-	...BASE_INJECTIONS_HEAD,
-	claudeCodeCredentials,
-	...BASE_INJECTIONS_TAIL
-];
+export const injections: Injection[] = buildStages(claudeCodeCredentials).flat();
