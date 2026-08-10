@@ -74,9 +74,11 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 export function resolveInjectionStages(mode?: InstanceMode): Injection[][] {
 	const claudeInjection =
 		getOption('custom_endpoint_enabled') === '1' ? claudeCodeCustom : claudeCodeCredentials;
-	return buildStages(claudeInjection)
+	const stages = buildStages(claudeInjection)
 		.map((stage) => (mode ? stage.filter((i) => !i.modes || i.modes.includes(mode)) : stage))
 		.filter((stage) => stage.length > 0);
+	// One injection per stage restores the fully serial boot for diagnosing injection interference.
+	return getOption('advanced_serial_injections') === '1' ? stages.flat().map((i) => [i]) : stages;
 }
 
 /** Flat view of `resolveInjectionStages()` for order-insensitive consumers (health, auth chips). */

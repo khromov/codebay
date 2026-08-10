@@ -23,7 +23,14 @@ import {
 	EXTENSION_ID,
 	INSTALL_SCRIPT as EXT_INSTALL_SCRIPT
 } from './claude-code-ide-extension.ts';
-import { UPDATE_SCRIPT } from './claude-code-update.ts';
+import {
+	CACHE_TTL_MS,
+	cacheIsFresh,
+	fetchLatestVersion,
+	PINNED_UPDATE_SCRIPT,
+	UPDATE_SCRIPT,
+	VERSION_RE
+} from './claude-code-update.ts';
 
 describe('injection registry', () => {
 	test('every injection has a unique id', () => {
@@ -235,6 +242,29 @@ describe('resolveInjectionStages — clobber safety', () => {
 	});
 });
 
+describe('resolveInjectionStages — serial escape hatch', () => {
+	afterEach(() => setOption('advanced_serial_injections', '0'));
+
+	test('one injection per stage, preserving the parallel layout order exactly', () => {
+		const parallelOrder = resolveInjectionStages('ide')
+			.flat()
+			.map((i) => i.id);
+		setOption('advanced_serial_injections', '1');
+		const serial = resolveInjectionStages('ide');
+		for (const stage of serial) expect(stage.length).toBe(1);
+		expect(serial.flat().map((i) => i.id)).toEqual(parallelOrder);
+	});
+
+	test('mode filtering still applies in serial mode', () => {
+		setOption('advanced_serial_injections', '1');
+		const ids = resolveInjectionStages('terminal')
+			.flat()
+			.map((i) => i.id);
+		expect(ids).toContain('ttyd');
+		expect(ids).not.toContain('claude-code-ide-extension');
+	});
+});
+
 describe('resolveInjections — mode filtering', () => {
 	test('terminal mode adds ttyd and drops the code-server IDE extension', () => {
 		const ids = resolveInjections('terminal').map((i) => i.id);
@@ -400,6 +430,106 @@ describe('claude-code-update script', () => {
 		const { out, installed } = runUpdate('2.1.220 (Claude Code)', '');
 		expect(installed).toBe(false);
 		expect(out).toBe('');
+	});
+
+	// Same shim harness, but the latest version arrives as `$0` instead of via `npm view`.
+	function runPinned(
+		rawClaude: string | null,
+		latest: string
+	): { out: string; installed: boolean } {
+		const bin = mkdtempSync(join(tmpdir(), 'codebay-pinned-'));
+		const marker = join(bin, 'install-called');
+		try {
+			if (rawClaude !== null) {
+				writeFileSync(join(bin, 'claude'), `#!/bin/sh\ncat <<'FIXTURE'\n${rawClaude}\nFIXTURE\n`, {
+					mode: 0o755
+				});
+			}
+			writeFileSync(join(bin, 'npm'), `#!/bin/sh\ntouch "${marker}"\n`, { mode: 0o755 });
+			// PATH is pinned (not prepended) so a claude installed on the host can't leak into
+			// the "claude missing" case.
+			const res = Bun.spawnSync(['bash', '-c', PINNED_UPDATE_SCRIPT, latest], {
+				env: { ...process.env, PATH: `${bin}:/usr/bin:/bin` }
+			});
+			return { out: res.stdout.toString().trim(), installed: existsSync(marker) };
+		} finally {
+			rmSync(bin, { recursive: true, force: true });
+		}
+	}
+
+	test('pinned script never runs `npm view` and upgrades when behind the supplied version', () => {
+		expect(PINNED_UPDATE_SCRIPT).not.toContain('npm view');
+		const { out, installed } = runPinned('2.1.220 (Claude Code)', '2.1.222');
+		expect(installed).toBe(true);
+		expect(out).toContain('updated 2.1.220 -> 2.1.222');
+	});
+
+	test('pinned script does not reinstall when already at the supplied version', () => {
+		const { out, installed } = runPinned('2.1.222 (Claude Code)', '2.1.222');
+		expect(installed).toBe(false);
+		expect(out).toContain('current 2.1.222');
+	});
+
+	test('pinned script exits silently when claude is not installed', () => {
+		const { out, installed } = runPinned(null, '2.1.222');
+		expect(installed).toBe(false);
+		expect(out).toBe('');
+	});
+});
+
+describe('claude-code version cache helpers', () => {
+	test('VERSION_RE accepts plain semver and rejects everything else', () => {
+		expect(VERSION_RE.test('2.1.222')).toBe(true);
+		for (const bad of ['v2.1.222', '2.1.222-beta.1', '2.1', '', '2.1.222; rm -rf /', '2.1.222 ']) {
+			expect(VERSION_RE.test(bad)).toBe(false);
+		}
+	});
+
+	test('cacheIsFresh honors the TTL window', () => {
+		const now = 1_000_000_000;
+		expect(cacheIsFresh(String(now - 1), now)).toBe(true);
+		expect(cacheIsFresh(String(now - CACHE_TTL_MS + 1), now)).toBe(true);
+		expect(cacheIsFresh(String(now - CACHE_TTL_MS), now)).toBe(false);
+	});
+
+	test('cacheIsFresh rejects unset, empty, zero, and garbage timestamps', () => {
+		for (const bad of [null, '', '0', 'garbage', 'NaN']) {
+			expect(cacheIsFresh(bad, Date.now())).toBe(false);
+		}
+	});
+
+	// Bun's fetch type carries extras like preconnect, so the shim is cast once here.
+	async function withFetch<T>(impl: () => Promise<Response>, fn: () => Promise<T>): Promise<T> {
+		const original = globalThis.fetch;
+		globalThis.fetch = impl as unknown as typeof fetch;
+		try {
+			return await fn();
+		} finally {
+			globalThis.fetch = original;
+		}
+	}
+
+	test('fetchLatestVersion returns a validated version from the registry payload', async () => {
+		const version = await withFetch(
+			async () => Response.json({ version: '2.1.222' }),
+			fetchLatestVersion
+		);
+		expect(version).toBe('2.1.222');
+	});
+
+	test('fetchLatestVersion returns null on HTTP errors, bad payloads, and network failures', async () => {
+		const cases: (() => Promise<Response>)[] = [
+			async () => new Response('nope', { status: 500 }),
+			async () => Response.json({ version: 'not-a-version' }),
+			async () => Response.json({}),
+			async () => new Response('not json'),
+			async () => {
+				throw new Error('offline');
+			}
+		];
+		for (const impl of cases) {
+			expect(await withFetch(impl, fetchLatestVersion)).toBeNull();
+		}
 	});
 });
 

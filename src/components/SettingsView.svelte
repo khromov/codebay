@@ -17,6 +17,10 @@
 	import Variable from '@lucide/svelte/icons/variable';
 	import Plus from '@lucide/svelte/icons/plus';
 	import X from '@lucide/svelte/icons/x';
+	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
+	import ListOrdered from '@lucide/svelte/icons/list-ordered';
+	import Boxes from '@lucide/svelte/icons/boxes';
+	import Puzzle from '@lucide/svelte/icons/puzzle';
 	import { Toaster } from 'svelte-french-toast';
 	import { flushSync } from 'svelte';
 	import { enhance } from 'mochi-framework';
@@ -67,6 +71,9 @@
 		hostEnvVarsEnabled,
 		hostEnvVarNames,
 		hostEnvVarPresence,
+		advancedSerialInjections,
+		advancedNoBuildkit,
+		advancedBlockingExtInstall,
 		version
 	}: {
 		pet?: AvatarArt;
@@ -100,6 +107,9 @@
 		hostEnvVarsEnabled: boolean;
 		hostEnvVarNames: string[];
 		hostEnvVarPresence: Record<string, boolean>;
+		advancedSerialInjections: boolean;
+		advancedNoBuildkit: boolean;
+		advancedBlockingExtInstall: boolean;
 		version: string;
 	} = $props();
 
@@ -324,6 +334,49 @@
 		onSuccess: (data) => {
 			const n = data?.count ?? 0;
 			rebuildMsg = n === 0 ? 'No running containers to rebuild.' : `Rebuilding ${n} container(s)…`;
+		}
+	});
+
+	// DB-backed advanced escape hatches, so they initialize from the props.
+	// svelte-ignore state_referenced_locally
+	let serialInjections = $state(advancedSerialInjections);
+	let savingSerial = $state(false);
+	let serialError = $state<string | null>(null);
+	const serialOpts = toggleOpts({
+		set: (v) => (serialInjections = v),
+		setSaving: (v) => (savingSerial = v),
+		setError: (v) => (serialError = v)
+	});
+
+	// svelte-ignore state_referenced_locally
+	let noBuildkit = $state(advancedNoBuildkit);
+	let savingBuildkit = $state(false);
+	let buildkitError = $state<string | null>(null);
+	const buildkitOpts = toggleOpts({
+		set: (v) => (noBuildkit = v),
+		setSaving: (v) => (savingBuildkit = v),
+		setError: (v) => (buildkitError = v)
+	});
+
+	// svelte-ignore state_referenced_locally
+	let blockingExtInstall = $state(advancedBlockingExtInstall);
+	let savingBlocking = $state(false);
+	let blockingError = $state<string | null>(null);
+	const blockingOpts = toggleOpts({
+		set: (v) => (blockingExtInstall = v),
+		setSaving: (v) => (savingBlocking = v),
+		setError: (v) => (blockingError = v)
+	});
+
+	let clearingVer = $state(false);
+	let verMsg = $state<string | null>(null);
+	let verError = $state<string | null>(null);
+	const clearVersionOpts = saveOpts({
+		setSaving: (v) => (clearingVer = v),
+		setError: (v) => (verError = v),
+		setMsg: (v) => (verMsg = v),
+		onSuccess: () => {
+			verMsg = 'Cleared — the next instance boot re-checks the registry.';
 		}
 	});
 
@@ -1643,6 +1696,144 @@
 			{/if}
 		</section>
 
+		<section class="card">
+			<details class="advanced">
+				<summary>
+					<SlidersHorizontal size={20} />
+					<span class="name">Advanced</span>
+					<span class="hint">escape hatches — defaults are right for almost everyone</span>
+				</summary>
+
+				<form
+					class="row divided"
+					method="POST"
+					action="?/serialInjectionsToggle"
+					{@attach enhance(serialOpts)}
+				>
+					<div class="label">
+						<ListOrdered size={20} />
+						<div class="text">
+							<div class="name">Serial boot injections</div>
+							<div class="desc">
+								Run boot injections one at a time instead of in parallel stages. Slower boot; useful
+								when diagnosing injection interference.
+							</div>
+						</div>
+					</div>
+					<label class="switch">
+						<input
+							type="checkbox"
+							name="enabled"
+							checked={serialInjections}
+							disabled={savingSerial}
+							onchange={(e) => {
+								serialInjections = e.currentTarget.checked;
+								e.currentTarget.form?.requestSubmit();
+							}}
+						/>
+						<span class="track"><span class="thumb"></span></span>
+					</label>
+				</form>
+				{#if serialError}
+					<div class="sub"><div class="msg error">{serialError}</div></div>
+				{/if}
+
+				<form
+					class="row divided"
+					method="POST"
+					action="?/noBuildkitToggle"
+					{@attach enhance(buildkitOpts)}
+				>
+					<div class="label">
+						<Boxes size={20} />
+						<div class="text">
+							<div class="name">Don't force BuildKit</div>
+							<div class="desc">
+								Skip setting <code>DOCKER_BUILDKIT=1</code> for container builds and let the daemon's
+								default builder decide. For daemons where forcing BuildKit breaks builds.
+							</div>
+						</div>
+					</div>
+					<label class="switch">
+						<input
+							type="checkbox"
+							name="enabled"
+							checked={noBuildkit}
+							disabled={savingBuildkit}
+							onchange={(e) => {
+								noBuildkit = e.currentTarget.checked;
+								e.currentTarget.form?.requestSubmit();
+							}}
+						/>
+						<span class="track"><span class="thumb"></span></span>
+					</label>
+				</form>
+				{#if buildkitError}
+					<div class="sub"><div class="msg error">{buildkitError}</div></div>
+				{/if}
+
+				<form
+					class="row divided"
+					method="POST"
+					action="?/blockingExtInstallToggle"
+					{@attach enhance(blockingOpts)}
+				>
+					<div class="label">
+						<Puzzle size={20} />
+						<div class="text">
+							<div class="name">Blocking IDE extension install</div>
+							<div class="desc">
+								Install the Claude Code IDE extension before code-server starts, so the first window
+								always has it active. Slower first boot.
+							</div>
+						</div>
+					</div>
+					<label class="switch">
+						<input
+							type="checkbox"
+							name="enabled"
+							checked={blockingExtInstall}
+							disabled={savingBlocking}
+							onchange={(e) => {
+								blockingExtInstall = e.currentTarget.checked;
+								e.currentTarget.form?.requestSubmit();
+							}}
+						/>
+						<span class="track"><span class="thumb"></span></span>
+					</label>
+				</form>
+				{#if blockingError}
+					<div class="sub"><div class="msg error">{blockingError}</div></div>
+				{/if}
+
+				<form
+					class="row divided"
+					method="POST"
+					action="?/clearVersionCache"
+					{@attach enhance(clearVersionOpts)}
+				>
+					<div class="label">
+						<Trash2 size={20} />
+						<div class="text">
+							<div class="name">Clear claude-code version cache</div>
+							<div class="desc">
+								Forget the cached latest-version check; the next instance boot asks the npm registry
+								again.
+							</div>
+							{#if verError}
+								<div class="msg error">{verError}</div>
+							{:else if verMsg}
+								<div class="msg ok">{verMsg}</div>
+							{/if}
+						</div>
+					</div>
+					<Button type="submit" icon={Trash2} disabled={clearingVer}>
+						{clearingVer ? 'Clearing…' : 'Clear cache'}
+					</Button>
+				</form>
+			</details>
+		</section>
+
 		<section class="card danger-card">
 			<form class="row" method="POST" action="?/shutdown" {@attach enhance(shutdownOpts)}>
 				<div class="label">
@@ -1710,6 +1901,34 @@
 	}
 	.danger-card {
 		border-color: var(--danger);
+	}
+	details.advanced > summary {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 14px 16px;
+		cursor: pointer;
+		list-style: none;
+		font-family: var(--font-mono);
+	}
+	details.advanced > summary::-webkit-details-marker {
+		display: none;
+	}
+	details.advanced > summary .name {
+		font-size: 13px;
+	}
+	details.advanced > summary .hint {
+		color: var(--ink-soft);
+		font-size: 12px;
+	}
+	/* The chevron affordance a hidden native marker would otherwise provide. */
+	details.advanced > summary::after {
+		content: '▸';
+		margin-left: auto;
+		color: var(--ink-soft);
+	}
+	details.advanced[open] > summary::after {
+		content: '▾';
 	}
 	.disabled-card {
 		opacity: 0.55;

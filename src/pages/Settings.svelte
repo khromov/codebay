@@ -37,6 +37,9 @@
 		hostEnvVarsEnabled,
 		hostEnvVarNames,
 		hostEnvVarPresence,
+		advancedSerialInjections,
+		advancedNoBuildkit,
+		advancedBlockingExtInstall,
 		version
 	}: {
 		pet?: AvatarArt;
@@ -70,6 +73,9 @@
 		hostEnvVarsEnabled: boolean;
 		hostEnvVarNames: string[];
 		hostEnvVarPresence: Record<string, boolean>;
+		advancedSerialInjections: boolean;
+		advancedNoBuildkit: boolean;
+		advancedBlockingExtInstall: boolean;
 		version: string;
 	} = $props();
 </script>
@@ -106,6 +112,9 @@
 	{hostEnvVarsEnabled}
 	{hostEnvVarNames}
 	{hostEnvVarPresence}
+	{advancedSerialInjections}
+	{advancedNoBuildkit}
+	{advancedBlockingExtInstall}
 	{version}
 	mochi:hydrate
 />

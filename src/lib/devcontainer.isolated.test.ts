@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PUBLISH_HOST } from './config.server.ts';
+import { setOption } from './db.server.ts';
 import {
 	devcontainerUpArgs,
 	devcontainerUpEnv,
@@ -251,6 +252,23 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		expect(
 			cmd.indexOf('ls -d ~/.local/share/code-server/extensions/anthropic.claude-code-')
 		).toBeLessThan(cmd.indexOf('--install-extension'));
+	});
+
+	test('the blocking-install escape hatch restores the install-before-launch order', async () => {
+		setOption('advanced_blocking_ext_install', '1');
+		try {
+			await writeOverrideConfig(dir, 8001);
+			const cmd = readDevcontainer().postStartCommand as string;
+			expect(cmd.indexOf('--install-extension')).toBeLessThan(cmd.indexOf('nohup code-server'));
+			// Foreground on purpose — no detach, so `up` waits and the first window has the extension.
+			expect(cmd).not.toContain('</dev/null &');
+			// The ls-guard still skips the download when the extension survived a rebuild.
+			expect(
+				cmd.indexOf('ls -d ~/.local/share/code-server/extensions/anthropic.claude-code-')
+			).toBeLessThan(cmd.indexOf('--install-extension'));
+		} finally {
+			setOption('advanced_blocking_ext_install', '0');
+		}
 	});
 
 	test('injects the provided default image and reports it when the folder has no config', async () => {
@@ -517,6 +535,20 @@ describe('devcontainerUp args and env', () => {
 			process.env.DOCKER_BUILDKIT = '0';
 			expect(devcontainerUpEnv().DOCKER_BUILDKIT).toBe('0');
 		} finally {
+			if (prev === undefined) delete process.env.DOCKER_BUILDKIT;
+			else process.env.DOCKER_BUILDKIT = prev;
+		}
+	});
+
+	test('the no-buildkit escape hatch drops both forced env defaults', () => {
+		const prev = process.env.DOCKER_BUILDKIT;
+		setOption('advanced_no_buildkit', '1');
+		try {
+			delete process.env.DOCKER_BUILDKIT;
+			expect(devcontainerUpEnv().DOCKER_BUILDKIT).toBeUndefined();
+			expect(devcontainerUpEnv().COMPOSE_DOCKER_CLI_BUILD).toBeUndefined();
+		} finally {
+			setOption('advanced_no_buildkit', '0');
 			if (prev === undefined) delete process.env.DOCKER_BUILDKIT;
 			else process.env.DOCKER_BUILDKIT = prev;
 		}

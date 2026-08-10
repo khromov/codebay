@@ -14,7 +14,7 @@ import {
 	dockerEnv
 } from './config.server.ts';
 import { spawnCapture } from './spawn.server.ts';
-import type { InstanceMode } from './db.server.ts';
+import { getOption, type InstanceMode } from './db.server.ts';
 import type { PortForward } from '../types.ts';
 
 const CODE_SERVER_FEATURE = 'ghcr.io/coder/devcontainer-features/code-server:1';
@@ -167,16 +167,28 @@ const CODE_SERVER_INSTALL_EXT =
 	`code-server --install-extension ${CLAUDE_CODE_EXTENSION_ID} ) ` +
 	`>/tmp/code-server-ext.log 2>&1 </dev/null &`;
 
-// The extension installs in the background after launch, so the first window may need a reload to
-// activate it; the claude-code-ide-extension injection waits out this install as the fallback.
-const CODE_SERVER_LAUNCH =
-	`bash -c "${CODE_SERVER_APPLY_SETTINGS} ` +
-	// The bare default image may not export SHELL, which the Terminal task needs.
-	`export SHELL=\\"\${SHELL:-/bin/bash}\\"; ` +
-	`pgrep -f 'code-server.*${CODE_SERVER_PORT}' >/dev/null 2>&1 || ` +
-	`nohup code-server --bind-addr 0.0.0.0:${CODE_SERVER_PORT} --auth none ` +
-	`--disable-workspace-trust \\"$PWD\\" >/tmp/code-server.log 2>&1 & ` +
-	`${CODE_SERVER_INSTALL_EXT}"`;
+// Foreground variant for the advanced escape hatch: slower boot, but the extension is guaranteed
+// active on the very first window.
+const CODE_SERVER_INSTALL_EXT_BLOCKING =
+	`( ls -d ~/.local/share/code-server/extensions/${CLAUDE_CODE_EXTENSION_ID}-* >/dev/null 2>&1 || ` +
+	`code-server --install-extension ${CLAUDE_CODE_EXTENSION_ID} ) ` +
+	`>/tmp/code-server-ext.log 2>&1; `;
+
+// By default the extension installs in the background after launch (the first window may need a
+// reload to activate it; the claude-code-ide-extension injection waits out this install as the fallback).
+function codeServerLaunch(blockingExtInstall: boolean): string {
+	return (
+		`bash -c "${CODE_SERVER_APPLY_SETTINGS} ` +
+		(blockingExtInstall ? CODE_SERVER_INSTALL_EXT_BLOCKING : '') +
+		// The bare default image may not export SHELL, which the Terminal task needs.
+		`export SHELL=\\"\${SHELL:-/bin/bash}\\"; ` +
+		`pgrep -f 'code-server.*${CODE_SERVER_PORT}' >/dev/null 2>&1 || ` +
+		`nohup code-server --bind-addr 0.0.0.0:${CODE_SERVER_PORT} --auth none ` +
+		`--disable-workspace-trust \\"$PWD\\" >/tmp/code-server.log 2>&1 &` +
+		(blockingExtInstall ? '' : ` ${CODE_SERVER_INSTALL_EXT}`) +
+		`"`
+	);
+}
 
 /** Staged next to the config; ttyd runs it as its command so the nested quoting stays in a real file. */
 const TTYD_LAUNCH_SCRIPT_FILE = 'codebay-terminal.sh';
@@ -444,7 +456,9 @@ export async function writeOverrideConfig(
 	runArgs.add(HOST_GATEWAY_ARG);
 	config.runArgs = [...runArgs];
 
-	const launch = isTerminal ? TTYD_LAUNCH : CODE_SERVER_LAUNCH;
+	const launch = isTerminal
+		? TTYD_LAUNCH
+		: codeServerLaunch(getOption('advanced_blocking_ext_install') === '1');
 	const existing = config.postStartCommand;
 	config.postStartCommand =
 		typeof existing === 'string' && existing.trim() ? `${existing} && ${launch}` : launch;
@@ -629,6 +643,8 @@ export function devcontainerUpArgs(workspaceDir: string, opts: { noCache?: boole
 /** Defaults only — the spread lets an explicit user env win. BuildKit is standard on modern
  * daemons; forcing it here just keeps feature-layer caching on older ones. */
 export function devcontainerUpEnv(): Record<string, string | undefined> {
+	// Escape hatch for daemons where forcing BuildKit breaks builds (old builders, classic compose).
+	if (getOption('advanced_no_buildkit') === '1') return dockerEnv();
 	return { DOCKER_BUILDKIT: '1', COMPOSE_DOCKER_CLI_BUILD: '1', ...dockerEnv() };
 }
 

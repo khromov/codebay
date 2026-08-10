@@ -20,6 +20,10 @@ import {
 } from './container-injections/claude-code-custom.ts';
 import { hostEnvVarPresence, parseHostEnvVarNames } from './container-injections/host-env-vars.ts';
 import { gitIdentityEnabled } from './container-injections/git-identity.ts';
+import {
+	LATEST_CHECKED_AT_KEY,
+	LATEST_VERSION_KEY
+} from './container-injections/claude-code-update.ts';
 import { browse } from './lib/picker.server.ts';
 import { pickNamePrompt } from './avatars/name-prompts.ts';
 import { avatars, findAvatar } from './avatars/index.ts';
@@ -227,6 +231,9 @@ export const routes: Record<string, MochiRouteValue> = {
 				hostEnvVarsEnabled: getOption('host_env_vars_enabled') === '1',
 				hostEnvVarNames,
 				hostEnvVarPresence: hostEnvVarPresence(hostEnvVarNames),
+				advancedSerialInjections: getOption('advanced_serial_injections') === '1',
+				advancedNoBuildkit: getOption('advanced_no_buildkit') === '1',
+				advancedBlockingExtInstall: getOption('advanced_blocking_ext_install') === '1',
 				version: APP_VERSION
 			};
 		},
@@ -387,6 +394,30 @@ export const routes: Record<string, MochiRouteValue> = {
 			clearBuildCache: async () => {
 				const { spaceReclaimed } = await pruneBuildCache();
 				return success({ spaceReclaimed: spaceReclaimed ?? 0 });
+			},
+
+			serialInjectionsToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('advanced_serial_injections', enabled ? '1' : '0');
+				return success({ enabled });
+			},
+
+			noBuildkitToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('advanced_no_buildkit', enabled ? '1' : '0');
+				return success({ enabled });
+			},
+
+			blockingExtInstallToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('advanced_blocking_ext_install', enabled ? '1' : '0');
+				return success({ enabled });
+			},
+
+			clearVersionCache: () => {
+				setOption(LATEST_VERSION_KEY, '');
+				setOption(LATEST_CHECKED_AT_KEY, '');
+				return success({});
 			},
 
 			rebuildAllNoCache: () => success({ count: rebuildRunningInstancesNoCache() }),
