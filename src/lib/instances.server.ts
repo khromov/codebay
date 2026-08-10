@@ -41,17 +41,25 @@ import {
 	devcontainerCliAvailable,
 	devcontainerUp,
 	INJECTIONS_DONE_FILE,
+	launchCommandFor,
 	readDeclaredContainerPorts,
+	TERMINAL_LAUNCHED_MARKER,
 	writeOverrideConfig
 } from './devcontainer.server.ts';
 import { writeContainerFile } from './container-files.server.ts';
+import { execInContainer } from './exec.server.ts';
 import { clearAttention, getAttention } from './bridge.server.ts';
 import { proxyPathFor } from './proxy.server.ts';
 import { resolveInjectionStages } from './injections.server.ts';
 import { cloneRepo, readGitBranch } from './git.server.ts';
 import { isRepoUrl, parseRepoUrl } from './repo-url.ts';
 import { getClaudePermissionMode } from '../container-injections/claude-permission-mode.ts';
-import { currentHealthSnapshots, stopHealthMonitor, syncHealthMonitors } from './health.server.ts';
+import {
+	currentHealthSnapshots,
+	stopHealthMonitor,
+	surfaceAccessible,
+	syncHealthMonitors
+} from './health.server.ts';
 import { pickFreePort } from './ports.server.ts';
 import type { ServerWebSocket } from 'bun';
 import {
@@ -322,6 +330,9 @@ async function seedDeclaredPorts(row: InstanceRow): Promise<void> {
 	}
 }
 
+const surfaceLabel = (mode: InstanceMode) =>
+	mode === 'terminal' ? 'ttyd terminal' : 'code-server';
+
 /** Never re-copies the workspace, so in-container edits survive a rebuild. */
 async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Promise<void> {
 	try {
@@ -329,8 +340,7 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			container_port: f.container_port,
 			host_port: f.host_port
 		}));
-		const surface = row.mode === 'terminal' ? 'ttyd terminal' : 'code-server';
-		appendLog(row.id, `Injecting ${surface} (host port ${row.host_port})\n`);
+		appendLog(row.id, `Injecting ${surfaceLabel(row.mode)} (host port ${row.host_port})\n`);
 		const defaultImage = getOption('default_image') ?? DEFAULT_IMAGE;
 		const { imageSource } = await writeOverrideConfig(
 			row.workspace_path,
@@ -402,6 +412,11 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		await writeContainerFile(target, { dir: '$HOME', name: INJECTIONS_DONE_FILE }, 'done\n').catch(
 			() => undefined
 		);
+
+		// postStartCommand ran before the injections above, and its launcher bails when the binary
+		// is missing — so a container whose build-time ttyd install failed got it too late to be
+		// started. No-ops (one accessibility probe) whenever postStart already brought the port up.
+		await relaunchSurface(row);
 
 		appendLog(row.id, `\n✓ Instance running — open it via the proxy at ${proxyPathFor(row.id)}\n`);
 		triggerReconcile();
@@ -601,11 +616,50 @@ export function rebuildRunningInstancesNoCache(): number {
 	return running.length;
 }
 
+/** Single-quote a path for the shell, so a workspace folder with spaces survives the `cd`. */
+function quote(value: string): string {
+	return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/**
+ * `postStartCommand` is a devcontainer-CLI lifecycle hook, not a container entrypoint, so a plain
+ * `docker start` never re-runs it and the ttyd daemon it backgrounded is gone. IDE mode only
+ * survives because the code-server feature ships an entrypoint of its own; ttyd has no equivalent.
+ * Both launchers are pgrep-guarded, so re-running one against a healthy container is a no-op.
+ */
+export async function relaunchSurface(row: InstanceRow): Promise<void> {
+	if (!row.container_id) return;
+
+	const steps: string[] = [];
+	// The folderOpen task's run-once gate is meant to span one container run, but the marker file
+	// outlives it — left in place, a restarted IDE container never reopens the Claude terminal.
+	if (row.mode !== 'terminal') steps.push(`rm -f "$HOME/${TERMINAL_LAUNCHED_MARKER}"`);
+	// code-server comes back on its own (its feature ships a container entrypoint), so only launch
+	// a surface that is actually down rather than racing the entrypoint for the port.
+	if (!(await surfaceAccessible(row.host_port))) steps.push(launchCommandFor(row.mode));
+	if (!steps.length) return;
+
+	// Both launchers resolve paths off `$PWD`, which under postStartCommand is the workspace
+	// folder; an exec only inherits the image's WorkingDir, so re-establish it explicitly.
+	const cd = row.remote_workspace_folder
+		? `cd ${quote(row.remote_workspace_folder)} || exit 1; `
+		: '';
+	const res = await execInContainer(
+		{ containerId: row.container_id, remoteUser: row.remote_user },
+		{ script: cd + steps.join('; ') }
+	);
+	if (!res.ok) {
+		appendLog(row.id, `⚠ Could not relaunch ${surfaceLabel(row.mode)}: ${res.error}\n`);
+	}
+}
+
 export async function startInstance(id: string): Promise<InstanceRow> {
 	const row = getInstance(id);
 	if (!row) throw new Error('Instance not found');
 	if (!row.container_id) throw new Error('Instance has no container yet');
 	const ok = await startContainer(row.container_id);
+	// Awaited so the first health tick after the reconcile below already sees a listening port.
+	if (ok) await relaunchSurface(row);
 	updateInstance(id, {
 		status: ok ? 'running' : 'error',
 		error: ok ? null : 'Failed to start container'

@@ -303,7 +303,11 @@
 					     iframe's own `load` is bounded and gets a plain loader. The terminal has no
 					     `load` event, so once it's mountable its own "connecting…" covers the gap. -->
 					{#if !mountable(inst.id)}
-						<IdeLoader stalledAfterMs={STALLED_AFTER_MS} onoverride={() => forced.add(inst.id)} />
+						<IdeLoader
+							mode={inst.mode}
+							stalledAfterMs={STALLED_AFTER_MS}
+							onoverride={() => forced.add(inst.id)}
+						/>
 					{:else if inst.mode !== 'terminal' && !loadedFrames.has(inst.id)}
 						<IdeLoader />
 					{/if}

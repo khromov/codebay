@@ -1,6 +1,6 @@
 import { type InstanceRow } from './db.server.ts';
 import { isRunning, publishedContainerPorts } from './docker.server.ts';
-import { broadcastHealth } from './instances.server.ts';
+import { broadcastHealth, relaunchSurface } from './instances.server.ts';
 import { resolveInjections } from './injections.server.ts';
 import type { InstanceHealth } from '../types.ts';
 
@@ -19,7 +19,8 @@ interface Monitor {
 const globalForHealth = globalThis as unknown as { __codebayHealth?: Map<string, Monitor> };
 const monitors: Map<string, Monitor> = (globalForHealth.__codebayHealth ??= new Map());
 
-async function codeServerAccessible(port: number): Promise<boolean> {
+/** Named for what it measures — the served surface is ttyd in terminal mode, code-server in IDE. */
+export async function surfaceAccessible(port: number): Promise<boolean> {
 	try {
 		// Any HTTP response at all (200/302/401/…) means the server is listening.
 		await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(2000) });
@@ -42,7 +43,7 @@ async function check(row: InstanceRow): Promise<InstanceHealth> {
 	// Probes as the recorded remote user, so `$HOME` resolves to the one the injection wrote to.
 	const target = { containerId: row.container_id, remoteUser: row.remote_user, instance: row };
 	const [accessible, openPorts, injectionResults] = await Promise.all([
-		codeServerAccessible(row.host_port),
+		surfaceAccessible(row.host_port),
 		publishedContainerPorts(row.container_id),
 		Promise.all(
 			resolveInjections(row.mode)
@@ -101,7 +102,21 @@ function startHealthMonitor(row: InstanceRow): Monitor {
 		everAccessible: false
 	};
 	monitors.set(row.id, mon);
-	void tick(row, mon); // seed the first snapshot rather than making the UI wait a full interval
+	// Seed a snapshot rather than making the UI wait a full interval (the tick self-reschedules
+	// the fast/slow probe chain from here), then use the seed to decide whether to relaunch.
+	void tick(row, mon).then(async () => {
+		if (monitors.get(row.id) !== mon) return;
+		const seeded = mon.snapshot;
+		if (!seeded?.containerRunning || seeded.codeServerAccessible) return;
+		// A live container with a dead port means postStartCommand never re-ran — it only fires
+		// under `devcontainer up`. Covers starts codebay didn't perform (a daemon restart, a bare
+		// `docker start`); once per monitor, so a genuinely wedged container isn't exec'd in a loop.
+		await relaunchSurface(row).catch(() => undefined);
+		if (monitors.get(row.id) !== mon) return;
+		// Drop the seed tick's already-scheduled probe and re-probe now, so a single chain survives.
+		clearTimeout(mon.timer);
+		void tick(row, mon);
+	});
 	return mon;
 }
 

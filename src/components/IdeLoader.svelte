@@ -1,14 +1,23 @@
 <script lang="ts">
 	import Button from './Button.svelte';
+	import type { InstanceMode } from '../types.ts';
 
 	// A fixed flip count per tick, rather than a per-bit probability, is what keeps
 	// the cadence visually even; `speed` scales only the interval, never the churn.
 	let {
 		speed = 1,
+		mode = 'ide',
 		// Omit both unless the wait could in principle never end.
 		stalledAfterMs,
 		onoverride
-	}: { speed?: number; stalledAfterMs?: number; onoverride?: () => void } = $props();
+	}: {
+		speed?: number;
+		mode?: InstanceMode;
+		stalledAfterMs?: number;
+		onoverride?: () => void;
+	} = $props();
+
+	const isTerminal = $derived(mode === 'terminal');
 
 	let stalled = $state(false);
 	$effect(() => {
@@ -52,11 +61,14 @@
 		{/each}
 	</div>
 	<div class="label">
-		Loading editor<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
+		Loading {isTerminal ? 'terminal' : 'editor'}<span class="dot">.</span><span class="dot">.</span
+		><span class="dot">.</span>
 	</div>
 	{#if stalled}
 		<div class="stalled">
-			<p>Waiting for code-server to answer inside the container.</p>
+			<p>
+				Waiting for {isTerminal ? 'the terminal' : 'code-server'} to answer inside the container.
+			</p>
 			{#if onoverride}
 				<Button size="sm" onclick={onoverride}>Open anyway</Button>
 			{/if}

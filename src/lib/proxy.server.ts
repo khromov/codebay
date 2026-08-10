@@ -74,10 +74,10 @@ async function proxyHttp(event: MochiApiEvent, port: number, rest: string): Prom
 			duplex: 'half'
 		});
 	} catch (err) {
-		// Usually just code-server not having bound its port yet; letting it escape would
+		// Usually just the served surface not having bound its port yet; letting it escape would
 		// render a 500 stack trace inside the IDE iframe.
 		console.warn(`[proxy] upstream 127.0.0.1:${port}${rest} unreachable:`, (err as Error).message);
-		return new Response('code-server is not accepting connections yet', {
+		return new Response('The instance is not accepting connections yet', {
 			status: 503,
 			headers: { 'retry-after': '1', 'cache-control': 'no-store' }
 		});
