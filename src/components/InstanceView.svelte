@@ -22,26 +22,24 @@
 	let logEl = $state<HTMLDivElement | null>(null);
 	let following = $state(true);
 
-	// Pin to the newest output whenever logs grow — but only while following.
-	// tick() lets the <pre> text node grow before we scroll, so we reach the true bottom.
-	$effect(() => {
-		if (!following || logs.length === 0) return; // reading logs.length tracks appended chunks
-		tick().then(() => {
-			if (following) logEl?.scrollTo(0, logEl.scrollHeight);
-		});
-	});
-
-	// A user scrolling up pauses following; programmatic scroll-to-bottom keeps the
-	// gap ~0, so it never trips this — only re-clicking "Follow log" resumes.
-	function onLogScroll() {
-		if (!logEl) return;
-		const gap = logEl.scrollHeight - logEl.clientHeight - logEl.scrollTop;
-		if (gap > 40) following = false;
+	// tick() lets the <pre> text node grow before we measure, so we reach the true bottom.
+	async function scrollToBottom() {
+		await tick();
+		logEl?.scrollTo(0, logEl.scrollHeight);
 	}
 
+	// Pin to the newest output whenever logs grow — but only while following.
+	$effect(() => {
+		if (!following || logs.length === 0) return; // reading logs.length tracks appended chunks
+		scrollToBottom();
+	});
+
+	// Following is deliberately sticky: only this button changes it. Inferring it from
+	// scroll events misfired constantly, since streaming chunks and reflow above the log
+	// both move scrollTop without the user touching anything.
 	function toggleFollow() {
 		following = !following;
-		if (following) logEl?.scrollTo(0, logEl.scrollHeight);
+		if (following) scrollToBottom();
 	}
 
 	$effect(() => installPopupBackTrap());
@@ -255,7 +253,14 @@
 		<div class="log-bar panel-bar">
 			<span>Boot log</span>
 			<div class="log-actions">
-				<button class="copy" class:active={following} onclick={toggleFollow}>
+				<button
+					class="copy"
+					class:active={following}
+					aria-pressed={following}
+					title={following ? 'Following — click to pause' : 'Paused — click to follow new output'}
+					onclick={toggleFollow}
+				>
+					{#if following}<span class="dot"></span>{/if}
 					{following ? 'Following' : 'Follow log'}
 				</button>
 				<button class="copy" onclick={copyLogs} disabled={!logs}>
@@ -263,7 +268,7 @@
 				</button>
 			</div>
 		</div>
-		<div class="logs" bind:this={logEl} onscroll={onLogScroll}>
+		<div class="logs" bind:this={logEl}>
 			<pre>{logs || 'Waiting for output…'}<span class="caret"></span></pre>
 		</div>
 		{#if instance?.status === 'error' && instance.error}
@@ -535,6 +540,9 @@
 		align-items: center;
 	}
 	.copy {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
 		font-family: var(--font-mono);
 		font-weight: 600;
 		font-size: 10px;
@@ -554,6 +562,14 @@
 		background: transparent;
 		color: var(--bg);
 	}
+	/* The dot, not the inverted fill, is what separates "following" from a mere hover. */
+	.dot {
+		flex: none;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--attn-done);
+	}
 	.copy:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
@@ -568,6 +584,8 @@
 		height: calc(100vh - 320px);
 		min-height: 360px;
 		overflow: auto;
+		/* Scroll anchoring would shift scrollTop as the <pre> grows; a paused log must stay put. */
+		overflow-anchor: none;
 	}
 	.logs pre {
 		margin: 0;
