@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { claudePermissionFlags, isInstanceFilter, normalizePermissionMode } from './types.ts';
+import {
+	claudePermissionFlags,
+	isInstanceFilter,
+	normalizeEffortLevel,
+	normalizePermissionMode
+} from './types.ts';
 
 describe('isInstanceFilter', () => {
 	test('accepts the three valid tokens', () => {
@@ -25,6 +30,20 @@ describe('normalizePermissionMode', () => {
 	test('falls back to the historical bypass behaviour', () => {
 		for (const v of ['', 'PLAN', 'bypassPermissions', null, undefined, 0, {}]) {
 			expect(normalizePermissionMode(v)).toBe('default');
+		}
+	});
+});
+
+describe('normalizeEffortLevel', () => {
+	test('keeps the five supported levels', () => {
+		for (const level of ['low', 'medium', 'high', 'xhigh', 'max'] as const) {
+			expect(normalizeEffortLevel(level)).toBe(level);
+		}
+	});
+
+	test('falls back to high for anything unrecognised', () => {
+		for (const v of ['', 'HIGH', 'ultra', null, undefined, 0, {}]) {
+			expect(normalizeEffortLevel(v)).toBe('high');
 		}
 	});
 });
