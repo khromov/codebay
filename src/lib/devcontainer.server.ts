@@ -233,7 +233,11 @@ function codeServerLaunch(blockingExtInstall: boolean): string {
 		(blockingExtInstall ? CODE_SERVER_INSTALL_EXT_BLOCKING : '') +
 		// The bare default image may not export SHELL, which the Terminal task needs.
 		`export SHELL=\\"\${SHELL:-/bin/bash}\\"; ` +
-		`pgrep -f 'code-server.*${CODE_SERVER_PORT}' >/dev/null 2>&1 || ` +
+		// Probes the port rather than the process list: every `pgrep -f` pattern that matches a
+		// code-server daemon also matches this very shell (its own argv carries the nohup line
+		// below), so a cmdline guard would skip the launch every time. Bracketing can't escape it
+		// either — the payload text itself matches.
+		`(exec 3<>/dev/tcp/127.0.0.1/${CODE_SERVER_PORT}) 2>/dev/null || ` +
 		`nohup code-server --bind-addr 0.0.0.0:${CODE_SERVER_PORT} --auth none ` +
 		`--disable-workspace-trust \\"$PWD\\" >/tmp/code-server.log 2>&1 &` +
 		(blockingExtInstall ? '' : ` ${CODE_SERVER_INSTALL_EXT}`) +
