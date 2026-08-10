@@ -55,6 +55,10 @@ import { cloneRepo, readGitBranch } from './git.server.ts';
 import { isRepoUrl, parseRepoUrl } from './repo-url.ts';
 import { getClaudePermissionMode } from '../container-injections/claude-permission-mode.ts';
 import {
+	customEnvVarsConfig,
+	customEnvVarValues
+} from '../container-injections/custom-env-vars.ts';
+import {
 	currentHealthSnapshots,
 	stopHealthMonitor,
 	surfaceAccessible,
@@ -96,7 +100,36 @@ function live(id: string): LiveState {
 	return state;
 }
 
+/**
+ * Cached so the redaction on every log chunk doesn't re-read the DB. Rebuilt lazily after the
+ * settings action invalidates it; values shorter than 4 chars are skipped so a trivially short
+ * secret can't blank out unrelated log text, and longest-first avoids a short value masking a
+ * substring of a longer one.
+ */
+let secretValuesCache: string[] | null = null;
+
+function getSecretValues(): string[] {
+	if (secretValuesCache === null) {
+		secretValuesCache = customEnvVarValues()
+			.filter((v) => v.length >= 4)
+			.sort((a, b) => b.length - a.length);
+	}
+	return secretValuesCache;
+}
+
+/** Call after the custom-env-vars setting changes so newly-added values redact from the next boot. */
+export function invalidateSecretValues(): void {
+	secretValuesCache = null;
+}
+
+/** Exported for tests; the boot flow reaches it only through `appendLog`. */
+export function redactSecrets(text: string): string {
+	for (const value of getSecretValues()) text = text.split(value).join('••••');
+	return text;
+}
+
 function appendLog(id: string, chunk: string): void {
+	chunk = redactSecrets(chunk);
 	const state = live(id);
 	state.logs.push(chunk);
 	if (state.logs.length > 2000) state.logs.splice(0, state.logs.length - 2000);
@@ -371,7 +404,8 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			forwards,
 			defaultImage,
 			row.mode,
-			getClaudePermissionMode()
+			getClaudePermissionMode(),
+			customEnvVarsConfig()?.vars ?? []
 		);
 		updateInstance(row.id, { image_source: imageSource });
 

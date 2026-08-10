@@ -11,6 +11,7 @@ import { gitIdentity, gitIdentityEnabled, readGitIdentity } from './git-identity
 import { manualModelConfig } from './claude-code-models.ts';
 import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
 import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
+import { customEnvVarsConfig, customEnvVarValues, parseCustomEnvVars } from './custom-env-vars.ts';
 import { expandTilde, extractScriptPath } from './claude-statusline.ts';
 import { hostClaudeModel } from './claude-model.ts';
 import { NO_COAUTHOR_SETTINGS } from './claude-no-coauthor.ts';
@@ -117,6 +118,14 @@ describe('injection registry', () => {
 		expect(hostEnvVars!.auth).toBeUndefined();
 	});
 
+	test('custom-env-vars is registered with a health check and no auth chip', () => {
+		const custom = injections.find((i) => i.id === 'custom-env-vars');
+		expect(custom).toBeDefined();
+		expect(typeof custom!.check).toBe('function');
+		// Values come from Settings, not a discovered host credential, so it draws no auth chip.
+		expect(custom!.auth).toBeUndefined();
+	});
+
 	test('tmux is registered with a health check', () => {
 		const t = injections.find((i) => i.id === 'tmux');
 		expect(t).toBeDefined();
@@ -179,7 +188,9 @@ describe('resolveInjectionStages — clobber safety', () => {
 		'claude-trust': ['claude-json', 'settings-json'],
 		'claude-aliases': ['rc'],
 		'claude-no-coauthor': ['settings-json'],
-		'host-env-vars': ['host-env-file', 'rc']
+		'host-env-vars': ['host-env-file', 'rc'],
+		// Writes nothing to the container — values ride containerEnv, so it can share any stage.
+		'custom-env-vars': []
 	};
 
 	function stageOf(stages: { id: string }[][]): Map<string, number> {
@@ -1008,6 +1019,73 @@ describe('hostEnvVarsConfig', () => {
 		const config = hostEnvVarsConfig()!;
 		expect(config.resolved).toEqual([{ name: TEST_VAR, value: 'hello' }]);
 		expect(config.missing).toEqual([missingVar]);
+	});
+});
+
+describe('parseCustomEnvVars', () => {
+	test('returns [] for null, malformed JSON, and non-arrays', () => {
+		expect(parseCustomEnvVars(null)).toEqual([]);
+		expect(parseCustomEnvVars('not json')).toEqual([]);
+		expect(parseCustomEnvVars(JSON.stringify({ not: 'an array' }))).toEqual([]);
+	});
+
+	test('keeps well-formed entries and drops entries with a bad or missing name/value', () => {
+		expect(
+			parseCustomEnvVars(
+				JSON.stringify([
+					{ name: 'FOO', value: 'bar' },
+					{ name: '1BAD', value: 'x' }, // name must not start with a digit
+					{ name: 'NO_VALUE' }, // missing value
+					{ value: 'no-name' }, // missing name
+					{ name: 'BLANK', value: '' } // empty value is kept by the parse; config filters it
+				])
+			)
+		).toEqual([
+			{ name: 'FOO', value: 'bar' },
+			{ name: 'BLANK', value: '' }
+		]);
+	});
+});
+
+describe('customEnvVarsConfig / customEnvVarValues', () => {
+	beforeEach(() => {
+		setOption('custom_env_vars_enabled', '0');
+		setOption('custom_env_vars', '[]');
+	});
+	afterEach(() => {
+		setOption('custom_env_vars_enabled', '0');
+		setOption('custom_env_vars', '[]');
+	});
+
+	test('config is null when disabled, even with vars stored', () => {
+		setOption('custom_env_vars', JSON.stringify([{ name: 'FOO', value: 'bar' }]));
+		expect(customEnvVarsConfig()).toBeNull();
+	});
+
+	test('config is null when enabled but empty or all values blank', () => {
+		setOption('custom_env_vars_enabled', '1');
+		expect(customEnvVarsConfig()).toBeNull();
+		setOption('custom_env_vars', JSON.stringify([{ name: 'FOO', value: '' }]));
+		expect(customEnvVarsConfig()).toBeNull();
+	});
+
+	test('config returns only the non-empty vars when enabled', () => {
+		setOption('custom_env_vars_enabled', '1');
+		setOption(
+			'custom_env_vars',
+			JSON.stringify([
+				{ name: 'FOO', value: 'bar' },
+				{ name: 'EMPTY', value: '' }
+			])
+		);
+		expect(customEnvVarsConfig()).toEqual({ vars: [{ name: 'FOO', value: 'bar' }] });
+	});
+
+	test('customEnvVarValues yields values only while enabled', () => {
+		setOption('custom_env_vars', JSON.stringify([{ name: 'FOO', value: 'bar' }]));
+		expect(customEnvVarValues()).toEqual([]);
+		setOption('custom_env_vars_enabled', '1');
+		expect(customEnvVarValues()).toEqual(['bar']);
 	});
 });
 

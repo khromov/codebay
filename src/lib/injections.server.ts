@@ -20,6 +20,7 @@ import { claudeTrust } from '../container-injections/claude-trust.ts';
 import { claudeAliases } from '../container-injections/claude-aliases.ts';
 import { claudeNoCoauthor } from '../container-injections/claude-no-coauthor.ts';
 import { hostEnvVars } from '../container-injections/host-env-vars.ts';
+import { customEnvVars } from '../container-injections/custom-env-vars.ts';
 
 /** Extends `ExecTarget` so exec-user semantics have a single source of truth. */
 export interface ContainerTarget extends ExecTarget {
@@ -65,7 +66,8 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 		[githubCredentials, claudeStatusline, claudePermissionMode],
 		[claudeModel, claudeAliases],
 		// claude-trust edits ~/.claude.json, which the stage-1 Claude slot also writes.
-		[claudeTrust, hostEnvVars],
+		// custom-env-vars writes nothing (values ride containerEnv) — it only verifies + health-checks.
+		[claudeTrust, hostEnvVars, customEnvVars],
 		[claudeNoCoauthor]
 	];
 }

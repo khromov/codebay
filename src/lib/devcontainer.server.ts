@@ -414,6 +414,7 @@ type DevcontainerConfig = {
 	forwardPorts?: (number | string)[];
 	postStartCommand?: unknown;
 	runArgs?: string[];
+	containerEnv?: Record<string, string>;
 	[key: string]: unknown;
 };
 
@@ -468,7 +469,8 @@ export async function writeOverrideConfig(
 	forwards: PortForward[] = [],
 	defaultImage: string = DEFAULT_IMAGE,
 	mode: InstanceMode = 'ide',
-	permissionMode: ClaudePermissionMode = 'default'
+	permissionMode: ClaudePermissionMode = 'default',
+	envVars: { name: string; value: string }[] = []
 ): Promise<{ imageSource: string }> {
 	const isTerminal = mode === 'terminal';
 	const target = configPath(workspaceDir);
@@ -536,6 +538,15 @@ export async function writeOverrideConfig(
 	const existing = config.postStartCommand;
 	config.postStartCommand =
 		typeof existing === 'string' && existing.trim() ? `${existing} && ${launch}` : launch;
+
+	// Baked onto the container at creation, so every process inherits it (broader than remoteEnv).
+	// The user's configured names win; a project's own containerEnv keys are otherwise preserved.
+	if (envVars.length) {
+		config.containerEnv = {
+			...(config.containerEnv ?? {}),
+			...Object.fromEntries(envVars.map((v) => [v.name, v.value]))
+		};
+	}
 
 	await mkdir(join(workspaceDir, '.devcontainer'), { recursive: true }).catch(() => {});
 	await writeFile(target, JSON.stringify(config, null, 2) + '\n', 'utf8');
