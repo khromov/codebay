@@ -60,7 +60,7 @@ import {
 	surfaceAccessible,
 	syncHealthMonitors
 } from './health.server.ts';
-import { pickFreePort } from './ports.server.ts';
+import { isHostPortBindable, pickBindablePort } from './ports.server.ts';
 import type { ServerWebSocket } from 'bun';
 import {
 	isInstanceFilter,
@@ -264,7 +264,10 @@ async function allocatePort(): Promise<number> {
 	for (const [port, reservedAt] of reservedPorts) {
 		if (dbPorts.has(port) || now - reservedAt > RESERVATION_TTL_MS) reservedPorts.delete(port);
 	}
-	const port = pickFreePort([dbPorts, dockerPorts, new Set(reservedPorts.keys())]);
+	const port = await pickBindablePort(
+		[dbPorts, dockerPorts, new Set(reservedPorts.keys())],
+		isHostPortBindable
+	);
 	reservedPorts.set(port, now);
 	return port;
 }
@@ -333,9 +336,29 @@ async function seedDeclaredPorts(row: InstanceRow): Promise<void> {
 const surfaceLabel = (mode: InstanceMode) =>
 	mode === 'terminal' ? 'ttyd terminal' : 'code-server';
 
+/**
+ * Moves an instance off a host port that something outside Docker has taken over, which otherwise
+ * strands it forever — the container publishes fine but nothing reaches it from the host. Requires
+ * the port to be *both* unbindable and dead, because a rebuild doesn't stop the old container
+ * first: a healthy instance's port is always unbindable here, and its surface still answers.
+ */
+async function rescueHijackedPort(row: InstanceRow): Promise<void> {
+	if (await isHostPortBindable(row.host_port)) return;
+	if (await surfaceAccessible(row.host_port)) return;
+	const stale = row.host_port;
+	const port = await allocatePort();
+	updateInstance(row.id, { host_port: port });
+	row.host_port = port;
+	appendLog(
+		row.id,
+		`⚠ Host port ${stale} is held by another process and isn't reachable — moving to ${port}\n`
+	);
+}
+
 /** Never re-copies the workspace, so in-container edits survive a rebuild. */
 async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Promise<void> {
 	try {
+		await rescueHijackedPort(row);
 		const forwards = listForwards(row.id).map((f) => ({
 			container_port: f.container_port,
 			host_port: f.host_port
@@ -625,7 +648,8 @@ function quote(value: string): string {
  * `postStartCommand` is a devcontainer-CLI lifecycle hook, not a container entrypoint, so a plain
  * `docker start` never re-runs it and the ttyd daemon it backgrounded is gone. IDE mode only
  * survives because the code-server feature ships an entrypoint of its own; ttyd has no equivalent.
- * Both launchers are pgrep-guarded, so re-running one against a healthy container is a no-op.
+ * Both launchers are guarded (ttyd by process name, code-server by its port), so re-running one
+ * against a healthy container is a no-op.
  */
 export async function relaunchSurface(row: InstanceRow): Promise<void> {
 	if (!row.container_id) return;

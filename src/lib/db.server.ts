@@ -143,7 +143,9 @@ const UPDATABLE_COLUMNS = [
 	'error',
 	'remote_user',
 	'image_source',
-	'terminal_split'
+	'terminal_split',
+	// Reassigned when a rebuild finds the recorded port taken over on the host.
+	'host_port'
 ] as const;
 
 type UpdatableColumn = (typeof UPDATABLE_COLUMNS)[number];

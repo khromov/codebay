@@ -48,6 +48,15 @@ describe('launchCommandFor', () => {
 		expect(postStart()).toContain(launchCommandFor('ide'));
 	});
 
+	test('guards the code-server launch by port, not by a self-matching cmdline pattern', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'ide');
+		// Any `pgrep -f` pattern matching a code-server daemon also matches this launcher's own
+		// argv (it carries the nohup line), so a cmdline guard fires every time and the fallback
+		// launch never runs — leaving no recovery if the feature's entrypoint ever fails.
+		expect(postStart()).toContain('(exec 3<>/dev/tcp/127.0.0.1/8080)');
+		expect(postStart()).not.toContain('pgrep -f');
+	});
+
 	test('the IDE run-once marker has a single definition', async () => {
 		await writeOverrideConfig(dir, 8001, [], undefined, 'ide');
 		const task = readFileSync(join(dir, '.vscode', 'tasks.json'), 'utf8');
