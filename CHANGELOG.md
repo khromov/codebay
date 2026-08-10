@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.1](https://github.com/khromov/codebay/compare/codebay-v0.9.0...codebay-v0.9.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* stop terminal mode installing Node via nvm into project images ([#126](https://github.com/khromov/codebay/issues/126)) ([dc7e749](https://github.com/khromov/codebay/commit/dc7e7498057b2e36c17b96752b6be73174614de0))
+
+
+### Reverts
+
+* drop connect-first WebSocket subprotocol relay (standby) ([#121](https://github.com/khromov/codebay/issues/121)) ([e01b8dd](https://github.com/khromov/codebay/commit/e01b8dd984d037198748c3d6967801651168bd5f))
+
 ## [0.9.0](https://github.com/khromov/codebay/compare/codebay-v0.8.0...codebay-v0.9.0) (2026-08-09)
 
 
