@@ -30,6 +30,8 @@ export interface InstanceRow {
 	remote_user: string | null;
 	/** `'local'` when the folder shipped its own config, else the injected image; null pre-dates this. */
 	image_source: string | null;
+	/** Sprite name chosen collision-free at creation; null pre-dates this and falls back to the id hash. */
+	avatar: string | null;
 	/** Fixed at creation: which editor surface this instance provisions and serves. */
 	mode: InstanceMode;
 	/** Terminal mode only: 1 when the scratch-shell pane was left open, so a reload restores it. */
@@ -64,8 +66,8 @@ export function closeDb(): void {
 export function insertInstance(row: InstanceRow): void {
 	db.query(
 		`INSERT INTO instances
-       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source, mode, terminal_split)
-     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source, $mode, $terminal_split)`
+       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source, avatar, mode, terminal_split)
+     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source, $avatar, $mode, $terminal_split)`
 	).run({
 		$id: row.id,
 		$name: row.name,
@@ -80,6 +82,7 @@ export function insertInstance(row: InstanceRow): void {
 		$bridge_token: row.bridge_token,
 		$remote_user: row.remote_user,
 		$image_source: row.image_source,
+		$avatar: row.avatar,
 		$mode: row.mode,
 		$terminal_split: row.terminal_split
 	});

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { type Instance } from '../types.ts';
+	import { findAvatar } from '../avatars/index.ts';
 	import Settings from '@lucide/svelte/icons/settings';
 	import RotateCw from '@lucide/svelte/icons/rotate-cw';
 	import Terminal from '@lucide/svelte/icons/terminal';
@@ -46,7 +47,12 @@
 				>
 					{#if editingId === inst.id}
 						<div class="tab-label editing">
-							<Avatar id={inst.id} name={inst.name} scale={4} />
+							<Avatar
+								id={inst.id}
+								name={inst.name}
+								art={findAvatar(inst.avatar ?? undefined)}
+								scale={4}
+							/>
 							<!-- svelte-ignore a11y_autofocus -->
 							<input
 								class="tab-name-edit"
@@ -68,7 +74,12 @@
 							ondblclick={() => onstartrename(inst)}
 							title={inst.name}
 						>
-							<Avatar id={inst.id} name={inst.name} scale={4} />
+							<Avatar
+								id={inst.id}
+								name={inst.name}
+								art={findAvatar(inst.avatar ?? undefined)}
+								scale={4}
+							/>
 							<span class="tab-name">{inst.name}</span>
 							{#if inst.mode === 'terminal'}
 								<span class="tab-mode" title="Terminal-only instance"><Terminal size={13} /></span>

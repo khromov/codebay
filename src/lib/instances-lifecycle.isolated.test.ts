@@ -64,6 +64,7 @@ function seed(overrides: Partial<InstanceRow> = {}): InstanceRow {
 		bridge_token: 'tok',
 		remote_user: 'node',
 		image_source: 'local',
+		avatar: null,
 		mode: 'terminal',
 		terminal_split: 0,
 		...overrides

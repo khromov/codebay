@@ -144,6 +144,18 @@ export function pickAvatar(id: string): AvatarArt {
 	return avatars[fnv1a(id) % avatars.length]!;
 }
 
+// Prefer the id's deterministic sprite; if it's taken, probe forward so only colliding instances
+// deviate from what `pickAvatar` would give. Falls back to the hashed pick once the catalog is full.
+export function pickUniqueAvatar(id: string, taken: Iterable<string>): AvatarArt {
+	const used = new Set(taken);
+	const base = fnv1a(id) % avatars.length;
+	for (let k = 0; k < avatars.length; k++) {
+		const art = avatars[(base + k) % avatars.length]!;
+		if (!used.has(art.name)) return art;
+	}
+	return avatars[base]!;
+}
+
 /** Lookup by name, for sprites chosen by hand rather than hashed from an id. */
 export function findAvatar(name: string | undefined): AvatarArt | undefined {
 	return name ? avatars.find((a) => a.name === name) : undefined;

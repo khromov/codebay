@@ -61,6 +61,7 @@ import {
 	syncHealthMonitors
 } from './health.server.ts';
 import { isHostPortBindable, pickBindablePort } from './ports.server.ts';
+import { pickAvatar, pickUniqueAvatar } from '../avatars/index.ts';
 import type { ServerWebSocket } from 'bun';
 import {
 	isInstanceFilter,
@@ -467,6 +468,9 @@ export function getDefaultMode(): InstanceMode {
 	return normalizeMode(getOption('default_mode'));
 }
 
+/** The sprite a row shows today — its persisted choice, or the id hash for rows created before avatars were stored. */
+const effectiveAvatarName = (row: InstanceRow): string => row.avatar ?? pickAvatar(row.id).name;
+
 /** `source` is either a local folder (copied) or a Git URL (cloned); boot runs in the background. */
 export async function createInstance(
 	source: string,
@@ -497,6 +501,8 @@ export async function createInstance(
 		bridge_token: crypto.randomUUID().replace(/-/g, ''),
 		remote_user: null,
 		image_source: null,
+		// Kept synchronous through insertInstance so two concurrent creations can't claim the same free sprite.
+		avatar: pickUniqueAvatar(id, allInstances().map(effectiveAvatarName)).name,
 		mode: opts.mode ?? getDefaultMode(),
 		terminal_split: 0
 	};
