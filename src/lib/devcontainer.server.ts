@@ -145,6 +145,12 @@ const TMUX_SHELL_SESSION = 'codebay-shell';
 export const INJECTIONS_DONE_FILE = '.codebay-injections-done';
 
 /**
+ * IDE mode's folderOpen task touches this to stay run-once across workspace reloads, but it
+ * outlives a container restart — so a relaunch must clear it or the terminal never reopens.
+ */
+export const TERMINAL_LAUNCHED_MARKER = '.codebay-terminal-launched';
+
+/**
  * An auto-launched `claude` that starts mid-injection reads `~/.claude.json` before the trust
  * keys land and clobbers them on its next rewrite, so hold it until the sentinel appears.
  * Bounded so a failed boot (sentinel never written) still yields a usable terminal.
@@ -188,7 +194,9 @@ const terminalTask = (permissionMode: ClaudePermissionMode) => ({
 		// `"$SHELL"` must reach tmux unexpanded; VS Code would substitute a `${…}` form first.
 		`if command -v tmux >/dev/null 2>&1; then exec tmux new-session -A -s ${TMUX_SESSION} '${WAIT_FOR_INJECTIONS}${WAIT_FOR_IDE_BRIDGE}${SOURCE_INJECTED_ENV}claude ${claudePermissionFlags(permissionMode)}; exec "$SHELL" -l'; fi; ` +
 		// Without tmux there's no run-once gate, and folderOpen re-fires on every workspace load.
-		'MARK="$HOME/.codebay-terminal-launched"; [ -e "$MARK" ] && exit 0; touch "$MARK"; ' +
+		'MARK="$HOME/' +
+		TERMINAL_LAUNCHED_MARKER +
+		'"; [ -e "$MARK" ] && exit 0; touch "$MARK"; ' +
 		WAIT_FOR_INJECTIONS +
 		WAIT_FOR_IDE_BRIDGE +
 		SOURCE_INJECTED_ENV +
@@ -265,6 +273,14 @@ const TTYD_LAUNCH =
 	// both the Claude session and the split view's scratch shell (--writable is covered above).
 	`nohup ttyd --port ${TTYD_PORT} --writable --url-arg ` +
 	`bash \\"$PWD/.devcontainer/${TTYD_LAUNCH_SCRIPT_FILE}\\" >/tmp/ttyd.log 2>&1 &"`;
+
+/**
+ * The launcher `postStartCommand` runs, exposed so a host-side relaunch can reuse the exact
+ * string rather than growing a second, driftable copy of "how the served surface is started".
+ */
+export function launchCommandFor(mode: InstanceMode): string {
+	return mode === 'terminal' ? TTYD_LAUNCH : CODE_SERVER_LAUNCH;
+}
 
 export async function devcontainerCliAvailable(): Promise<boolean> {
 	return (await spawnCapture([devcontainerBin(), '--version'])) !== null;
@@ -495,7 +511,7 @@ export async function writeOverrideConfig(
 	runArgs.add(HOST_GATEWAY_ARG);
 	config.runArgs = [...runArgs];
 
-	const launch = isTerminal ? TTYD_LAUNCH : CODE_SERVER_LAUNCH;
+	const launch = launchCommandFor(mode);
 	const existing = config.postStartCommand;
 	config.postStartCommand =
 		typeof existing === 'string' && existing.trim() ? `${existing} && ${launch}` : launch;
