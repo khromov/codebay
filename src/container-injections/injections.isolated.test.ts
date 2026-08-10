@@ -2,7 +2,7 @@ import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { injections, resolveInjections } from '../lib/injections.server.ts';
+import { injections, resolveInjections, resolveInjectionStages } from '../lib/injections.server.ts';
 import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings, hasAttentionHook } from './attention-hooks.ts';
 import { isValid, LIVE_CREDENTIALS_TEST, tokenCredentials } from './claude-code-credentials.ts';
@@ -24,7 +24,14 @@ import {
 	EXTENSION_ID,
 	INSTALL_SCRIPT as EXT_INSTALL_SCRIPT
 } from './claude-code-ide-extension.ts';
-import { UPDATE_SCRIPT } from './claude-code-update.ts';
+import {
+	CACHE_TTL_MS,
+	cacheIsFresh,
+	fetchLatestVersion,
+	PINNED_UPDATE_SCRIPT,
+	UPDATE_SCRIPT,
+	VERSION_RE
+} from './claude-code-update.ts';
 
 describe('injection registry', () => {
 	test('every injection has a unique id', () => {
@@ -133,12 +140,12 @@ describe('injection registry', () => {
 		expect(ext!.auth).toBeUndefined();
 	});
 
-	test('tmux runs second, right after git-safe-directory', () => {
-		// git safe.directory must stay first (later git-touching steps depend on it);
-		// tmux is next because its package install is the slowest injection and the
-		// Terminal task falls back to non-persistent mode until it lands.
-		expect(injections[0]!.id).toBe('git-safe-directory');
-		expect(injections[1]!.id).toBe('tmux');
+	test('git-safe-directory and tmux start in the first stage', () => {
+		// safe.directory must precede every later git-touching step, and tmux's package
+		// install is the slowest injection, so both must kick off immediately.
+		const firstStage = resolveInjectionStages()[0]!.map((i) => i.id);
+		expect(firstStage).toContain('git-safe-directory');
+		expect(firstStage).toContain('tmux');
 	});
 
 	test('ttyd is registered as a terminal-only injection with a health check', () => {
@@ -147,6 +154,120 @@ describe('injection registry', () => {
 		expect(t!.modes).toEqual(['terminal']);
 		expect(typeof t!.check).toBe('function');
 		expect(t!.auth).toBeUndefined();
+	});
+});
+
+describe('resolveInjectionStages — clobber safety', () => {
+	// Container resources each apply() writes. Two same-stage writers of one resource would race:
+	// every JSON/rc edit is an unguarded read-modify-write, and parallel apt-gets fight the dpkg lock.
+	const WRITES: Record<string, string[]> = {
+		'git-safe-directory': ['gitconfig'],
+		tmux: ['apt', 'tmux-conf'],
+		ttyd: ['apt', 'usr-local-bin'],
+		'claude-code-install': ['npm-global', 'usr-local-bin'],
+		'claude-code-update': ['npm-global'],
+		'claude-code-credentials': ['claude-credentials', 'claude-json'],
+		'claude-code-custom': ['claude-env-file', 'rc', 'claude-json'],
+		'claude-code-ide-extension': ['extensions-dir'],
+		'git-identity': ['gitconfig'],
+		'github-credentials': ['gh-hosts', 'gitconfig'],
+		'attention-hooks': ['bridge-header', 'settings-json'],
+		'claude-statusline': ['statusline-script', 'settings-json'],
+		'claude-code-models': ['models-env-file', 'rc'],
+		'claude-model': ['settings-json'],
+		'claude-permission-mode': ['rc'],
+		'claude-trust': ['claude-json', 'settings-json'],
+		'claude-aliases': ['rc'],
+		'claude-no-coauthor': ['settings-json'],
+		'host-env-vars': ['host-env-file', 'rc']
+	};
+
+	function stageOf(stages: { id: string }[][]): Map<string, number> {
+		const index = new Map<string, number>();
+		stages.forEach((stage, n) => stage.forEach((i) => index.set(i.id, n)));
+		return index;
+	}
+
+	function assertNoSameStageClobber(stages: { id: string }[][]) {
+		for (const stage of stages) {
+			const seen = new Map<string, string>();
+			for (const injection of stage) {
+				const writes = WRITES[injection.id];
+				// A new injection must be added to the map, or this test can't vouch for it.
+				expect(writes).toBeDefined();
+				for (const resource of writes!) {
+					expect(`${resource} ← ${seen.get(resource) ?? ''}`).toBe(`${resource} ← `);
+					seen.set(resource, injection.id);
+				}
+			}
+		}
+	}
+
+	test('no two injections in one stage write the same resource (both Claude slots, both modes)', () => {
+		for (const enabled of ['0', '1']) {
+			setOption('custom_endpoint_enabled', enabled);
+			for (const mode of [undefined, 'ide', 'terminal'] as const) {
+				assertNoSameStageClobber(resolveInjectionStages(mode));
+			}
+		}
+		setOption('custom_endpoint_enabled', '0');
+	});
+
+	test('shared resources keep their pre-parallelization write order across stages', () => {
+		const at = stageOf(resolveInjectionStages());
+		// gitconfig: safe.directory before identity before gh's credential helper rewrite.
+		expect(at.get('git-safe-directory')!).toBeLessThan(at.get('git-identity')!);
+		expect(at.get('git-identity')!).toBeLessThan(at.get('github-credentials')!);
+		// ~/.claude/settings.json merge chain.
+		expect(at.get('attention-hooks')!).toBeLessThan(at.get('claude-statusline')!);
+		expect(at.get('claude-statusline')!).toBeLessThan(at.get('claude-model')!);
+		expect(at.get('claude-model')!).toBeLessThan(at.get('claude-trust')!);
+		expect(at.get('claude-trust')!).toBeLessThan(at.get('claude-no-coauthor')!);
+		// rc-file append chain.
+		expect(at.get('claude-code-models')!).toBeLessThan(at.get('claude-permission-mode')!);
+		expect(at.get('claude-permission-mode')!).toBeLessThan(at.get('claude-aliases')!);
+		expect(at.get('claude-aliases')!).toBeLessThan(at.get('host-env-vars')!);
+		// ~/.claude.json: the Claude slot seeds it before trust merges into it.
+		expect(at.get('claude-code-credentials')!).toBeLessThan(at.get('claude-trust')!);
+		// apt/dpkg lock: tmux and ttyd can never run side by side.
+		expect(at.get('tmux')!).toBeLessThan(at.get('ttyd')!);
+		// npm global: install lands the binary before update refreshes it (update no-ops until then).
+		expect(at.get('claude-code-install')!).toBeLessThan(at.get('claude-code-update')!);
+		// /usr/local/bin symlink: install and ttyd both write it, so they can never share a stage.
+		expect(at.get('claude-code-install')!).toBeLessThan(at.get('ttyd')!);
+	});
+
+	test('the custom Claude slot (an rc writer) stays ahead of every other rc writer', () => {
+		setOption('custom_endpoint_enabled', '1');
+		try {
+			const at = stageOf(resolveInjectionStages());
+			expect(at.get('claude-code-custom')!).toBeLessThan(at.get('claude-code-models')!);
+		} finally {
+			setOption('custom_endpoint_enabled', '0');
+		}
+	});
+});
+
+describe('resolveInjectionStages — serial escape hatch', () => {
+	afterEach(() => setOption('advanced_serial_injections', '0'));
+
+	test('one injection per stage, preserving the parallel layout order exactly', () => {
+		const parallelOrder = resolveInjectionStages('ide')
+			.flat()
+			.map((i) => i.id);
+		setOption('advanced_serial_injections', '1');
+		const serial = resolveInjectionStages('ide');
+		for (const stage of serial) expect(stage.length).toBe(1);
+		expect(serial.flat().map((i) => i.id)).toEqual(parallelOrder);
+	});
+
+	test('mode filtering still applies in serial mode', () => {
+		setOption('advanced_serial_injections', '1');
+		const ids = resolveInjectionStages('terminal')
+			.flat()
+			.map((i) => i.id);
+		expect(ids).toContain('ttyd');
+		expect(ids).not.toContain('claude-code-ide-extension');
 	});
 });
 
@@ -257,6 +378,17 @@ describe('claude-code-ide-extension scripts', () => {
 		).toBe(true);
 	});
 
+	test('install script waits out the launch line’s background install before falling back', () => {
+		// The bracket keeps pgrep from matching this script's own `bash -lc` argv.
+		expect(EXT_INSTALL_SCRIPT).toContain("pgrep -f 'install-extensio[n] anthropic.claude-code'");
+		// Bounded wait, then a re-check so a completed background install exits without a second download.
+		expect(EXT_INSTALL_SCRIPT).toContain('{1..90}');
+		const waitAt = EXT_INSTALL_SCRIPT.indexOf('pgrep');
+		const recheckAt = EXT_INSTALL_SCRIPT.lastIndexOf('if ls -d');
+		expect(waitAt).toBeLessThan(recheckAt);
+		expect(recheckAt).toBeLessThan(EXT_INSTALL_SCRIPT.indexOf('code-server --install-extension'));
+	});
+
 	// Run the probe against a temp home, exactly as `checkPresence` would in a container.
 	function runCheck(home: string): string {
 		const res = Bun.spawnSync(['bash', '-c', EXT_CHECK_SCRIPT], {
@@ -340,6 +472,106 @@ describe('claude-code-update script', () => {
 		const { out, installed } = runUpdate('2.1.220 (Claude Code)', '');
 		expect(installed).toBe(false);
 		expect(out).toBe('');
+	});
+
+	// Same shim harness, but the latest version arrives as `$0` instead of via `npm view`.
+	function runPinned(
+		rawClaude: string | null,
+		latest: string
+	): { out: string; installed: boolean } {
+		const bin = mkdtempSync(join(tmpdir(), 'codebay-pinned-'));
+		const marker = join(bin, 'install-called');
+		try {
+			if (rawClaude !== null) {
+				writeFileSync(join(bin, 'claude'), `#!/bin/sh\ncat <<'FIXTURE'\n${rawClaude}\nFIXTURE\n`, {
+					mode: 0o755
+				});
+			}
+			writeFileSync(join(bin, 'npm'), `#!/bin/sh\ntouch "${marker}"\n`, { mode: 0o755 });
+			// PATH is pinned (not prepended) so a claude installed on the host can't leak into
+			// the "claude missing" case.
+			const res = Bun.spawnSync(['bash', '-c', PINNED_UPDATE_SCRIPT, latest], {
+				env: { ...process.env, PATH: `${bin}:/usr/bin:/bin` }
+			});
+			return { out: res.stdout.toString().trim(), installed: existsSync(marker) };
+		} finally {
+			rmSync(bin, { recursive: true, force: true });
+		}
+	}
+
+	test('pinned script never runs `npm view` and upgrades when behind the supplied version', () => {
+		expect(PINNED_UPDATE_SCRIPT).not.toContain('npm view');
+		const { out, installed } = runPinned('2.1.220 (Claude Code)', '2.1.222');
+		expect(installed).toBe(true);
+		expect(out).toContain('updated 2.1.220 -> 2.1.222');
+	});
+
+	test('pinned script does not reinstall when already at the supplied version', () => {
+		const { out, installed } = runPinned('2.1.222 (Claude Code)', '2.1.222');
+		expect(installed).toBe(false);
+		expect(out).toContain('current 2.1.222');
+	});
+
+	test('pinned script exits silently when claude is not installed', () => {
+		const { out, installed } = runPinned(null, '2.1.222');
+		expect(installed).toBe(false);
+		expect(out).toBe('');
+	});
+});
+
+describe('claude-code version cache helpers', () => {
+	test('VERSION_RE accepts plain semver and rejects everything else', () => {
+		expect(VERSION_RE.test('2.1.222')).toBe(true);
+		for (const bad of ['v2.1.222', '2.1.222-beta.1', '2.1', '', '2.1.222; rm -rf /', '2.1.222 ']) {
+			expect(VERSION_RE.test(bad)).toBe(false);
+		}
+	});
+
+	test('cacheIsFresh honors the TTL window', () => {
+		const now = 1_000_000_000;
+		expect(cacheIsFresh(String(now - 1), now)).toBe(true);
+		expect(cacheIsFresh(String(now - CACHE_TTL_MS + 1), now)).toBe(true);
+		expect(cacheIsFresh(String(now - CACHE_TTL_MS), now)).toBe(false);
+	});
+
+	test('cacheIsFresh rejects unset, empty, zero, and garbage timestamps', () => {
+		for (const bad of [null, '', '0', 'garbage', 'NaN']) {
+			expect(cacheIsFresh(bad, Date.now())).toBe(false);
+		}
+	});
+
+	// Bun's fetch type carries extras like preconnect, so the shim is cast once here.
+	async function withFetch<T>(impl: () => Promise<Response>, fn: () => Promise<T>): Promise<T> {
+		const original = globalThis.fetch;
+		globalThis.fetch = impl as unknown as typeof fetch;
+		try {
+			return await fn();
+		} finally {
+			globalThis.fetch = original;
+		}
+	}
+
+	test('fetchLatestVersion returns a validated version from the registry payload', async () => {
+		const version = await withFetch(
+			async () => Response.json({ version: '2.1.222' }),
+			fetchLatestVersion
+		);
+		expect(version).toBe('2.1.222');
+	});
+
+	test('fetchLatestVersion returns null on HTTP errors, bad payloads, and network failures', async () => {
+		const cases: (() => Promise<Response>)[] = [
+			async () => new Response('nope', { status: 500 }),
+			async () => Response.json({ version: 'not-a-version' }),
+			async () => Response.json({}),
+			async () => new Response('not json'),
+			async () => {
+				throw new Error('offline');
+			}
+		];
+		for (const impl of cases) {
+			expect(await withFetch(impl, fetchLatestVersion)).toBeNull();
+		}
 	});
 });
 

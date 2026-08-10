@@ -11,7 +11,10 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PUBLISH_HOST } from './config.server.ts';
+import { setOption } from './db.server.ts';
 import {
+	devcontainerUpArgs,
+	devcontainerUpEnv,
 	launchCommandFor,
 	readDeclaredContainerPorts,
 	TERMINAL_LAUNCHED_MARKER,
@@ -307,12 +310,35 @@ describe('writeOverrideConfig terminal task + settings', () => {
 	const readDevcontainer = () =>
 		JSON.parse(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8'));
 
-	test('installs the Claude Code IDE extension before code-server first launches', async () => {
+	test('launches code-server before the backgrounded extension install', async () => {
 		await writeOverrideConfig(dir, 8001);
 		const cmd = readDevcontainer().postStartCommand as string;
-		// Must land before the `nohup code-server` line so the extension host activates it on the first window.
 		expect(cmd).toContain('--install-extension anthropic.claude-code');
-		expect(cmd.indexOf('--install-extension')).toBeLessThan(cmd.indexOf('nohup code-server'));
+		// The download must trail the launch so it never sits on the boot critical path.
+		expect(cmd.indexOf('nohup code-server')).toBeLessThan(cmd.indexOf('--install-extension'));
+		// Fully detached (redirects + </dev/null + &) or `devcontainer up` waits on its open pipes.
+		expect(cmd).toContain('>/tmp/code-server-ext.log 2>&1 </dev/null &');
+		// Still ls-guarded so a container restart with the extension present skips the download.
+		expect(
+			cmd.indexOf('ls -d ~/.local/share/code-server/extensions/anthropic.claude-code-')
+		).toBeLessThan(cmd.indexOf('--install-extension'));
+	});
+
+	test('the blocking-install escape hatch restores the install-before-launch order', async () => {
+		setOption('advanced_blocking_ext_install', '1');
+		try {
+			await writeOverrideConfig(dir, 8001);
+			const cmd = readDevcontainer().postStartCommand as string;
+			expect(cmd.indexOf('--install-extension')).toBeLessThan(cmd.indexOf('nohup code-server'));
+			// Foreground on purpose — no detach, so `up` waits and the first window has the extension.
+			expect(cmd).not.toContain('</dev/null &');
+			// The ls-guard still skips the download when the extension survived a rebuild.
+			expect(
+				cmd.indexOf('ls -d ~/.local/share/code-server/extensions/anthropic.claude-code-')
+			).toBeLessThan(cmd.indexOf('--install-extension'));
+		} finally {
+			setOption('advanced_blocking_ext_install', '0');
+		}
 	});
 
 	test('injects the provided default image and reports it when the folder has no config', async () => {
@@ -622,5 +648,51 @@ describe('writeOverrideConfig terminal mode', () => {
 		await writeOverrideConfig(dir, 8001);
 		expect(readDevcontainer().features['./codebay-claude']).toBeUndefined();
 		expect(existsSync(join(dir, '.devcontainer', 'codebay-claude'))).toBe(false);
+	});
+});
+
+describe('devcontainerUp args and env', () => {
+	test('builds the baseline up args without cache-busting by default', () => {
+		const args = devcontainerUpArgs('/ws/dir');
+		expect(args.slice(1)).toEqual([
+			'up',
+			'--workspace-folder',
+			'/ws/dir',
+			'--remove-existing-container'
+		]);
+	});
+
+	test('appends --build-no-cache only when noCache is set', () => {
+		expect(devcontainerUpArgs('/ws/dir', { noCache: true })).toContain('--build-no-cache');
+		expect(devcontainerUpArgs('/ws/dir', {})).not.toContain('--build-no-cache');
+	});
+
+	test('enables BuildKit as a default the caller environment can override', () => {
+		const prev = process.env.DOCKER_BUILDKIT;
+		try {
+			delete process.env.DOCKER_BUILDKIT;
+			expect(devcontainerUpEnv().DOCKER_BUILDKIT).toBe('1');
+			expect(devcontainerUpEnv().COMPOSE_DOCKER_CLI_BUILD).toBe('1');
+			// An explicit user opt-out must win over our default.
+			process.env.DOCKER_BUILDKIT = '0';
+			expect(devcontainerUpEnv().DOCKER_BUILDKIT).toBe('0');
+		} finally {
+			if (prev === undefined) delete process.env.DOCKER_BUILDKIT;
+			else process.env.DOCKER_BUILDKIT = prev;
+		}
+	});
+
+	test('the no-buildkit escape hatch drops both forced env defaults', () => {
+		const prev = process.env.DOCKER_BUILDKIT;
+		setOption('advanced_no_buildkit', '1');
+		try {
+			delete process.env.DOCKER_BUILDKIT;
+			expect(devcontainerUpEnv().DOCKER_BUILDKIT).toBeUndefined();
+			expect(devcontainerUpEnv().COMPOSE_DOCKER_CLI_BUILD).toBeUndefined();
+		} finally {
+			setOption('advanced_no_buildkit', '0');
+			if (prev === undefined) delete process.env.DOCKER_BUILDKIT;
+			else process.env.DOCKER_BUILDKIT = prev;
+		}
 	});
 });
