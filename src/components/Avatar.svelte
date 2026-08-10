@@ -1,16 +1,14 @@
 <script lang="ts">
-	import { pickAvatar, decode, type AvatarArt } from '../avatars/index.ts';
+	import { decode, type AvatarArt } from '../avatars/index.ts';
 
 	// `scale` is device-pixels per LED cell; the panel is always an integer multiple
 	// of it (10 × scale px) so every pixel lands on a crisp boundary.
 	let {
-		id = '',
 		name,
 		scale = 6,
 		art,
 		interactive = false
 	}: {
-		id?: string;
 		name: string;
 		scale?: number;
 		art?: AvatarArt | null;
@@ -67,9 +65,9 @@
 	// 0.5px is a crisp single device-pixel at 2×; at 1× the cells can't spare any gutter.
 	const gap = $derived(s >= 2 ? 0.5 : 0);
 
-	// `undefined` means "not chosen — hash one from the id"; an explicit `null` means the named
-	// sprite is gone, so render an empty panel rather than a colliding hashed fallback.
-	const resolved = $derived(art === undefined ? pickAvatar(id) : art);
+	// Instance sprites are resolved server-side and handed in as `art`; a missing or unknown one
+	// (null/unset) renders an empty panel rather than a colliding fallback.
+	const resolved = $derived(art ?? null);
 	const cells = $derived(resolved ? decode(resolved) : []);
 	// The 10×10 outer ring is unlit LED cells — a bezel of real dots, not blank padding.
 	const grid = $derived(

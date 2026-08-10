@@ -61,7 +61,7 @@ import {
 	syncHealthMonitors
 } from './health.server.ts';
 import { isHostPortBindable, pickBindablePort } from './ports.server.ts';
-import { pickAvatar, pickUniqueAvatar } from '../avatars/index.ts';
+import { pickAvatar, pickUniqueAvatar } from '../avatars/pick.server.ts';
 import type { ServerWebSocket } from 'bun';
 import {
 	isInstanceFilter,
@@ -71,13 +71,17 @@ import {
 	type InstanceHealth
 } from '../types.ts';
 
+/** The sprite a row shows: its persisted choice, or the id hash for rows created before avatars were stored. */
+const effectiveAvatarName = (row: InstanceRow): string => row.avatar ?? pickAvatar(row.id).name;
+
 /**
- * `bridge_token` authenticates the no-Basic-Auth `/api/bridge/` endpoint, so it
- * must never reach the browser — every row handed to a route goes through here.
+ * `bridge_token` authenticates the no-Basic-Auth `/api/bridge/` endpoint, so it must never reach the
+ * browser — every row handed to a route goes through here. Also resolves the avatar name so the
+ * client renders by name (`findAvatar`) and never needs a hash function of its own.
  */
 export function sanitizeInstance(row: InstanceRow): Omit<InstanceRow, 'bridge_token'> {
 	const { bridge_token: _token, ...rest } = row;
-	return rest;
+	return { ...rest, avatar: effectiveAvatarName(row) };
 }
 
 interface LiveState {
@@ -467,9 +471,6 @@ function uniqueName(desired: string, excludeId?: string): string {
 export function getDefaultMode(): InstanceMode {
 	return normalizeMode(getOption('default_mode'));
 }
-
-/** The sprite a row shows today — its persisted choice, or the id hash for rows created before avatars were stored. */
-const effectiveAvatarName = (row: InstanceRow): string => row.avatar ?? pickAvatar(row.id).name;
 
 /** `source` is either a local folder (copied) or a Git URL (cloned); boot runs in the background. */
 export async function createInstance(

@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
-import { avatars, pickAvatar, pickUniqueAvatar, findAvatar, decode } from './index.ts';
+import { avatars, findAvatar, decode } from './index.ts';
+import { pickAvatar, pickUniqueAvatar } from './pick.server.ts';
 
 describe('avatar catalog', () => {
 	test('has at least 30 sprites', () => {

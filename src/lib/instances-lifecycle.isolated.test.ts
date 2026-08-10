@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { PassThrough } from 'node:stream';
 import { deleteInstanceRow, insertInstance, type InstanceRow } from './db.server.ts';
-import { relaunchSurface, startInstance } from './instances.server.ts';
+import { relaunchSurface, sanitizeInstance, startInstance } from './instances.server.ts';
+import { avatars } from '../avatars/index.ts';
 
 /**
  * `getDocker()` resolves a client pinned to `globalThis.__codebayDocker`; seeding that slot
@@ -78,6 +79,18 @@ const scriptOf = (call: ExecCall) => call.Cmd[2]!;
 afterEach(() => {
 	globalThis.fetch = realFetch;
 	g.__codebayDocker = undefined;
+});
+
+describe('sanitizeInstance', () => {
+	test('strips bridge_token and resolves a legacy null avatar to a catalog sprite', () => {
+		const out = sanitizeInstance(seed({ avatar: null }));
+		expect('bridge_token' in out).toBe(false);
+		expect(avatars.some((a) => a.name === out.avatar)).toBe(true);
+	});
+
+	test('keeps a persisted avatar name as-is', () => {
+		expect(sanitizeInstance(seed({ avatar: 'octopus' })).avatar).toBe('octopus');
+	});
 });
 
 describe('relaunchSurface', () => {

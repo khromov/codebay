@@ -129,34 +129,7 @@ export const avatars: AvatarArt[] = [
 	yinyan
 ];
 
-// FNV-1a, chosen because it's pure and cheap — the mapping must hold across processes.
-function fnv1a(s: string): number {
-	let h = 2166136261;
-	for (let i = 0; i < s.length; i++) {
-		h ^= s.charCodeAt(i);
-		h = Math.imul(h, 16777619);
-	}
-	return h >>> 0;
-}
-
-// Duplicates are possible but rare, since the hash spreads ids evenly across the catalog.
-export function pickAvatar(id: string): AvatarArt {
-	return avatars[fnv1a(id) % avatars.length]!;
-}
-
-// Prefer the id's deterministic sprite; if it's taken, probe forward so only colliding instances
-// deviate from what `pickAvatar` would give. Falls back to the hashed pick once the catalog is full.
-export function pickUniqueAvatar(id: string, taken: Iterable<string>): AvatarArt {
-	const used = new Set(taken);
-	const base = fnv1a(id) % avatars.length;
-	for (let k = 0; k < avatars.length; k++) {
-		const art = avatars[(base + k) % avatars.length]!;
-		if (!used.has(art.name)) return art;
-	}
-	return avatars[base]!;
-}
-
-/** Lookup by name, for sprites chosen by hand rather than hashed from an id. */
+/** Lookup by name; the server (`pick.server.ts`) resolves an instance's stored sprite name to its art. */
 export function findAvatar(name: string | undefined): AvatarArt | undefined {
 	return name ? avatars.find((a) => a.name === name) : undefined;
 }
