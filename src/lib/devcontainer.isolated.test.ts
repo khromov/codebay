@@ -11,7 +11,46 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PUBLISH_HOST } from './config.server.ts';
-import { readDeclaredContainerPorts, writeOverrideConfig } from './devcontainer.server.ts';
+import {
+	launchCommandFor,
+	readDeclaredContainerPorts,
+	TERMINAL_LAUNCHED_MARKER,
+	writeOverrideConfig
+} from './devcontainer.server.ts';
+
+/**
+ * `relaunchSurface` re-runs these after a plain `docker start`, which never re-runs
+ * postStartCommand. If the two ever fork, a restarted instance boots a different surface than a
+ * freshly provisioned one — so pin them to the same string.
+ */
+describe('launchCommandFor', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-launch-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	const postStart = () =>
+		JSON.parse(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8'))
+			.postStartCommand as string;
+
+	test('terminal mode returns exactly what writeOverrideConfig writes', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		expect(postStart()).toContain(launchCommandFor('terminal'));
+	});
+
+	test('ide mode returns exactly what writeOverrideConfig writes', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'ide');
+		expect(postStart()).toContain(launchCommandFor('ide'));
+	});
+
+	test('the IDE run-once marker has a single definition', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'ide');
+		const task = readFileSync(join(dir, '.vscode', 'tasks.json'), 'utf8');
+		expect(task).toContain(TERMINAL_LAUNCHED_MARKER);
+	});
+});
 
 describe('readDeclaredContainerPorts', () => {
 	let dir: string;
@@ -432,6 +471,14 @@ describe('writeOverrideConfig terminal mode', () => {
 		expect(cmd).toContain('.devcontainer/codebay-terminal.sh');
 		// No code-server anywhere in a terminal-mode boot.
 		expect(cmd).not.toContain('code-server');
+	});
+
+	test('the launcher bails when ttyd is missing, so a late install needs its own relaunch', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const cmd = readDevcontainer().postStartCommand as string;
+		// postStartCommand runs before the injection that installs ttyd as a fallback, so a failed
+		// build-time install leaves this a no-op — provision() relaunches afterwards to cover it.
+		expect(cmd).toContain('command -v ttyd >/dev/null 2>&1 || exit 0');
 	});
 
 	test('guards the ttyd launch by process name, not by a self-matching cmdline pattern', async () => {
