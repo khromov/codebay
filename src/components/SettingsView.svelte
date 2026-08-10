@@ -31,9 +31,14 @@
 	import CoinButton from './CoinButton.svelte';
 	import Avatar from './Avatar.svelte';
 	import { avatars, findAvatar, type AvatarArt } from '../avatars/index.ts';
-	import type { InstanceMode } from '../types.ts';
+	import {
+		CLAUDE_PERMISSION_MODES,
+		type ClaudePermissionMode,
+		type InstanceMode
+	} from '../types.ts';
 	import Terminal from '@lucide/svelte/icons/terminal';
 	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
+	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import { installPopupBackTrap } from '../lib/popup-nav.ts';
 
 	/** Every settings form action fails with the same `{ error }` shape. */
@@ -42,6 +47,7 @@
 	let {
 		pet,
 		defaultMode,
+		claudePermissionMode,
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
@@ -78,6 +84,7 @@
 	}: {
 		pet?: AvatarArt;
 		defaultMode: InstanceMode;
+		claudePermissionMode: ClaudePermissionMode;
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
@@ -208,6 +215,34 @@
 		if (next === modeChoice) return;
 		flushSync(() => (modeChoice = next));
 		modeFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let permissionChoice = $state<ClaudePermissionMode>(claudePermissionMode);
+	let savingPermission = $state(false);
+	let permissionError = $state<string | null>(null);
+	let permissionFormEl: HTMLFormElement | undefined;
+
+	const permissionModeOpts = saveOpts<{ mode: ClaudePermissionMode }>({
+		setSaving: (v) => (savingPermission = v),
+		setError: (v) => (permissionError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.mode) permissionChoice = data.mode;
+		}
+	});
+
+	const PERMISSION_LABELS: Record<ClaudePermissionMode, string> = {
+		default: 'Default',
+		manual: 'Manual',
+		auto: 'Auto',
+		plan: 'Plan'
+	};
+
+	function choosePermissionMode(next: ClaudePermissionMode) {
+		if (next === permissionChoice) return;
+		flushSync(() => (permissionChoice = next));
+		permissionFormEl?.requestSubmit();
 	}
 
 	// svelte-ignore state_referenced_locally
@@ -733,6 +768,47 @@
 			</form>
 			{#if modeError}
 				<div class="sub"><div class="msg error">{modeError}</div></div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/claudePermissionMode"
+				bind:this={permissionFormEl}
+				{@attach enhance(permissionModeOpts)}
+			>
+				<div class="label">
+					<ShieldCheck size={20} />
+					<div class="text">
+						<div class="name">Claude permission mode</div>
+						<div class="desc">
+							The mode Claude Code starts in inside new instances. <strong>Default</strong> runs
+							<code>--dangerously-skip-permissions</code>, which never prompts; the other three pass
+							<code>--permission-mode</code> instead, because the skip flag overrides them. Applies on
+							create and rebuild, not to already-running instances.
+						</div>
+					</div>
+				</div>
+				<input type="hidden" name="mode" value={permissionChoice} />
+				<div class="mode-toggle" role="group" aria-label="Claude permission mode">
+					{#each CLAUDE_PERMISSION_MODES as option (option)}
+						<button
+							type="button"
+							class="mode-btn"
+							class:active={permissionChoice === option}
+							aria-pressed={permissionChoice === option}
+							disabled={savingPermission}
+							onclick={() => choosePermissionMode(option)}
+						>
+							{PERMISSION_LABELS[option]}
+						</button>
+					{/each}
+				</div>
+			</form>
+			{#if permissionError}
+				<div class="sub"><div class="msg error">{permissionError}</div></div>
 			{/if}
 		</section>
 

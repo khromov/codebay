@@ -8,13 +8,14 @@ import { gitIdentity } from '../container-injections/git-identity.ts';
 import { claudeCodeCredentials } from '../container-injections/claude-code-credentials.ts';
 import { claudeCodeCustom } from '../container-injections/claude-code-custom.ts';
 import { claudeCodeIdeExtension } from '../container-injections/claude-code-ide-extension.ts';
+import { claudeCodeInstall } from '../container-injections/claude-code-install.ts';
 import { claudeCodeUpdate } from '../container-injections/claude-code-update.ts';
 import { claudeCodeModels } from '../container-injections/claude-code-models.ts';
 import { githubCredentials } from '../container-injections/github-credentials.ts';
 import { attentionHooks } from '../container-injections/attention-hooks.ts';
 import { claudeStatusline } from '../container-injections/claude-statusline.ts';
 import { claudeModel } from '../container-injections/claude-model.ts';
-import { claudeSkipPermissions } from '../container-injections/claude-skip-permissions.ts';
+import { claudePermissionMode } from '../container-injections/claude-permission-mode.ts';
 import { claudeTrust } from '../container-injections/claude-trust.ts';
 import { claudeAliases } from '../container-injections/claude-aliases.ts';
 import { claudeNoCoauthor } from '../container-injections/claude-no-coauthor.ts';
@@ -53,12 +54,15 @@ export interface Injection {
  */
 function buildStages(claudeInjection: Injection): Injection[][] {
 	return [
-		// Disjoint resources — and all the slow network installs (apt tmux, npm claude, Open VSX
-		// extension) start immediately instead of queueing behind one another.
-		[gitSafeDirectory, tmux, claudeCodeUpdate, claudeInjection, claudeCodeIdeExtension],
-		// git-identity needs stage 1's safe.directory; ttyd shares the apt/dpkg lock with tmux.
-		[gitIdentity, attentionHooks, claudeCodeModels, ttyd],
-		[githubCredentials, claudeStatusline, claudeSkipPermissions],
+		// Disjoint resources — and the slow network installs (apt tmux, npm/standalone claude,
+		// Open VSX extension) start immediately instead of queueing behind one another.
+		// claude-code-install (terminal-only) must precede claude-code-update: both are the sole
+		// npm-global writer of their stage, and the update no-ops until a binary exists.
+		[gitSafeDirectory, tmux, claudeCodeInstall, claudeInjection, claudeCodeIdeExtension],
+		// git-identity needs stage 1's safe.directory; ttyd shares the apt/dpkg lock with tmux and
+		// the /usr/local/bin symlink with claude-code-install, so it trails both.
+		[gitIdentity, attentionHooks, claudeCodeModels, ttyd, claudeCodeUpdate],
+		[githubCredentials, claudeStatusline, claudePermissionMode],
 		[claudeModel, claudeAliases],
 		// claude-trust edits ~/.claude.json, which the stage-1 Claude slot also writes.
 		[claudeTrust, hostEnvVars],

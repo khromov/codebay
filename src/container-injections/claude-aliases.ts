@@ -5,7 +5,7 @@ import {
 } from '../lib/container-files.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
 
-/** Both resolve `claude`, which `claude-skip-permissions` also aliases, so the two compose. */
+/** Both resolve `claude`, which `claude-permission-mode` also aliases, so the two compose. */
 const ALIAS_LINES = [
 	"alias c200='CLAUDE_CODE_DISABLE_1M_CONTEXT=1 claude'",
 	"alias cs='claude --model sonnet'"

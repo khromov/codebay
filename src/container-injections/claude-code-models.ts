@@ -26,7 +26,8 @@ export function manualModelConfig(): Record<string, string> | null {
 	return Object.keys(filled).length ? filled : null;
 }
 
-const ENV_FILE_NAME = '.codebay-claude-models-env';
+/** Exported so the terminal/IDE launchers can source it explicitly — see `SOURCE_INJECTED_ENV`. */
+export const ENV_FILE_NAME = '.codebay-claude-models-env';
 
 function injectModels(
 	target: ContainerTarget,

@@ -18,6 +18,7 @@ import { claudeTrustConfig, CLAUDE_TRUST_SETTINGS } from './claude-trust.ts';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
 import { INSTALL_SCRIPT as TTYD_INSTALL_SCRIPT } from './ttyd.ts';
+import { INSTALL_SCRIPT as CLAUDE_INSTALL_SCRIPT } from './claude-code-install.ts';
 import {
 	CHECK_SCRIPT as EXT_CHECK_SCRIPT,
 	EXTENSION_ID,
@@ -64,8 +65,8 @@ describe('injection registry', () => {
 		expect(typeof identity!.check).toBe('function');
 	});
 
-	test('claude-skip-permissions is registered with a health check', () => {
-		const alias = injections.find((i) => i.id === 'claude-skip-permissions');
+	test('claude-permission-mode is registered with a health check', () => {
+		const alias = injections.find((i) => i.id === 'claude-permission-mode');
 		expect(alias).toBeDefined();
 		expect(typeof alias!.check).toBe('function');
 		expect(alias!.auth).toBeUndefined();
@@ -163,6 +164,7 @@ describe('resolveInjectionStages — clobber safety', () => {
 		'git-safe-directory': ['gitconfig'],
 		tmux: ['apt', 'tmux-conf'],
 		ttyd: ['apt', 'usr-local-bin'],
+		'claude-code-install': ['npm-global', 'usr-local-bin'],
 		'claude-code-update': ['npm-global'],
 		'claude-code-credentials': ['claude-credentials', 'claude-json'],
 		'claude-code-custom': ['claude-env-file', 'rc', 'claude-json'],
@@ -173,7 +175,7 @@ describe('resolveInjectionStages — clobber safety', () => {
 		'claude-statusline': ['statusline-script', 'settings-json'],
 		'claude-code-models': ['models-env-file', 'rc'],
 		'claude-model': ['settings-json'],
-		'claude-skip-permissions': ['rc'],
+		'claude-permission-mode': ['rc'],
 		'claude-trust': ['claude-json', 'settings-json'],
 		'claude-aliases': ['rc'],
 		'claude-no-coauthor': ['settings-json'],
@@ -222,13 +224,17 @@ describe('resolveInjectionStages — clobber safety', () => {
 		expect(at.get('claude-model')!).toBeLessThan(at.get('claude-trust')!);
 		expect(at.get('claude-trust')!).toBeLessThan(at.get('claude-no-coauthor')!);
 		// rc-file append chain.
-		expect(at.get('claude-code-models')!).toBeLessThan(at.get('claude-skip-permissions')!);
-		expect(at.get('claude-skip-permissions')!).toBeLessThan(at.get('claude-aliases')!);
+		expect(at.get('claude-code-models')!).toBeLessThan(at.get('claude-permission-mode')!);
+		expect(at.get('claude-permission-mode')!).toBeLessThan(at.get('claude-aliases')!);
 		expect(at.get('claude-aliases')!).toBeLessThan(at.get('host-env-vars')!);
 		// ~/.claude.json: the Claude slot seeds it before trust merges into it.
 		expect(at.get('claude-code-credentials')!).toBeLessThan(at.get('claude-trust')!);
 		// apt/dpkg lock: tmux and ttyd can never run side by side.
 		expect(at.get('tmux')!).toBeLessThan(at.get('ttyd')!);
+		// npm global: install lands the binary before update refreshes it (update no-ops until then).
+		expect(at.get('claude-code-install')!).toBeLessThan(at.get('claude-code-update')!);
+		// /usr/local/bin symlink: install and ttyd both write it, so they can never share a stage.
+		expect(at.get('claude-code-install')!).toBeLessThan(at.get('ttyd')!);
 	});
 
 	test('the custom Claude slot (an rc writer) stays ahead of every other rc writer', () => {
@@ -278,6 +284,17 @@ describe('resolveInjections — mode filtering', () => {
 		expect(ids).not.toContain('ttyd');
 	});
 
+	test('claude-code-install is terminal-only and runs before every claude-* step', () => {
+		const terminal = resolveInjections('terminal').map((i) => i.id);
+		expect(terminal).toContain('claude-code-install');
+		// The tail (update, credentials, trust, aliases…) all assume a `claude` binary exists.
+		expect(terminal.indexOf('claude-code-install')).toBeLessThan(
+			terminal.indexOf('claude-code-update')
+		);
+		// IDE mode on a project image keeps deferring tooling to the project.
+		expect(resolveInjections('ide').map((i) => i.id)).not.toContain('claude-code-install');
+	});
+
 	test('mode-agnostic (no argument) keeps every injection', () => {
 		const ids = resolveInjections().map((i) => i.id);
 		expect(ids).toContain('ttyd');
@@ -296,6 +313,31 @@ describe('ttyd injection script', () => {
 		expect(TTYD_INSTALL_SCRIPT).toContain('apt-get');
 		expect(TTYD_INSTALL_SCRIPT).toContain('apk');
 		expect(TTYD_INSTALL_SCRIPT).toContain('releases/latest/download/ttyd.');
+	});
+});
+
+describe('claude-code-install script', () => {
+	test('sniffs first, so an image that already ships Claude Code is left alone', () => {
+		expect(
+			CLAUDE_INSTALL_SCRIPT.startsWith('if command -v claude >/dev/null 2>&1; then exit 0; fi')
+		).toBe(true);
+	});
+
+	test('never installs Node via nvm', () => {
+		// The whole point: the upstream node feature's nvm install aborts on any image that
+		// sets NPM_CONFIG_PREFIX, which is what broke terminal-mode builds.
+		expect(CLAUDE_INSTALL_SCRIPT).not.toContain('nvm');
+		expect(CLAUDE_INSTALL_SCRIPT).toContain('npm install -g @anthropic-ai/claude-code@latest');
+		// The no-Node fallback needs no Node at all.
+		expect(CLAUDE_INSTALL_SCRIPT).toContain('https://claude.ai/install.sh');
+	});
+
+	test('runs the standalone installer as the remote user, not root', () => {
+		// It installs under $HOME, so running as root would strand the binary in /root.
+		expect(CLAUDE_INSTALL_SCRIPT).toContain('u="${1:-${_REMOTE_USER:-root}}"');
+		expect(CLAUDE_INSTALL_SCRIPT).toContain('su -m "$u"');
+		// …and the result has to be on every user's PATH, including root's.
+		expect(CLAUDE_INSTALL_SCRIPT).toContain('ln -sf "$h/.local/bin/claude" /usr/local/bin/claude');
 	});
 });
 

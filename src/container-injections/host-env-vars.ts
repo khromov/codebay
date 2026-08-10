@@ -7,7 +7,8 @@ import {
 } from '../lib/container-files.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
-const ENV_FILE_NAME = '.codebay-host-env';
+/** Exported so the terminal/IDE launchers can source it explicitly — see `SOURCE_INJECTED_ENV`. */
+export const ENV_FILE_NAME = '.codebay-host-env';
 
 interface ResolvedVar {
 	name: string;

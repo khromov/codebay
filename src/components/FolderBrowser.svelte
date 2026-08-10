@@ -15,16 +15,20 @@
 	let {
 		onpick,
 		onclose,
-		defaultMode = 'ide'
+		defaultMode = 'ide',
+		initialMode = null
 	}: {
 		onpick: (source: string, opts?: { branch?: string; mode?: InstanceMode }) => void;
 		onclose: () => void;
 		defaultMode?: InstanceMode;
+		/** Opens pinned to this mode — set by the dashboard's mode shortcut button. */
+		initialMode?: InstanceMode | null;
 	} = $props();
 
 	// Follows the global default live — settings opens in its own popup, so the toggle there can
 	// move while this picker is open. An explicit choice here wins and is never yanked back.
-	let modeOverride = $state<InstanceMode | null>(null);
+	// svelte-ignore state_referenced_locally
+	let modeOverride = $state<InstanceMode | null>(initialMode);
 	const mode = $derived(modeOverride ?? defaultMode);
 
 	let result = $state<BrowseResult | null>(null);

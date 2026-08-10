@@ -1,6 +1,6 @@
 {
 	"name": "codebay",
-	"version": "0.9.0",
+	"version": "0.9.1",
 	"description": "Web UI for spinning up isolated devcontainer instances from any local folder, each with a browser-based VS Code (code-server) — built for parallel Claude Code workflows.",
 	"type": "module",
 	"license": "MIT",
@@ -47,7 +47,7 @@
 		"build": "mochi-framework build",
 		"start": "bun src/index.ts",
 		"prod": "bun run build && bun run start",
-		"dev": "MODE=development DISABLE_OPEN_BROWSER=1 DATA_DIR=./.codebay bun src/index.ts",
+		"dev": "MODE=development DISABLE_OPEN_BROWSER=1 DATA_DIR=./.codebay HOST=0.0.0.0 bun src/index.ts",
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
 		"test": "bun test",
 		"lint": "prettier --check . && eslint .",
