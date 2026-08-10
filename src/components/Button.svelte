@@ -8,6 +8,7 @@
 		variant = 'default',
 		size = 'md',
 		ghost = false,
+		square = false,
 		icon,
 		iconSize,
 		href,
@@ -20,6 +21,8 @@
 		size?: Size;
 		/** Dashed-outline treatment that fills on hover — used for secondary links. */
 		ghost?: boolean;
+		/** Icon-only: drops the padding for a square that matches the row's button height. */
+		square?: boolean;
 		/** Optional leading icon component, e.g. a lucide icon like `Plus`. */
 		icon?: Component<{ size?: number }>;
 		/** Override the icon size; defaults to a size that scales with `size`. */
@@ -40,6 +43,7 @@
 	<a
 		class="btn {variant} {size}"
 		class:ghost
+		class:square
 		href={disabled ? undefined : href}
 		aria-disabled={disabled || undefined}
 		tabindex={disabled ? -1 : undefined}
@@ -49,7 +53,7 @@
 		{@render children?.()}
 	</a>
 {:else}
-	<button class="btn {variant} {size}" class:ghost {onclick} {disabled} {...rest}>
+	<button class="btn {variant} {size}" class:ghost class:square {onclick} {disabled} {...rest}>
 		{#if Icon}<Icon size={resolvedIconSize} />{/if}
 		{@render children?.()}
 	</button>
@@ -95,6 +99,23 @@
 	.btn.lg {
 		padding: 12px 22px;
 		font-size: 15px;
+	}
+
+	/* Sized to match the text button of the same `size`, so the two sit flush in a row. */
+	.btn.square {
+		padding: 0;
+	}
+	.btn.square.sm {
+		width: 30px;
+		height: 30px;
+	}
+	.btn.square.md {
+		width: 35px;
+		height: 35px;
+	}
+	.btn.square.lg {
+		width: 44px;
+		height: 44px;
 	}
 
 	.btn.default:hover:not(:disabled) {

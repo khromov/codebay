@@ -149,7 +149,7 @@
 	canDelete={true}
 	ready={true}
 	creating={false}
-	onNew={() => toast('New instance (demo)')}
+	onNew={(mode) => toast(`New ${mode ?? 'default'} instance (demo)`)}
 	onDeleteAll={() => toast('Delete all (demo)')}
 />
 

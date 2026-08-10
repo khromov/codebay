@@ -1,8 +1,10 @@
 <script lang="ts">
 	import Plus from '@lucide/svelte/icons/plus';
 	import Component from '@lucide/svelte/icons/component';
+	import Terminal from '@lucide/svelte/icons/terminal';
+	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import { isDev } from 'mochi-framework';
-	import type { AuthProvider, InstanceFilter } from '../types.ts';
+	import type { AuthProvider, InstanceFilter, InstanceMode } from '../types.ts';
 	import type { AvatarArt } from '../avatars/index.ts';
 	import Brand from './Brand.svelte';
 	import InstanceFilterControl from './InstanceFilter.svelte';
@@ -18,6 +20,7 @@
 		ready = true,
 		creating = false,
 		filter,
+		defaultMode = 'ide',
 		onFilter,
 		onNew,
 		onDeleteAll
@@ -28,10 +31,14 @@
 		ready?: boolean;
 		creating?: boolean;
 		filter?: InstanceFilter;
+		/** Drives the shortcut button, which always offers the mode the main button won't create. */
+		defaultMode?: InstanceMode;
 		onFilter?: (v: InstanceFilter) => void;
-		onNew?: () => void;
+		onNew?: (mode?: InstanceMode) => void;
 		onDeleteAll?: () => void;
 	} = $props();
+
+	const altMode = $derived<InstanceMode>(defaultMode === 'terminal' ? 'ide' : 'terminal');
 </script>
 
 <header class="topbar">
@@ -48,14 +55,28 @@
 		<Button variant="danger" size="sm" onclick={onDeleteAll} disabled={!canDelete}>
 			Delete all
 		</Button>
-		<Button
-			variant="primary"
-			icon={creating ? undefined : Plus}
-			onclick={onNew}
-			disabled={!ready || creating}
-		>
-			{creating ? 'Creating…' : 'New instance'}
-		</Button>
+		<div class="new-group">
+			<Button
+				variant="primary"
+				size="sm"
+				icon={creating ? undefined : Plus}
+				onclick={() => onNew?.()}
+				disabled={!ready || creating}
+			>
+				{creating ? 'Creating…' : 'New instance'}
+			</Button>
+			<Button
+				variant="primary"
+				size="sm"
+				square
+				icon={altMode === 'terminal' ? Terminal : LayoutTemplate}
+				iconSize={15}
+				onclick={() => onNew?.(altMode)}
+				disabled={!ready || creating}
+				title={altMode === 'terminal' ? 'New terminal instance' : 'New full IDE instance'}
+				aria-label={altMode === 'terminal' ? 'New terminal instance' : 'New full IDE instance'}
+			/>
+		</div>
 	</div>
 </header>
 
@@ -71,5 +92,11 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 14px;
+	}
+	/* The mode shortcut reads as part of the New instance control, not a separate action. */
+	.new-group {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
 	}
 </style>

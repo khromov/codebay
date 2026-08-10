@@ -43,7 +43,8 @@ export function customEndpointConfig(): {
 	};
 }
 
-const ENV_FILE_NAME = '.codebay-claude-env';
+/** Exported so the terminal/IDE launchers can source it explicitly — see `SOURCE_INJECTED_ENV`. */
+export const ENV_FILE_NAME = '.codebay-claude-env';
 
 /** The whole file (token included) rides `stdin` inside `installShellEnvFile`, so nothing hits argv. */
 function envFileContent(config: NonNullable<ReturnType<typeof customEndpointConfig>>): string {

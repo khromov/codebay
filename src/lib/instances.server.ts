@@ -50,6 +50,7 @@ import { proxyPathFor } from './proxy.server.ts';
 import { resolveInjections } from './injections.server.ts';
 import { cloneRepo, readGitBranch } from './git.server.ts';
 import { isRepoUrl, parseRepoUrl } from './repo-url.ts';
+import { getClaudePermissionMode } from '../container-injections/claude-permission-mode.ts';
 import { currentHealthSnapshots, stopHealthMonitor, syncHealthMonitors } from './health.server.ts';
 import { pickFreePort } from './ports.server.ts';
 import type { ServerWebSocket } from 'bun';
@@ -329,7 +330,8 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			row.host_port,
 			forwards,
 			defaultImage,
-			row.mode
+			row.mode,
+			getClaudePermissionMode()
 		);
 		updateInstance(row.id, { image_source: imageSource });
 

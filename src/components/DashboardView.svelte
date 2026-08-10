@@ -1,5 +1,10 @@
 <script lang="ts">
-	import { type Instance, type InstanceFilter, type Preflight } from '../types.ts';
+	import {
+		type Instance,
+		type InstanceFilter,
+		type InstanceMode,
+		type Preflight
+	} from '../types.ts';
 	import type { AvatarArt } from '../avatars/index.ts';
 	import FolderBrowser from './FolderBrowser.svelte';
 	import InstanceCard from './InstanceCard.svelte';
@@ -28,6 +33,8 @@
 	type Action = 'start' | 'stop' | 'delete' | 'rebuild';
 
 	let browserOpen = $state(false);
+	// Set only by the mode shortcut button; null lets the picker follow the global default.
+	let browserMode = $state<InstanceMode | null>(null);
 	let creating = $state(false);
 	let actionError = $state<string | null>(null);
 	let editingId = $state<string | null>(null);
@@ -148,7 +155,11 @@
 	{creating}
 	{filter}
 	{onFilter}
-	onNew={() => (browserOpen = true)}
+	defaultMode={preflight.defaultMode}
+	onNew={(mode) => {
+		browserMode = mode ?? null;
+		browserOpen = true;
+	}}
 	onDeleteAll={deleteAll}
 />
 
@@ -199,6 +210,7 @@
 	<FolderBrowser
 		onpick={createFrom}
 		defaultMode={preflight.defaultMode}
+		initialMode={browserMode}
 		onclose={() => (browserOpen = false)}
 	/>
 {/if}
