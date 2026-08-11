@@ -15,11 +15,13 @@ import { githubCredentials } from '../container-injections/github-credentials.ts
 import { attentionHooks } from '../container-injections/attention-hooks.ts';
 import { claudeStatusline } from '../container-injections/claude-statusline.ts';
 import { claudeModel } from '../container-injections/claude-model.ts';
+import { claudeEffortLevel } from '../container-injections/claude-effort-level.ts';
 import { claudePermissionMode } from '../container-injections/claude-permission-mode.ts';
 import { claudeTrust } from '../container-injections/claude-trust.ts';
 import { claudeAliases } from '../container-injections/claude-aliases.ts';
 import { claudeNoCoauthor } from '../container-injections/claude-no-coauthor.ts';
 import { hostEnvVars } from '../container-injections/host-env-vars.ts';
+import { customEnvVars } from '../container-injections/custom-env-vars.ts';
 
 /** Extends `ExecTarget` so exec-user semantics have a single source of truth. */
 export interface ContainerTarget extends ExecTarget {
@@ -58,14 +60,22 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 		// Open VSX extension) start immediately instead of queueing behind one another.
 		// claude-code-install (terminal-only) must precede claude-code-update: both are the sole
 		// npm-global writer of their stage, and the update no-ops until a binary exists.
-		[gitSafeDirectory, tmux, claudeCodeInstall, claudeInjection, claudeCodeIdeExtension],
+		[
+			gitSafeDirectory,
+			tmux,
+			claudeCodeInstall,
+			claudeInjection,
+			claudeCodeIdeExtension,
+			claudeEffortLevel
+		],
 		// git-identity needs stage 1's safe.directory; ttyd shares the apt/dpkg lock with tmux and
 		// the /usr/local/bin symlink with claude-code-install, so it trails both.
 		[gitIdentity, attentionHooks, claudeCodeModels, ttyd, claudeCodeUpdate],
 		[githubCredentials, claudeStatusline, claudePermissionMode],
 		[claudeModel, claudeAliases],
 		// claude-trust edits ~/.claude.json, which the stage-1 Claude slot also writes.
-		[claudeTrust, hostEnvVars],
+		// custom-env-vars writes nothing (values ride containerEnv) — it only verifies + health-checks.
+		[claudeTrust, hostEnvVars, customEnvVars],
 		[claudeNoCoauthor]
 	];
 }

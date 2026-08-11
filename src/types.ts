@@ -61,6 +61,18 @@ export function claudePermissionFlags(mode: ClaudePermissionMode): string {
 	return mode === 'default' ? '--dangerously-skip-permissions' : `--permission-mode ${mode}`;
 }
 
+/** Claude Code's default reasoning-effort level for new sessions, written to `settings.json`. */
+export type ClaudeEffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+export const CLAUDE_EFFORT_LEVELS: ClaudeEffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+/** Anything unrecognised falls back to the balanced default. */
+export function normalizeEffortLevel(value: unknown): ClaudeEffortLevel {
+	return CLAUDE_EFFORT_LEVELS.includes(value as ClaudeEffortLevel)
+		? (value as ClaudeEffortLevel)
+		: 'high';
+}
+
 /** Dashboard run-state view filter: All | Active (running/creating) | Stopped (stopped/error). */
 export type InstanceFilter = 'all' | 'active' | 'stopped';
 

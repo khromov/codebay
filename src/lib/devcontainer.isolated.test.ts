@@ -660,6 +660,43 @@ describe('writeOverrideConfig terminal mode', () => {
 	});
 });
 
+describe('writeOverrideConfig containerEnv', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-env-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	const readDevcontainer = () =>
+		JSON.parse(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8'));
+
+	test('renders the provided env vars as containerEnv', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'ide', 'default', [
+			{ name: 'FOO', value: 'bar' },
+			{ name: 'TOKEN', value: 'sk-secret' }
+		]);
+		expect(readDevcontainer().containerEnv).toEqual({ FOO: 'bar', TOKEN: 'sk-secret' });
+	});
+
+	test('adds no containerEnv key when there are no env vars', async () => {
+		await writeOverrideConfig(dir, 8001);
+		expect(readDevcontainer().containerEnv).toBeUndefined();
+	});
+
+	test('merges over a project-declared containerEnv, letting configured names win', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1', containerEnv: { KEEP: 'me', FOO: 'old' } })
+		);
+		await writeOverrideConfig(dir, 8001, [], undefined, 'ide', 'default', [
+			{ name: 'FOO', value: 'new' }
+		]);
+		expect(readDevcontainer().containerEnv).toEqual({ KEEP: 'me', FOO: 'new' });
+	});
+});
+
 describe('devcontainerUp args and env', () => {
 	test('builds the baseline up args without cache-busting by default', () => {
 		const args = devcontainerUpArgs('/ws/dir');

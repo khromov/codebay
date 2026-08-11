@@ -19,12 +19,14 @@ import {
 	DEFAULT_SONNET_MODEL
 } from './container-injections/claude-code-custom.ts';
 import { hostEnvVarPresence, parseHostEnvVarNames } from './container-injections/host-env-vars.ts';
+import { parseCustomEnvVars } from './container-injections/custom-env-vars.ts';
 import { gitIdentityEnabled } from './container-injections/git-identity.ts';
 import {
 	LATEST_CHECKED_AT_KEY,
 	LATEST_VERSION_KEY
 } from './container-injections/claude-code-update.ts';
 import { getClaudePermissionMode } from './container-injections/claude-permission-mode.ts';
+import { getClaudeEffortLevel } from './container-injections/claude-effort-level.ts';
 import { browse } from './lib/picker.server.ts';
 import { pickNamePrompt } from './avatars/name-prompts.ts';
 import { avatars, findAvatar } from './avatars/index.ts';
@@ -49,7 +51,8 @@ import {
 	stopInstance,
 	streamClose,
 	streamOpen,
-	subscribeLogs
+	subscribeLogs,
+	invalidateSecretValues
 } from './lib/instances.server.ts';
 import {
 	deleteFolderHistory,
@@ -67,6 +70,7 @@ import {
 	isInstanceFilter,
 	normalizeMode,
 	normalizePermissionMode,
+	normalizeEffortLevel,
 	type InstanceFilter
 } from './types.ts';
 
@@ -198,6 +202,7 @@ export const routes: Record<string, MochiRouteValue> = {
 				pet: currentPet(),
 				defaultMode: getDefaultMode(),
 				claudePermissionMode: getClaudePermissionMode(),
+				claudeEffortLevel: getClaudeEffortLevel(),
 				defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
 				builtinImage: DEFAULT_IMAGE,
 				disableBuildCache: getOption('disable_build_cache') === '1',
@@ -238,6 +243,9 @@ export const routes: Record<string, MochiRouteValue> = {
 				hostEnvVarsEnabled: getOption('host_env_vars_enabled') === '1',
 				hostEnvVarNames,
 				hostEnvVarPresence: hostEnvVarPresence(hostEnvVarNames),
+				// Freeform secrets: only the names round-trip; the values never leave the server.
+				customEnvVarsEnabled: getOption('custom_env_vars_enabled') === '1',
+				customEnvVarNames: parseCustomEnvVars(getOption('custom_env_vars')).map((v) => v.name),
 				advancedSerialInjections: getOption('advanced_serial_injections') === '1',
 				advancedNoBuildkit: getOption('advanced_no_buildkit') === '1',
 				advancedBlockingExtInstall: getOption('advanced_blocking_ext_install') === '1',
@@ -258,6 +266,13 @@ export const routes: Record<string, MochiRouteValue> = {
 				const mode = normalizePermissionMode(str(formData, 'mode'));
 				setOption('claude_permission_mode', mode);
 				return success({ mode });
+			},
+
+			// Injected into ~/.claude/settings.json at provision time, so it lands on create/rebuild.
+			claudeEffortLevel: ({ formData }) => {
+				const level = normalizeEffortLevel(str(formData, 'level'));
+				setOption('claude_effort_level', level);
+				return success({ level });
 			},
 
 			// Persist the default container image used when a source folder ships no devcontainer.json.
@@ -403,6 +418,42 @@ export const routes: Record<string, MochiRouteValue> = {
 				setOption('host_env_var_names', JSON.stringify(names));
 				const saved = parseHostEnvVarNames(getOption('host_env_var_names'));
 				return success({ presence: hostEnvVarPresence(saved) });
+			},
+
+			// Freeform name=value secrets injected into every container via containerEnv. Values are
+			// stored plaintext in the options table (like the tokens above) and never sent to the client.
+			customEnvVarsToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('custom_env_vars_enabled', enabled ? '1' : '0');
+				// The redaction set only masks while enabled, so it must be rebuilt on either flip.
+				invalidateSecretValues();
+				return success({ enabled });
+			},
+			// Upsert one var: the client only ever sends the single var it's changing, since it never
+			// holds the other secrets to resubmit (unlike host-env's whole-list-replace).
+			setCustomEnvVar: ({ formData }) => {
+				const name = str(formData, 'name');
+				const value = str(formData, 'value');
+				if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+					return fail(400, { error: `invalid variable name: ${name || '(empty)'}` });
+				}
+				if (!value) return fail(400, { error: 'value is required' });
+				const vars = parseCustomEnvVars(getOption('custom_env_vars')).filter(
+					(v) => v.name !== name
+				);
+				vars.push({ name, value });
+				setOption('custom_env_vars', JSON.stringify(vars));
+				invalidateSecretValues();
+				return success({ names: vars.map((v) => v.name) });
+			},
+			removeCustomEnvVar: ({ formData }) => {
+				const name = str(formData, 'name');
+				const vars = parseCustomEnvVars(getOption('custom_env_vars')).filter(
+					(v) => v.name !== name
+				);
+				setOption('custom_env_vars', JSON.stringify(vars));
+				invalidateSecretValues();
+				return success({ names: vars.map((v) => v.name) });
 			},
 
 			clearBuildCache: async () => {
