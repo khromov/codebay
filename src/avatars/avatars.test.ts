@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
-import { avatars, pickAvatar, findAvatar, decode } from './index.ts';
+import { avatars, findAvatar, decode } from './index.ts';
+import { pickAvatar, pickUniqueAvatar } from './pick.server.ts';
 
 describe('avatar catalog', () => {
 	test('has at least 30 sprites', () => {
@@ -121,5 +122,39 @@ describe('pickAvatar', () => {
 		}
 		// With 3000 random ids over ~32 buckets, every sprite should realistically appear.
 		expect(seen.size).toBe(avatars.length);
+	});
+});
+
+describe('pickUniqueAvatar', () => {
+	test('matches pickAvatar when nothing is taken', () => {
+		for (let i = 0; i < 50; i++) {
+			const id = crypto.randomUUID();
+			expect(pickUniqueAvatar(id, [])).toBe(pickAvatar(id));
+		}
+	});
+
+	test('avoids a taken sprite but still returns a catalog member', () => {
+		for (let i = 0; i < 50; i++) {
+			const id = crypto.randomUUID();
+			const hashed = pickAvatar(id);
+			const chosen = pickUniqueAvatar(id, [hashed.name]);
+			expect(chosen).not.toBe(hashed);
+			expect(avatars).toContain(chosen);
+		}
+	});
+
+	test('assigns a distinct sprite to every instance while the catalog has room', () => {
+		const taken: string[] = [];
+		// One shy of the catalog size, so a free sprite always remains.
+		for (let i = 0; i < avatars.length - 1; i++) {
+			taken.push(pickUniqueAvatar(crypto.randomUUID(), taken).name);
+		}
+		expect(new Set(taken).size).toBe(taken.length);
+	});
+
+	test('falls back to the hashed pick once every sprite is taken', () => {
+		const all = avatars.map((a) => a.name);
+		const id = crypto.randomUUID();
+		expect(pickUniqueAvatar(id, all)).toBe(pickAvatar(id));
 	});
 });

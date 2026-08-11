@@ -19,6 +19,8 @@ export interface Instance {
 	created_at: number;
 	/** `'local'` when the folder shipped its own config; null until provisioned. */
 	image_source: string | null;
+	/** Sprite name chosen collision-free at creation; null pre-dates this and falls back to the id hash. */
+	avatar: string | null;
 	/** `'ide'` serves full code-server; `'terminal'` serves only ttyd + Claude Code. */
 	mode: InstanceMode;
 	/** Terminal mode only: 1 when the scratch-shell pane was left open, so a reload restores it. */

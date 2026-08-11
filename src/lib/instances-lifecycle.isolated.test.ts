@@ -5,8 +5,10 @@ import {
 	invalidateSecretValues,
 	redactSecrets,
 	relaunchSurface,
+	sanitizeInstance,
 	startInstance
 } from './instances.server.ts';
+import { avatars } from '../avatars/index.ts';
 
 /**
  * `getDocker()` resolves a client pinned to `globalThis.__codebayDocker`; seeding that slot
@@ -69,6 +71,7 @@ function seed(overrides: Partial<InstanceRow> = {}): InstanceRow {
 		bridge_token: 'tok',
 		remote_user: 'node',
 		image_source: 'local',
+		avatar: null,
 		mode: 'terminal',
 		terminal_split: 0,
 		config_migrated: 1,
@@ -83,6 +86,18 @@ const scriptOf = (call: ExecCall) => call.Cmd[2]!;
 afterEach(() => {
 	globalThis.fetch = realFetch;
 	g.__codebayDocker = undefined;
+});
+
+describe('sanitizeInstance', () => {
+	test('strips bridge_token and resolves a legacy null avatar to a catalog sprite', () => {
+		const out = sanitizeInstance(seed({ avatar: null }));
+		expect('bridge_token' in out).toBe(false);
+		expect(avatars.some((a) => a.name === out.avatar)).toBe(true);
+	});
+
+	test('keeps a persisted avatar name as-is', () => {
+		expect(sanitizeInstance(seed({ avatar: 'octopus' })).avatar).toBe('octopus');
+	});
 });
 
 describe('relaunchSurface', () => {

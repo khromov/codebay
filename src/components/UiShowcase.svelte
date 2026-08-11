@@ -71,9 +71,8 @@
 
 	let avatarScale = $state(8);
 	let avatarName = $state('demo-instance');
-	let avatarId = $state('alpha');
-	// '' means "pick by id"; otherwise the value is an avatar name from the catalog.
-	let avatarArtName = $state('');
+	// '' renders an empty panel; otherwise the value is an avatar name from the catalog.
+	let avatarArtName = $state(avatars[0]!.name);
 	const avatarArt = $derived(avatars.find((a) => a.name === avatarArtName));
 
 	let btnVariant = $state<'default' | 'primary' | 'danger'>('primary');
@@ -187,7 +186,7 @@
 		</details>
 
 		<ComponentDemo title="Avatar">
-			<Avatar id={avatarId} name={avatarName} scale={avatarScale} art={avatarArt} />
+			<Avatar name={avatarName} scale={avatarScale} art={avatarArt} />
 			{#snippet controls()}
 				<label>
 					<span>scale ({avatarScale})</span>
@@ -198,13 +197,9 @@
 					<input type="text" bind:value={avatarName} />
 				</label>
 				<label>
-					<span>id</span>
-					<input type="text" bind:value={avatarId} />
-				</label>
-				<label>
 					<span>art</span>
 					<select bind:value={avatarArtName}>
-						<option value="">(pick by id)</option>
+						<option value="">(none)</option>
 						{#each avatars as art (art.name)}
 							<option value={art.name}>{art.name}</option>
 						{/each}

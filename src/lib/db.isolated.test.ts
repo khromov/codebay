@@ -30,6 +30,7 @@ function makeInstance(id: string, hostPort: number): InstanceRow {
 		bridge_token: 'tok',
 		remote_user: null,
 		image_source: null,
+		avatar: null,
 		mode: 'ide',
 		terminal_split: 0,
 		config_migrated: 1
@@ -108,5 +109,12 @@ describe('updateInstance image_source + insert round-trip', () => {
 		expect(db.getInstance('split')?.terminal_split).toBe(0);
 		db.updateInstance('split', { terminal_split: 1 });
 		expect(db.getInstance('split')?.terminal_split).toBe(1);
+	});
+
+	test('avatar persists through insert; null when unset', () => {
+		db.insertInstance(makeInstance('no-avatar', 8103));
+		expect(db.getInstance('no-avatar')?.avatar).toBeNull();
+		db.insertInstance({ ...makeInstance('has-avatar', 8104), avatar: 'octopus' });
+		expect(db.getInstance('has-avatar')?.avatar).toBe('octopus');
 	});
 });

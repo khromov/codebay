@@ -1,19 +1,17 @@
 <script lang="ts">
-	import { pickAvatar, decode, type AvatarArt } from '../avatars/index.ts';
+	import { decode, type AvatarArt } from '../avatars/index.ts';
 
 	// `scale` is device-pixels per LED cell; the panel is always an integer multiple
 	// of it (10 × scale px) so every pixel lands on a crisp boundary.
 	let {
-		id = '',
 		name,
 		scale = 6,
 		art,
 		interactive = false
 	}: {
-		id?: string;
 		name: string;
 		scale?: number;
-		art?: AvatarArt;
+		art?: AvatarArt | null;
 		interactive?: boolean;
 	} = $props();
 
@@ -67,15 +65,17 @@
 	// 0.5px is a crisp single device-pixel at 2×; at 1× the cells can't spare any gutter.
 	const gap = $derived(s >= 2 ? 0.5 : 0);
 
-	const resolved = $derived(art ?? pickAvatar(id));
-	const cells = $derived(decode(resolved));
+	// Instance sprites are resolved server-side and handed in as `art`; a missing or unknown one
+	// (null/unset) renders an empty panel rather than a colliding fallback.
+	const resolved = $derived(art ?? null);
+	const cells = $derived(resolved ? decode(resolved) : []);
 	// The 10×10 outer ring is unlit LED cells — a bezel of real dots, not blank padding.
 	const grid = $derived(
 		Array.from({ length: 100 }, (_, i) => {
 			const r = Math.floor(i / 10);
 			const c = i % 10;
 			const inner = r >= 1 && r <= 8 && c >= 1 && c <= 8;
-			return inner ? cells[(r - 1) * 8 + (c - 1)] : 0;
+			return inner ? (cells[(r - 1) * 8 + (c - 1)] ?? 0) : 0;
 		})
 	);
 </script>
@@ -87,7 +87,7 @@
 	class:ghosting
 	role="img"
 	aria-label={name}
-	title={resolved.name}
+	title={resolved?.name}
 	style="width:{10 * s}px;height:{10 *
 		s}px;--gap:{gap}px;--bx:{bx};--by:{by};--spin:{spin}deg;--hue:{hue}deg"
 	{onpointerdown}
