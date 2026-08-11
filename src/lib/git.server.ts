@@ -16,6 +16,27 @@ export async function readGitBranch(workspacePath: string): Promise<string | nul
 	}
 }
 
+/** Exit-code probe — `spawnCapture` can't tell a silent success from a failure. */
+async function gitExitCode(workspaceDir: string, args: string[]): Promise<number | null> {
+	try {
+		const proc = Bun.spawn(['git', '-C', workspaceDir, ...args], {
+			stdout: 'ignore',
+			stderr: 'ignore'
+		});
+		return await proc.exited;
+	} catch {
+		return null; // no git on the host
+	}
+}
+
+export async function isTrackedFile(workspaceDir: string, relPath: string): Promise<boolean> {
+	return (await gitExitCode(workspaceDir, ['ls-files', '--error-unmatch', '--', relPath])) === 0;
+}
+
+export async function restoreTrackedFile(workspaceDir: string, relPath: string): Promise<boolean> {
+	return (await gitExitCode(workspaceDir, ['checkout', '--', relPath])) === 0;
+}
+
 /**
  * The token goes in env-scoped git config, so it lands in neither argv nor the clone's
  * persisted `.git/config`; `GIT_TERMINAL_PROMPT=0` fails fast instead of blocking on a prompt.

@@ -16,7 +16,9 @@ import {
 	devcontainerUpArgs,
 	devcontainerUpEnv,
 	launchCommandFor,
+	overrideConfigPath,
 	readDeclaredContainerPorts,
+	restoreCanonicalConfig,
 	TERMINAL_LAUNCHED_MARKER,
 	writeOverrideConfig
 } from './devcontainer.server.ts';
@@ -35,7 +37,7 @@ describe('launchCommandFor', () => {
 	afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 	const postStart = () =>
-		JSON.parse(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8'))
+		JSON.parse(readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8'))
 			.postStartCommand as string;
 
 	test('terminal mode returns exactly what writeOverrideConfig writes', async () => {
@@ -267,19 +269,21 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		expect(install).toContain('command -v tmux');
 		expect(install.trimEnd().endsWith('exit 0')).toBe(true);
 		const config = JSON.parse(
-			readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8')
+			readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8')
 		);
 		// Nested config form → feature path is relative to .devcontainer/.
 		expect(config.features['./codebay-tmux']).toEqual({});
 	});
 
 	test('references the tmux feature relative to a root .devcontainer.json', async () => {
-		writeFileSync(join(dir, '.devcontainer.json'), JSON.stringify({ image: 'debian' }));
+		const original = JSON.stringify({ image: 'debian' });
+		writeFileSync(join(dir, '.devcontainer.json'), original);
 		await writeOverrideConfig(dir, 8001);
-		const config = JSON.parse(readFileSync(join(dir, '.devcontainer.json'), 'utf8'));
-		// Flat config form → path from the workspace root into .devcontainer/.
+		// Flat canonical form → the merged config sits next to it at the workspace root.
+		const config = JSON.parse(readFileSync(join(dir, '.codebay.devcontainer.json'), 'utf8'));
 		expect(config.features['./.devcontainer/codebay-tmux']).toEqual({});
 		expect(existsSync(join(dir, '.devcontainer', 'codebay-tmux', 'install.sh'))).toBe(true);
+		expect(readFileSync(join(dir, '.devcontainer.json'), 'utf8')).toBe(original);
 	});
 
 	test('sources the injected env files before launching claude', async () => {
@@ -317,7 +321,7 @@ describe('writeOverrideConfig terminal task + settings', () => {
 	});
 
 	const readDevcontainer = () =>
-		JSON.parse(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8'));
+		JSON.parse(readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8'));
 
 	test('launches code-server before the backgrounded extension install', async () => {
 		await writeOverrideConfig(dir, 8001);
@@ -436,8 +440,11 @@ describe('writeOverrideConfig local git excludes', () => {
 		await writeOverrideConfig(dir, 8001);
 		const text = readExclude();
 		expect(text).toContain('# >>> codebay (auto-generated) >>>');
+		expect(text).toContain('/.devcontainer/codebay.devcontainer.json');
+		expect(text).toContain('/.codebay.devcontainer.json');
 		expect(text).toContain('/.devcontainer/code-server-settings.json');
 		expect(text).toContain('/.devcontainer/devcontainer-lock.json');
+		expect(text).toContain('/.devcontainer-lock.json');
 		expect(text).toContain('/.vscode/tasks.json');
 	});
 
@@ -464,6 +471,136 @@ describe('writeOverrideConfig local git excludes', () => {
 	});
 });
 
+describe('writeOverrideConfig separate config file', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-sep-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	test('never touches the project devcontainer.json and reports where it wrote', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		const original = '{\n  // project-owned\n  "image": "ships/own:1",\n}\n';
+		writeFileSync(join(dir, '.devcontainer', 'devcontainer.json'), original);
+		const { configPath } = await writeOverrideConfig(dir, 8001);
+		expect(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8')).toBe(original);
+		expect(configPath).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
+		const merged = JSON.parse(readFileSync(configPath, 'utf8'));
+		expect(merged.image).toBe('ships/own:1');
+		expect(merged.appPort).toEqual(['127.0.0.1:8001:8080']);
+	});
+
+	test('a config-less project gets only the codebay config, never a canonical one', async () => {
+		const { imageSource, configPath } = await writeOverrideConfig(dir, 8001, [], 'my/custom:42');
+		expect(imageSource).toBe('my/custom:42');
+		expect(configPath).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
+		expect(existsSync(join(dir, '.devcontainer', 'devcontainer.json'))).toBe(false);
+		expect(existsSync(join(dir, '.devcontainer.json'))).toBe(false);
+	});
+
+	test('rebuilds do not chain the launch command onto itself', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1', postStartCommand: 'echo hi' })
+		);
+		await writeOverrideConfig(dir, 8001);
+		await writeOverrideConfig(dir, 8001);
+		const merged = JSON.parse(
+			readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8')
+		);
+		const launch = launchCommandFor('ide');
+		// The legacy in-place scheme re-read its own output, appending the launch on every rebuild.
+		expect((merged.postStartCommand as string).split(launch)).toHaveLength(2);
+		expect(merged.postStartCommand).toStartWith('echo hi && ');
+	});
+
+	test('overrideConfigPath tracks the canonical form', () => {
+		expect(overrideConfigPath(dir)).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
+		writeFileSync(join(dir, '.devcontainer.json'), '{}');
+		expect(overrideConfigPath(dir)).toBe(join(dir, '.codebay.devcontainer.json'));
+		// A nested config wins over the flat one, mirroring the CLI's lookup order.
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(join(dir, '.devcontainer', 'devcontainer.json'), '{}');
+		expect(overrideConfigPath(dir)).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
+	});
+});
+
+describe('restoreCanonicalConfig', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-restore-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	const git = (...args: string[]) => {
+		const proc = Bun.spawnSync(
+			[
+				'git',
+				'-C',
+				dir,
+				'-c',
+				'user.email=t@t',
+				'-c',
+				'user.name=t',
+				'-c',
+				'commit.gpgsign=false',
+				...args
+			],
+			{ stdout: 'ignore', stderr: 'ignore' }
+		);
+		expect(proc.exitCode).toBe(0);
+	};
+
+	const configFile = () => join(dir, '.devcontainer', 'devcontainer.json');
+	const pristine = JSON.stringify({ image: 'ships/own:1' });
+	// What the legacy scheme left behind: the project's config with the injections baked in.
+	const overwritten = JSON.stringify({
+		image: 'ships/own:1',
+		features: { './codebay-tmux': {} }
+	});
+
+	test('restores a tracked config the legacy scheme overwrote', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(configFile(), pristine);
+		git('init');
+		git('add', '.');
+		git('commit', '-m', 'init');
+		writeFileSync(configFile(), overwritten);
+		expect(await restoreCanonicalConfig(dir)).toBe('restored');
+		expect(readFileSync(configFile(), 'utf8')).toBe(pristine);
+	});
+
+	test('deletes an untracked fingerprinted config (created for a config-less project)', async () => {
+		git('init');
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(configFile(), overwritten);
+		expect(await restoreCanonicalConfig(dir)).toBe('deleted');
+		expect(existsSync(configFile())).toBe(false);
+	});
+
+	test('never touches a config without the injection fingerprint', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(configFile(), pristine);
+		git('init');
+		expect(await restoreCanonicalConfig(dir)).toBe('none');
+		expect(readFileSync(configFile(), 'utf8')).toBe(pristine);
+	});
+
+	test('leaves a fingerprinted config alone outside a git repo', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(configFile(), overwritten);
+		expect(await restoreCanonicalConfig(dir)).toBe('none');
+		expect(readFileSync(configFile(), 'utf8')).toBe(overwritten);
+	});
+
+	test('returns none when there is no config at all', async () => {
+		expect(await restoreCanonicalConfig(dir)).toBe('none');
+	});
+});
+
 describe('writeOverrideConfig terminal mode', () => {
 	let dir: string;
 
@@ -473,7 +610,7 @@ describe('writeOverrideConfig terminal mode', () => {
 	afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 	const readDevcontainer = () =>
-		JSON.parse(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8'));
+		JSON.parse(readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8'));
 	const readLaunch = () => readFileSync(join(dir, '.devcontainer', 'codebay-terminal.sh'), 'utf8');
 
 	test('swaps code-server for the ttyd feature, keeping tmux', async () => {
@@ -669,7 +806,7 @@ describe('writeOverrideConfig containerEnv', () => {
 	afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 	const readDevcontainer = () =>
-		JSON.parse(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8'));
+		JSON.parse(readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8'));
 
 	test('renders the provided env vars as containerEnv', async () => {
 		await writeOverrideConfig(dir, 8001, [], undefined, 'ide', 'default', [
@@ -711,6 +848,13 @@ describe('devcontainerUp args and env', () => {
 	test('appends --build-no-cache only when noCache is set', () => {
 		expect(devcontainerUpArgs('/ws/dir', { noCache: true })).toContain('--build-no-cache');
 		expect(devcontainerUpArgs('/ws/dir', {})).not.toContain('--build-no-cache');
+	});
+
+	test('appends --config only when a config path is given', () => {
+		const configPath = '/ws/dir/.devcontainer/codebay.devcontainer.json';
+		const args = devcontainerUpArgs('/ws/dir', { configPath });
+		expect(args[args.indexOf('--config') + 1]).toBe(configPath);
+		expect(devcontainerUpArgs('/ws/dir', {})).not.toContain('--config');
 	});
 
 	test('enables BuildKit as a default the caller environment can override', () => {

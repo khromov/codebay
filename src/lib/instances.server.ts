@@ -33,6 +33,7 @@ import {
 	hostPortsInUse,
 	isRunning,
 	removeContainer,
+	removeContainerOnly,
 	startContainer,
 	stopContainer
 } from './docker.server.ts';
@@ -43,6 +44,7 @@ import {
 	INJECTIONS_DONE_FILE,
 	launchCommandFor,
 	readDeclaredContainerPorts,
+	restoreCanonicalConfig,
 	TERMINAL_LAUNCHED_MARKER,
 	writeOverrideConfig
 } from './devcontainer.server.ts';
@@ -349,7 +351,7 @@ async function boot(row: InstanceRow, opts: { branch?: string } = {}): Promise<v
 	await provision(row);
 }
 
-/** Must run before config injection, while the copied `devcontainer.json` is still pristine. */
+/** Reads the project's own `devcontainer.json`, which the config injection never touches. */
 async function seedDeclaredPorts(row: InstanceRow): Promise<void> {
 	const existing = new Set(listForwards(row.id).map((f) => f.container_port));
 	for (const containerPort of await readDeclaredContainerPorts(row.workspace_path)) {
@@ -391,6 +393,13 @@ async function rescueHijackedPort(row: InstanceRow): Promise<void> {
 /** Never re-copies the workspace, so in-container edits survive a rebuild. */
 async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Promise<void> {
 	try {
+		// Migrates instances created before the merged config moved to its own file.
+		if ((await restoreCanonicalConfig(row.workspace_path)) !== 'none') {
+			appendLog(
+				row.id,
+				'Restored the project devcontainer config (Codebay now keeps its merged config in a separate file)\n'
+			);
+		}
 		await rescueHijackedPort(row);
 		const forwards = listForwards(row.id).map((f) => ({
 			container_port: f.container_port,
@@ -398,7 +407,7 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		}));
 		appendLog(row.id, `Injecting ${surfaceLabel(row.mode)} (host port ${row.host_port})\n`);
 		const defaultImage = getOption('default_image') ?? DEFAULT_IMAGE;
-		const { imageSource } = await writeOverrideConfig(
+		const { imageSource, configPath } = await writeOverrideConfig(
 			row.workspace_path,
 			row.host_port,
 			forwards,
@@ -412,10 +421,15 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		const noCache = opts.noCache || getOption('disable_build_cache') === '1';
 		if (noCache) appendLog(row.id, `Building without cache (--build-no-cache)\n`);
 
+		// The CLI's --remove-existing-container matches by the devcontainer.config_file label, which
+		// no longer matches containers built from the pre-separate-config path — drop them ourselves.
+		if (row.container_id) await removeContainerOnly(row.container_id);
+
 		appendLog(row.id, `Starting devcontainer…\n`);
 		const upStart = Date.now();
 		const result = await devcontainerUp(row.workspace_path, (chunk) => appendLog(row.id, chunk), {
-			noCache
+			noCache,
+			configPath
 		});
 		appendLog(row.id, `⏱ devcontainer up: ${elapsed(upStart)}\n`);
 
