@@ -1,6 +1,6 @@
 import { Mochi, sequence, silenceInternalRoutes } from 'mochi-framework';
 import { routes } from './routes.ts';
-import { basicAuth } from './lib/auth.server.ts';
+import { basicAuth, setServer } from './lib/auth.server.ts';
 import { themeHandle } from './lib/theme.server.ts';
 import { PROXY_PREFIX } from './lib/proxy.server.ts';
 import {
@@ -25,7 +25,7 @@ if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !BASIC_AUTH_PASSWORD) {
 // Must precede Mochi.serve(), which is where MOCHI_KEY is read.
 ensureMochiKey();
 
-await Mochi.serve({
+const server = await Mochi.serve({
 	port: PORT,
 	hostname: HOST,
 	// Bun defaults to 10s and aborts slower form POSTs mid-flight; passed through to Bun.serve.
@@ -65,6 +65,10 @@ await Mochi.serve({
 	},
 	routes
 });
+
+// `Mochi.ws` upgrade callbacks get only (req, params), so the sandbox terminal's peer check
+// needs the server handle to resolve `requestIP`.
+setServer(server);
 
 const url = 'http://localhost:' + PORT;
 console.log(`codebay v${APP_VERSION} — server running at ${url} (bound to ${HOST})`);

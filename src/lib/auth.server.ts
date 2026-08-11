@@ -2,6 +2,44 @@ import type { Handle } from 'mochi-framework';
 import { BASIC_AUTH_PASSWORD, BASIC_AUTH_USERNAME } from './config.server.ts';
 import { timingSafeEqualStr } from './crypto.server.ts';
 
+const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1', '0:0:0:0:0:0:0:1']);
+
+// Set once at boot; `Mochi.ws` upgrade callbacks receive only (req, params), so there is no
+// other route to the peer address.
+let server: { requestIP(req: Request): { address: string } | null } | null = null;
+
+export function setServer(next: typeof server): void {
+	server = next;
+}
+
+export function isLoopbackPeer(req: Request): boolean {
+	const address = server?.requestIP(req)?.address;
+	// Unknown peer is treated as remote — the safe direction for a gate in front of a host shell.
+	return address !== undefined && LOOPBACK_ADDRESSES.has(address);
+}
+
+/**
+ * Sandbox mode's terminal is a shell on the *host*, not in a container — nono constrains what it
+ * may touch, but has nothing to say about who gets to type into it. So it needs a boundary the
+ * container modes don't: either a password, or a peer that is this machine.
+ *
+ * Keyed on the **peer**, not the bind address, because `bun run dev` binds `0.0.0.0` on purpose
+ * (to be reachable through a container port mapping) — refusing on bind alone would break the
+ * project's own dev command for a browser sitting on localhost.
+ *
+ * Returns the refusal text rather than a bare boolean so the socket can tell the user why;
+ * a silently-refused upgrade is indistinguishable from a dropped connection.
+ */
+export function hostTerminalRefusal(req: Request): string | null {
+	if (BASIC_AUTH_PASSWORD) return null;
+	if (isLoopbackPeer(req)) return null;
+	return (
+		'Refusing to attach a sandboxed terminal to a remote client: this is a shell on the host, ' +
+		'and this server has no BASIC_AUTH_PASSWORD set. Set one and reload, or open codebay from ' +
+		'this machine.'
+	);
+}
+
 const REALM = 'Codebay';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);

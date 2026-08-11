@@ -3,15 +3,15 @@ import { migrate, getMigrations } from '@zihaolam/bun-sqlite-migrations';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DATA_DIR, DB_PATH } from './config.server.ts';
-import type { FolderHistoryEntry } from '../types.ts';
+import type { FolderHistoryEntry, InstanceMode } from '../types.ts';
 
 // db.server.ts lives in src/lib, so ../../migrations resolves to the repo root.
 const MIGRATIONS_DIR = join(import.meta.dir, '../../migrations');
 
 export type InstanceStatus = 'creating' | 'running' | 'stopped' | 'error';
 
-/** `'ide'` serves full code-server; `'terminal'` serves only ttyd + Claude Code. */
-export type InstanceMode = 'ide' | 'terminal';
+// Re-exported because most server modules import their row types from here, not from ../types.ts.
+export type { InstanceMode };
 
 export interface InstanceRow {
 	id: string;

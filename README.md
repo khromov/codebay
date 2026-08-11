@@ -4,13 +4,37 @@
 
 ## Quick start
 
-Requires [Bun](https://bun.sh) >= 1.3.13 (Node.js is not supported) and a running Docker daemon (Docker Desktop, Colima, OrbStack…). macOS and Linux are supported; Windows is untested.
+Requires [Bun](https://bun.sh) >= 1.3.13 (Node.js is not supported) and a running Docker daemon (Docker Desktop, Colima, OrbStack…) for the two devcontainer-backed modes. macOS and Linux are supported; Windows is untested.
 
 ```sh
 bunx codebay@latest
 ```
 
 The UI opens at `http://localhost:6969`. State (SQLite DB + per-instance workspace copies) lives in `~/.codebay`.
+
+## Instance modes
+
+Pick one per instance when you create it (or set the default in Settings):
+
+| Mode          | Isolation                                  | What you get                                                          |
+| ------------- | ------------------------------------------ | --------------------------------------------------------------------- |
+| **Full IDE**  | devcontainer (Docker)                      | Browser VS Code (`code-server`) with Claude Code, forwarded app ports |
+| **Terminal**  | devcontainer (Docker)                      | Just Claude Code in a terminal — lighter, no code-server              |
+| **Sandboxed** | [nono](https://nono.sh) sandbox, no Docker | Claude Code as a process on **this machine**, wrapped by nono         |
+
+**Sandboxed** mode trades the container for an OS-level sandbox (macOS Seatbelt / Linux Landlock), so it starts in seconds with no image build and works with the Docker daemon stopped. Your folder is still copied into its own workspace under `DATA_DIR`, and Claude uses your host's existing `~/.claude` credentials.
+
+It needs the `nono` CLI on your PATH:
+
+```sh
+brew install nono          # or: curl -fsSL https://nono.sh/install.sh | sh
+```
+
+Codebay installs the sandbox profile itself (`nono pull nolabs-ai/claude`) the first time you create a sandboxed instance. Change which pack it uses under **Settings → nono profile**.
+
+Because the sandboxed terminal is a shell on the host rather than inside a container, codebay only attaches it for a browser on **this machine**, unless you set a `BASIC_AUTH_PASSWORD`. A remote client gets the reason printed in the terminal instead of a session. (The check is on the connecting client, not the bind address, so `HOST=0.0.0.0` — which `bun run dev` sets — still works locally.)
+
+Ports, rebuilds and the health panel don't apply to this mode and are hidden.
 
 ## Configuration
 

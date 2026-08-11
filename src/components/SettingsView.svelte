@@ -47,6 +47,9 @@
 	let {
 		pet,
 		defaultMode,
+		nonoAvailable,
+		nonoProfile,
+		builtinNonoProfile,
 		claudePermissionMode,
 		defaultImage,
 		builtinImage,
@@ -84,6 +87,9 @@
 	}: {
 		pet?: AvatarArt;
 		defaultMode: InstanceMode;
+		nonoAvailable: boolean;
+		nonoProfile: string;
+		builtinNonoProfile: string;
 		claudePermissionMode: ClaudePermissionMode;
 		defaultImage: string;
 		builtinImage: string;
@@ -216,6 +222,20 @@
 		flushSync(() => (modeChoice = next));
 		modeFormEl?.requestSubmit();
 	}
+
+	// svelte-ignore state_referenced_locally
+	let nonoProfileValue = $state(nonoProfile);
+	let savingNonoProfile = $state(false);
+	let nonoProfileError = $state<string | null>(null);
+
+	const nonoProfileOpts = saveOpts<{ profile: string }>({
+		setSaving: (v) => (savingNonoProfile = v),
+		setError: (v) => (nonoProfileError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			nonoProfileValue = data?.profile ?? nonoProfileValue;
+		}
+	});
 
 	// svelte-ignore state_referenced_locally
 	let permissionChoice = $state<ClaudePermissionMode>(claudePermissionMode);
@@ -735,8 +755,9 @@
 						<div class="name">Default editor</div>
 						<div class="desc">
 							What new instances start in. <strong>Full IDE</strong> serves browser VS Code;
-							<strong>Terminal</strong> is lighter — just Claude Code in a terminal, no code-server. You
-							can override this per instance when creating one.
+							<strong>Terminal</strong> is lighter — just Claude Code in a terminal, no code-server;
+							<strong>Sandboxed</strong> skips Docker entirely and runs Claude Code on this machine under
+							nono. You can override this per instance when creating one.
 						</div>
 					</div>
 				</div>
@@ -764,10 +785,58 @@
 						<Terminal size={15} />
 						Terminal
 					</button>
+					<button
+						type="button"
+						class="mode-btn"
+						class:active={modeChoice === 'nono'}
+						aria-pressed={modeChoice === 'nono'}
+						disabled={savingMode || !nonoAvailable}
+						title={nonoAvailable ? undefined : 'Requires nono: install it with `brew install nono`'}
+						onclick={() => chooseMode('nono')}
+					>
+						<ShieldCheck size={15} />
+						Sandboxed
+					</button>
 				</div>
 			</form>
 			{#if modeError}
 				<div class="sub"><div class="msg error">{modeError}</div></div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form class="row" method="POST" action="?/nonoProfile" {@attach enhance(nonoProfileOpts)}>
+				<div class="label">
+					<ShieldCheck size={20} />
+					<div class="text">
+						<div class="name">nono profile</div>
+						<div class="desc">
+							The registry pack whose sandbox profile wraps Claude Code in sandboxed instances. Read
+							on every pane spawn, so a change applies to the next terminal you open.
+							{#if !nonoAvailable}
+								<strong>nono is not installed</strong> — <code>brew install nono</code>.
+							{/if}
+						</div>
+					</div>
+				</div>
+				<div class="image-controls">
+					<input
+						type="text"
+						name="profile"
+						class="image-input"
+						bind:value={nonoProfileValue}
+						placeholder={builtinNonoProfile}
+						spellcheck="false"
+						autocapitalize="off"
+						autocorrect="off"
+					/>
+					<Button type="submit" disabled={savingNonoProfile}>
+						{savingNonoProfile ? 'Saving…' : 'Save'}
+					</Button>
+				</div>
+			</form>
+			{#if nonoProfileError}
+				<div class="sub"><div class="msg error">{nonoProfileError}</div></div>
 			{/if}
 		</section>
 

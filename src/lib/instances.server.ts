@@ -62,8 +62,11 @@ import {
 } from './health.server.ts';
 import { isHostPortBindable, pickBindablePort } from './ports.server.ts';
 import type { ServerWebSocket } from 'bun';
+import { getNonoProfile, nonoAvailable, nonoPull } from './nono.server.ts';
+import { killSessions } from './pty.server.ts';
 import {
 	isInstanceFilter,
+	isSandboxMode,
 	normalizeMode,
 	type Instance,
 	type InstanceFilter,
@@ -123,7 +126,7 @@ export function subscribeLogs(id: string, onChunk: (chunk: string) => void): () 
 export type StreamEvent =
 	| { type: 'instances'; data: Instance[] }
 	| { type: 'health'; data: { id: string; health: InstanceHealth } }
-	| { type: 'preflight'; data: { docker: boolean; cli: boolean } }
+	| { type: 'preflight'; data: { docker: boolean; cli: boolean; nono: boolean } }
 	// `name` is the chosen sprite, or null for the default box logo. Lets the header swap live.
 	| { type: 'pet'; data: { name: string | null } }
 	// The dashboard run-state filter, so a change in one tab propagates to every open client.
@@ -146,10 +149,10 @@ const hub: StreamHub = (globalForHub.__codebayHub ??= {
 	lastPreflightJson: ''
 });
 
-/** Docker + CLI only; auth stays SSR-only. */
-async function backgroundPreflight(): Promise<{ docker: boolean; cli: boolean }> {
+/** Docker + CLI + nono only; auth stays SSR-only. */
+async function backgroundPreflight(): Promise<{ docker: boolean; cli: boolean; nono: boolean }> {
 	const [docker, cli] = await Promise.all([dockerAvailable(), devcontainerCliAvailable()]);
-	return { docker, cli };
+	return { docker, cli, nono: nonoAvailable() };
 }
 
 function broadcast(event: StreamEvent): void {
@@ -308,12 +311,46 @@ async function boot(row: InstanceRow, opts: { branch?: string } = {}): Promise<v
 			await copyWorkspace(row.source_path, row.workspace_path, ignore);
 			appendLog(row.id, `⏱ copy: ${elapsed(sourceStart)}\n`);
 		}
-		await seedDeclaredPorts(row);
+		// Sandbox mode publishes nothing, so a project's declared ports have nowhere to go.
+		if (!isSandboxMode(row.mode)) await seedDeclaredPorts(row);
 	} catch (err) {
 		failInstance(row.id, err);
 		return;
 	}
-	await provision(row);
+	await (isSandboxMode(row.mode) ? provisionNono(row) : provision(row));
+}
+
+/**
+ * The whole of "provisioning" for sandbox mode: make sure the nono profile is on disk, then mark
+ * the instance ready. There is no container, so `running` here means "workspace provisioned,
+ * ready to attach" — the PTYs themselves are spawned lazily by the first WebSocket attach, which
+ * is also what lets these instances survive a manager restart without any reconciliation.
+ */
+async function provisionNono(row: InstanceRow): Promise<void> {
+	try {
+		if (!nonoAvailable()) {
+			throw new Error(
+				'nono is not installed — install it with `brew install nono` (or ' +
+					'`curl -fsSL https://nono.sh/install.sh | sh`) and rebuild this instance'
+			);
+		}
+		const profile = getNonoProfile();
+		const pulled = await nonoPull(profile, (msg) => appendLog(row.id, msg));
+		if (!pulled.ok)
+			throw new Error(`Could not install the nono profile ${profile}: ${pulled.error}`);
+
+		updateInstance(row.id, {
+			image_source: `nono:${profile}`,
+			status: 'running',
+			error: null
+		});
+		row.image_source = `nono:${profile}`;
+		row.status = 'running';
+		appendLog(row.id, `\n✓ Sandbox ready — Claude Code runs under nono in ${row.workspace_path}\n`);
+		triggerReconcile();
+	} catch (err) {
+		failInstance(row.id, err);
+	}
 }
 
 /** Must run before config injection, while the copied `devcontainer.json` is still pristine. */
@@ -482,7 +519,10 @@ export async function createInstance(
 	}
 	const id = crypto.randomUUID();
 	const folderName = parsedRepo?.repo || basename(source) || 'workspace';
-	const hostPort = await allocatePort();
+	const mode = opts.mode ?? getDefaultMode();
+	// Sandbox mode serves nothing over HTTP, so burning a port from the 8001–8999 range would
+	// only shrink the pool the Docker modes draw from.
+	const hostPort = isSandboxMode(mode) ? 0 : await allocatePort();
 	const row: InstanceRow = {
 		id,
 		name: uniqueName(name?.trim() || folderName),
@@ -497,7 +537,7 @@ export async function createInstance(
 		bridge_token: crypto.randomUUID().replace(/-/g, ''),
 		remote_user: null,
 		image_source: null,
-		mode: opts.mode ?? getDefaultMode(),
+		mode,
 		terminal_split: 0
 	};
 	insertInstance(row);
@@ -581,6 +621,7 @@ export function renameInstance(id: string, name: string): InstanceRow {
 export async function addForwardedPort(id: string, containerPort: number): Promise<InstanceRow> {
 	const row = getInstance(id);
 	if (!row) throw new Error('Instance not found');
+	if (isSandboxMode(row.mode)) throw new Error('Sandbox instances do not publish ports');
 	if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65535) {
 		throw new Error('Port must be an integer between 1 and 65535');
 	}
@@ -624,6 +665,13 @@ export function rebuildInstance(id: string, opts: { noCache?: boolean } = {}): I
 	updateInstance(id, { status: 'creating', error: null });
 	triggerReconcile();
 	const fresh = getInstance(id)!;
+	if (isSandboxMode(fresh.mode)) {
+		// The only recovery path for a sandbox instance that failed because nono was missing.
+		appendLog(id, `\n— Re-checking the nono sandbox —\n`);
+		killSessions(id);
+		void provisionNono(fresh);
+		return fresh;
+	}
 	appendLog(
 		id,
 		opts.noCache ? `\n— Rebuilding without cache —\n` : `\n— Rebuilding to apply port changes —\n`
@@ -680,6 +728,12 @@ export async function relaunchSurface(row: InstanceRow): Promise<void> {
 export async function startInstance(id: string): Promise<InstanceRow> {
 	const row = getInstance(id);
 	if (!row) throw new Error('Instance not found');
+	// Nothing to start: the PTYs come back on the next attach, so this is purely a status flip.
+	if (isSandboxMode(row.mode)) {
+		updateInstance(id, { status: 'running', error: null });
+		triggerReconcile();
+		return getInstance(id)!;
+	}
 	if (!row.container_id) throw new Error('Instance has no container yet');
 	const ok = await startContainer(row.container_id);
 	// Awaited so the first health tick after the reconcile below already sees a listening port.
@@ -695,6 +749,7 @@ export async function startInstance(id: string): Promise<InstanceRow> {
 export async function stopInstance(id: string): Promise<InstanceRow> {
 	const row = getInstance(id);
 	if (!row) throw new Error('Instance not found');
+	killSessions(id);
 	const ok = row.container_id ? await stopContainer(row.container_id) : true;
 	updateInstance(id, {
 		status: ok ? 'stopped' : 'error',
@@ -708,6 +763,8 @@ export async function stopInstance(id: string): Promise<InstanceRow> {
 export async function deleteInstance(id: string): Promise<void> {
 	const row = getInstance(id);
 	if (!row) return;
+	// Before the rm, or a live PTY would keep writing into a workspace we're deleting.
+	killSessions(id);
 	if (row.container_id) await removeContainer(row.container_id);
 	await rm(join(INSTANCES_DIR, id), { recursive: true, force: true });
 	deleteForwards(id);

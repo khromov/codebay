@@ -19,9 +19,8 @@ export interface Instance {
 	created_at: number;
 	/** `'local'` when the folder shipped its own config; null until provisioned. */
 	image_source: string | null;
-	/** `'ide'` serves full code-server; `'terminal'` serves only ttyd + Claude Code. */
 	mode: InstanceMode;
-	/** Terminal mode only: 1 when the scratch-shell pane was left open, so a reload restores it. */
+	/** Terminal modes only: 1 when the scratch-shell pane was left open, so a reload restores it. */
 	terminal_split: number;
 	/** Polled per reconcile rather than persisted; null if unknown. */
 	git_branch: string | null;
@@ -29,12 +28,27 @@ export interface Instance {
 	forwarded_ports: PortForward[];
 }
 
-/** `'ide'` serves full code-server; `'terminal'` serves only ttyd + Claude Code. */
-export type InstanceMode = 'ide' | 'terminal';
+/**
+ * `'ide'` serves full code-server and `'terminal'` serves ttyd, both inside a devcontainer;
+ * `'nono'` skips Docker entirely and runs Claude Code as a host process under the nono sandbox.
+ */
+export type InstanceMode = 'ide' | 'terminal' | 'nono';
 
-/** Anything that isn't the explicit terminal opt-in falls back to the full IDE. */
+export const INSTANCE_MODES: InstanceMode[] = ['ide', 'terminal', 'nono'];
+
+/** Anything unrecognised falls back to the full IDE. */
 export function normalizeMode(value: unknown): InstanceMode {
-	return value === 'terminal' ? 'terminal' : 'ide';
+	return INSTANCE_MODES.includes(value as InstanceMode) ? (value as InstanceMode) : 'ide';
+}
+
+/** The non-IDE modes render an xterm pane rather than a code-server iframe. */
+export function usesTerminalUi(mode: InstanceMode): boolean {
+	return mode !== 'ide';
+}
+
+/** Only `'nono'` runs outside Docker, so it skips ports, health probes, rebuilds and injections. */
+export function isSandboxMode(mode: InstanceMode): boolean {
+	return mode === 'nono';
 }
 
 /** The permission mode Claude Code starts in. `'default'` keeps the historical bypass behaviour. */
@@ -89,9 +103,16 @@ export interface AuthProvider {
 export interface Preflight {
 	docker: boolean;
 	cli: boolean;
+	/** The `nono` binary on the host's PATH — the only dependency sandbox mode has. */
+	nono: boolean;
 	auth: AuthProvider[];
 	/** Global default the picker's mode toggle starts on; per-instance override wins. */
 	defaultMode: InstanceMode;
+}
+
+/** Sandbox mode needs no daemon, so a dead Docker must not disable instance creation outright. */
+export function canCreate(preflight: Preflight, mode: InstanceMode): boolean {
+	return isSandboxMode(mode) ? preflight.nono : preflight.docker && preflight.cli;
 }
 
 /** Same-origin so the app's Basic Auth covers the editor too. */

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { type Instance } from '../types.ts';
+	import { isSandboxMode, usesTerminalUi, type Instance } from '../types.ts';
 	import Avatar from './Avatar.svelte';
 	import BranchBox from './BranchBox.svelte';
 	import PortsBox from './PortsBox.svelte';
@@ -30,11 +30,17 @@
 		oncancelrename: () => void;
 	} = $props();
 
-	// Start/Stop only cycle the container; rebuild is what re-runs the injections.
+	const sandbox = $derived(isSandboxMode(instance.mode));
+
+	// Start/Stop only cycle the container; rebuild is what re-runs the injections. A sandbox
+	// instance has nothing to rebuild, but keeps the button on the error path — that's the only
+	// way back from "created before nono was installed".
 	const canRebuild = $derived(
-		instance.status === 'running' ||
-			instance.status === 'stopped' ||
-			(instance.status === 'error' && !!instance.container_id)
+		sandbox
+			? instance.status === 'error'
+			: instance.status === 'running' ||
+					instance.status === 'stopped' ||
+					(instance.status === 'error' && !!instance.container_id)
 	);
 
 	const BUSY_LABEL: Record<Action, string> = {
@@ -83,7 +89,7 @@
 		<StatusBadge status={instance.status} />
 	</div>
 	<div class="path" title={instance.source_path}>{instance.source_path}</div>
-	{#if instance.status === 'running'}
+	{#if instance.status === 'running' && !sandbox}
 		<PortsBox ports={instance.forwarded_ports} />
 	{/if}
 	{#if instance.git_branch}
@@ -95,7 +101,7 @@
 	<div class="actions">
 		{#if instance.status === 'running'}
 			<Button variant="primary" size="sm" href={`/ide/${instance.id}`}>
-				{instance.mode === 'terminal' ? 'Open terminal' : 'Open IDE'}
+				{usesTerminalUi(instance.mode) ? 'Open terminal' : 'Open IDE'}
 			</Button>
 			<Button size="sm" onclick={() => onact('stop')}>Stop</Button>
 		{:else if instance.status === 'stopped' || (instance.status === 'error' && instance.container_id)}
@@ -111,8 +117,10 @@
 		{#if canRebuild}
 			<Button
 				size="sm"
-				title="Recreate the container and re-run setup (credentials, hooks, port forwards)"
-				onclick={() => onact('rebuild')}>Rebuild</Button
+				title={sandbox
+					? 'Re-check nono and reinstall its profile'
+					: 'Recreate the container and re-run setup (credentials, hooks, port forwards)'}
+				onclick={() => onact('rebuild')}>{sandbox ? 'Retry' : 'Rebuild'}</Button
 			>
 		{/if}
 		<Button

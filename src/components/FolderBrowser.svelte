@@ -4,6 +4,7 @@
 	import { isRepoUrl } from '../lib/repo-url.ts';
 	import Terminal from '@lucide/svelte/icons/terminal';
 	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
+	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import X from '@lucide/svelte/icons/x';
 	import FolderClock from '@lucide/svelte/icons/folder-clock';
 	import GitBranch from '@lucide/svelte/icons/git-branch';
@@ -16,13 +17,16 @@
 		onpick,
 		onclose,
 		defaultMode = 'ide',
-		initialMode = null
+		initialMode = null,
+		nonoAvailable = false
 	}: {
 		onpick: (source: string, opts?: { branch?: string; mode?: InstanceMode }) => void;
 		onclose: () => void;
 		defaultMode?: InstanceMode;
 		/** Opens pinned to this mode — set by the dashboard's mode shortcut button. */
 		initialMode?: InstanceMode | null;
+		/** Sandbox mode's only host dependency; without it the toggle is offered but disabled. */
+		nonoAvailable?: boolean;
 	} = $props();
 
 	// Follows the global default live — settings opens in its own popup, so the toggle there can
@@ -141,8 +145,29 @@
 					<Terminal size={15} />
 					Terminal
 				</button>
+				<button
+					type="button"
+					class="mode-btn"
+					class:active={mode === 'nono'}
+					aria-pressed={mode === 'nono'}
+					disabled={!nonoAvailable}
+					title={nonoAvailable
+						? 'Run Claude Code on this machine under the nono sandbox — no Docker'
+						: 'Requires nono: install it with `brew install nono`'}
+					onclick={() => (modeOverride = 'nono')}
+				>
+					<ShieldCheck size={15} />
+					Sandboxed
+				</button>
 			</div>
 		</div>
+		{#if mode === 'nono'}
+			<p class="mode-note">
+				Runs on this machine under <a href="https://nono.sh" target="_blank" rel="noopener">nono</a>
+				instead of in a container — no image build, no Docker. The folder is still copied into its own
+				workspace.
+			</p>
+		{/if}
 
 		<div class="clone">
 			<div class="clone-label">Clone a Git repository</div>
@@ -376,6 +401,18 @@
 	.mode-btn.active {
 		background: var(--ink);
 		color: var(--bg);
+	}
+	.mode-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+	.mode-note {
+		margin: 0;
+		padding: 0 18px 12px;
+		font-size: 12px;
+		line-height: 1.5;
+		color: var(--ink-faint);
+		border-bottom: 1px solid var(--rule-soft);
 	}
 	.clone {
 		padding: 12px 18px;

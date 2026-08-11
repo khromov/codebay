@@ -19,7 +19,8 @@
 		active?: boolean;
 		/** Registry-derived, so the skeleton renders one row per real check. */
 		injectionChecks?: number;
-		/** Terminal instances serve ttyd, not code-server, so the reachability label differs. */
+		/** Terminal instances serve ttyd, not code-server, so the reachability label differs.
+		    Sandbox instances never render this panel at all — they have nothing to probe. */
 		mode?: InstanceMode;
 	} = $props();
 

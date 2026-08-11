@@ -1,5 +1,65 @@
 import { describe, expect, test } from 'bun:test';
-import { claudePermissionFlags, isInstanceFilter, normalizePermissionMode } from './types.ts';
+import {
+	canCreate,
+	claudePermissionFlags,
+	isInstanceFilter,
+	isSandboxMode,
+	normalizeMode,
+	normalizePermissionMode,
+	usesTerminalUi,
+	type Preflight
+} from './types.ts';
+
+describe('normalizeMode', () => {
+	test('keeps the three supported modes', () => {
+		for (const mode of ['ide', 'terminal', 'nono'] as const) {
+			expect(normalizeMode(mode)).toBe(mode);
+		}
+	});
+
+	test('falls back to the full IDE for anything else', () => {
+		for (const v of ['', 'NONO', 'sandbox', 'ttyd', null, undefined, 0, {}]) {
+			expect(normalizeMode(v)).toBe('ide');
+		}
+	});
+});
+
+describe('mode predicates', () => {
+	test('both non-IDE modes render the xterm pane', () => {
+		expect(usesTerminalUi('ide')).toBe(false);
+		expect(usesTerminalUi('terminal')).toBe(true);
+		expect(usesTerminalUi('nono')).toBe(true);
+	});
+
+	test('only nono runs outside Docker', () => {
+		expect(isSandboxMode('nono')).toBe(true);
+		expect(isSandboxMode('terminal')).toBe(false);
+		expect(isSandboxMode('ide')).toBe(false);
+	});
+});
+
+describe('canCreate', () => {
+	const preflight = (over: Partial<Preflight>): Preflight => ({
+		docker: true,
+		cli: true,
+		nono: true,
+		auth: [],
+		defaultMode: 'ide',
+		...over
+	});
+
+	test('the container modes need both Docker and the CLI', () => {
+		expect(canCreate(preflight({ docker: false }), 'ide')).toBe(false);
+		expect(canCreate(preflight({ cli: false }), 'terminal')).toBe(false);
+		expect(canCreate(preflight({}), 'ide')).toBe(true);
+	});
+
+	// The whole point of the mode: a dead daemon must not block it.
+	test('sandbox mode needs only nono, never Docker', () => {
+		expect(canCreate(preflight({ docker: false, cli: false }), 'nono')).toBe(true);
+		expect(canCreate(preflight({ nono: false }), 'nono')).toBe(false);
+	});
+});
 
 describe('isInstanceFilter', () => {
 	test('accepts the three valid tokens', () => {

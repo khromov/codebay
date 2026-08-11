@@ -43,7 +43,9 @@
 	// only once the live stream reports the resulting change (avoids flicker on the round-trip).
 	let pending = $state<Record<string, { action: Action; since: Instance['status'] }>>({});
 
-	const ready = $derived(preflight.docker && preflight.cli);
+	// Sandbox mode needs no daemon, so a dead Docker must not disable creation outright — the
+	// picker's own mode toggle is what gates which modes are actually offered.
+	const ready = $derived((preflight.docker && preflight.cli) || preflight.nono);
 
 	const visible = $derived(
 		instances.filter((i) => {
@@ -164,11 +166,14 @@
 />
 
 <main class="stage">
-	{#if !ready}
+	<!-- Still worth saying when only Docker is down: sandbox mode keeps working, but the two
+	     container modes don't, and `ready` alone no longer conveys that. -->
+	{#if !preflight.docker || !preflight.cli}
 		<div class="banner error">
-			<strong>Setup needed.</strong>
+			<strong>{ready ? 'Container modes unavailable.' : 'Setup needed.'}</strong>
 			{#if !preflight.docker}<span>Docker daemon is not reachable.</span>{/if}
 			{#if !preflight.cli}<span>The devcontainer CLI is not available.</span>{/if}
+			{#if ready}<span>Sandboxed instances still work.</span>{/if}
 		</div>
 	{/if}
 
@@ -211,6 +216,7 @@
 		onpick={createFrom}
 		defaultMode={preflight.defaultMode}
 		initialMode={browserMode}
+		nonoAvailable={preflight.nono}
 		onclose={() => (browserOpen = false)}
 	/>
 {/if}

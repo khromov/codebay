@@ -8,8 +8,10 @@
 	let {
 		id,
 		active,
-		/** ttyd `--url-arg` value selecting which session to attach to; omitted means Claude's. */
+		/** Selects which session to attach to; omitted means Claude's. */
 		arg,
+		/** Sandbox mode: attach to a host PTY instead of the container's ttyd through the proxy. */
+		host = false,
 		/** Split view: only one of the two panes may claim the keyboard when the tab activates. */
 		focus = true,
 		/** Extra overlay buttons, rendered left of this pane's own reload button. */
@@ -18,6 +20,7 @@
 		id: string;
 		active: boolean;
 		arg?: string;
+		host?: boolean;
 		focus?: boolean;
 		actions?: Snippet;
 	} = $props();
@@ -29,11 +32,15 @@
 	let retry: ReturnType<typeof setTimeout> | undefined;
 	let disposed = false;
 	let connected = $state(false);
+	/** Server declined deliberately; the reason is already written into the terminal. */
+	let refused = $state(false);
+	const WS_POLICY_VIOLATION = 1008;
 	// Bumped whenever a socket is abandoned, so its late handlers can't resurrect a retry loop.
 	let gen = 0;
 
 	// ttyd's wire protocol: a single command byte prefixes every frame, sent as binary
 	// (matching ttyd's own client — libwebsockets delivers the raw bytes to the server).
+	// Sandbox mode's host PTY route reimplements the same protocol, so both share this client.
 	const CMD_INPUT = '0';
 	const CMD_RESIZE = '1';
 	const OUTPUT = 0x30; // '0'
@@ -52,11 +59,15 @@
 
 	function connect() {
 		const myGen = ++gen;
+		refused = false;
 		const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-		// Same-origin through the proxy, which forwards the required `tty` subprotocol to ttyd
-		// and passes the query string through untouched.
-		const query = arg ? `?arg=${encodeURIComponent(arg)}` : '';
-		const sock = new WebSocket(`${proto}//${location.host}/p/${id}/ws${query}`, ['tty']);
+		// Container mode goes same-origin through the proxy, which forwards the `tty` subprotocol
+		// ttyd requires and passes the query string through untouched. The host PTY route has no
+		// such requirement, so it takes the plain handshake.
+		const path = host
+			? `/api/instances/${id}/terminal${arg ? `?pane=${encodeURIComponent(arg)}` : ''}`
+			: `/p/${id}/ws${arg ? `?arg=${encodeURIComponent(arg)}` : ''}`;
+		const sock = new WebSocket(`${proto}//${location.host}${path}`, host ? undefined : ['tty']);
 		ws = sock;
 		sock.binaryType = 'arraybuffer';
 		sock.onopen = () => {
@@ -68,9 +79,15 @@
 		sock.onmessage = (e) => {
 			if (gen === myGen) onFrame(e.data as ArrayBuffer);
 		};
-		sock.onclose = () => {
+		sock.onclose = (e) => {
 			if (gen !== myGen || disposed) return;
 			connected = false;
+			// 1008 means the server declined on purpose and said why in the frames it already
+			// sent — reconnecting would only loop and overwrite the explanation.
+			if (e.code === WS_POLICY_VIOLATION) {
+				refused = true;
+				return;
+			}
 			retry = setTimeout(connect, 1000);
 		};
 		sock.onerror = () => {
@@ -83,14 +100,15 @@
 	}
 
 	/**
-	 * Rebuild only the client half — the socket and xterm's buffer — and reattach to the same tmux
-	 * session, so a wedged socket (dead wifi, resumed laptop) recovers without touching the container.
+	 * Rebuild only the client half — the socket and xterm's buffer — and reattach to the same
+	 * session (tmux in container mode, the host PTY in sandbox mode), so a wedged socket (dead
+	 * wifi, resumed laptop) recovers without disturbing whatever is running in it.
 	 */
 	function reload() {
 		if (retry) clearTimeout(retry);
 		gen++;
 		connected = false;
-		// tmux repaints the current screen on attach; without a reset that repaint lands under stale output.
+		// Both backends repaint on attach; without a reset that repaint lands under stale output.
 		term?.reset();
 		const old = ws;
 		ws = undefined;
@@ -199,7 +217,9 @@
 
 <div class="term" bind:this={el}></div>
 <div class="overlay">
-	{#if !connected}
+	{#if refused}
+		<span class="status">refused</span>
+	{:else if !connected}
 		<span class="status">connecting…</span>
 	{/if}
 	{@render actions?.()}

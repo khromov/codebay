@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import type { MochiEvent, MochiResolveFn } from 'mochi-framework';
 import * as config from './config.server.ts';
-import { basicAuth, wsUpgradeAllowed } from './auth.server.ts';
+import { basicAuth, hostTerminalRefusal, setServer, wsUpgradeAllowed } from './auth.server.ts';
 import { PROXY_PREFIX, proxyRoutes } from './proxy.server.ts';
 
 const HOST = 'codebay.test';
@@ -205,6 +205,56 @@ describe('auth gate with a password set', () => {
 	test('the container bridge stays reachable without the app password', async () => {
 		const { resolved } = await run(request('/api/bridge/attention', { method: 'POST' }));
 		expect(resolved).toBe(true);
+	});
+});
+
+/**
+ * Sandbox mode's terminal is a shell on the *host*, so unlike the container modes there is no
+ * container between an anonymous visitor and the machine. nono limits what that shell may touch;
+ * only this gate limits who may type into it.
+ */
+describe('host terminal gate', () => {
+	/** Stands in for the Bun server, whose `requestIP` is the only source of the peer address. */
+	function peer(address: string | null) {
+		setServer({ requestIP: () => (address === null ? null : { address }) });
+	}
+	afterAll(() => {
+		setServer(null);
+		setPassword(realConfig.BASIC_AUTH_PASSWORD);
+	});
+
+	const req = () => request('/api/instances/x/terminal', { origin: ORIGIN, upgrade: true });
+
+	/**
+	 * `bun run dev` binds 0.0.0.0 on purpose, so gating on the bind address would break the
+	 * project's own dev command for a browser sitting on the same machine.
+	 */
+	test('allows a loopback peer even with no password and a wide bind', () => {
+		setPassword('');
+		for (const address of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) {
+			peer(address);
+			expect(hostTerminalRefusal(req())).toBeNull();
+		}
+	});
+
+	test('refuses a remote peer when no password is set', () => {
+		setPassword('');
+		peer('192.168.1.50');
+		expect(hostTerminalRefusal(req())).toContain('shell on the host');
+	});
+
+	test('allows a remote peer once a password is set', () => {
+		setPassword(PASSWORD);
+		peer('192.168.1.50');
+		expect(hostTerminalRefusal(req())).toBeNull();
+	});
+
+	test('treats an unknown peer as remote', () => {
+		setPassword('');
+		peer(null);
+		expect(hostTerminalRefusal(req())).not.toBeNull();
+		setServer(null);
+		expect(hostTerminalRefusal(req())).not.toBeNull();
 	});
 });
 

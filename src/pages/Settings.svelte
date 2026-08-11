@@ -8,6 +8,9 @@
 	let {
 		pet,
 		defaultMode,
+		nonoAvailable,
+		nonoProfile,
+		builtinNonoProfile,
 		claudePermissionMode,
 		defaultImage,
 		builtinImage,
@@ -45,6 +48,9 @@
 	}: {
 		pet?: AvatarArt;
 		defaultMode: InstanceMode;
+		nonoAvailable: boolean;
+		nonoProfile: string;
+		builtinNonoProfile: string;
 		claudePermissionMode: ClaudePermissionMode;
 		defaultImage: string;
 		builtinImage: string;
@@ -85,6 +91,9 @@
 <SettingsView
 	{pet}
 	{defaultMode}
+	{nonoAvailable}
+	{nonoProfile}
+	{builtinNonoProfile}
 	{claudePermissionMode}
 	{defaultImage}
 	{builtinImage}

@@ -38,6 +38,8 @@
 		onDeleteAll?: () => void;
 	} = $props();
 
+	// Deliberately only flips between the two container modes: a third button would make this a
+	// mode picker, which the dialog already is — and sandbox mode is where you go to choose.
 	const altMode = $derived<InstanceMode>(defaultMode === 'terminal' ? 'ide' : 'terminal');
 </script>
 

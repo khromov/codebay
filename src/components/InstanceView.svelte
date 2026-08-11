@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ideUrl, type Instance, type InstanceHealth } from '../types.ts';
+	import { ideUrl, isSandboxMode, type Instance, type InstanceHealth } from '../types.ts';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 	import HealthBox from './HealthBox.svelte';
@@ -74,6 +74,7 @@
 	// Set when the forward set changes this session; cleared once a rebuild applies it.
 	let pendingRebuild = $state(false);
 	const forwards = $derived(instance?.forwarded_ports ?? []);
+	const sandbox = $derived(!!instance && isSandboxMode(instance.mode));
 	const building = $derived(instance?.status === 'creating');
 
 	async function portAction(run: () => Promise<unknown>): Promise<boolean> {
@@ -183,73 +184,79 @@
 		{/if}
 	</div>
 
-	<div class="healthslot">
-		<!-- Treat "instance not yet loaded from the stream" as active so the health
+	<!-- Sandbox instances have no container, no served port and no injections, so every row this
+	     panel renders would be a permanent "—". -->
+	{#if !sandbox}
+		<div class="healthslot">
+			<!-- Treat "instance not yet loaded from the stream" as active so the health
          panel shows the full skeleton (all expected rows) while loading, rather
          than the inactive 2-row fallback. Only a loaded, non-running instance is
          genuinely inactive. -->
-		<HealthBox
-			{health}
-			{lastFetchedAt}
-			{injectionChecks}
-			active={!instance || instance.status === 'running'}
-			mode={instance?.mode ?? 'ide'}
-		/>
-	</div>
-
-	<section class="ports panel">
-		<div class="ports-bar panel-bar">
-			<span>Forwarded ports</span>
-			{#if pendingRebuild}
-				<button class="rebuild" onclick={restart} disabled={building}>
-					{building ? 'Restarting…' : 'Restart to apply'}
-				</button>
-			{/if}
+			<HealthBox
+				{health}
+				{lastFetchedAt}
+				{injectionChecks}
+				active={!instance || instance.status === 'running'}
+				mode={instance?.mode ?? 'ide'}
+			/>
 		</div>
-		<div class="ports-body">
-			{#if forwards.length}
-				<ul class="port-list">
-					{#each forwards as f (f.container_port)}
-						<li>
-							<span class="cp">:{f.container_port}</span>
-							<span class="arr">→</span>
-							<a href={forwardedPortUrl(f.host_port)} target="_blank" rel="noopener"
-								>{forwardedPortUrl(f.host_port).replace('http://', '')}
-								<ArrowUpRight size={12} /></a
-							>
-							<button class="rm" title="Remove" onclick={() => removePort(f.container_port)}
-								>×</button
-							>
-						</li>
-					{/each}
-				</ul>
-			{:else}
-				<p class="empty">No ports forwarded yet.</p>
-			{/if}
+	{/if}
 
-			<form class="add" onsubmit={addPort}>
-				<input
-					type="number"
-					min="1"
-					max="65535"
-					placeholder="container port (e.g. 3000)"
-					bind:value={newPort}
-					spellcheck="false"
-				/>
-				<button type="submit">Add</button>
-			</form>
+	{#if !sandbox}
+		<section class="ports panel">
+			<div class="ports-bar panel-bar">
+				<span>Forwarded ports</span>
+				{#if pendingRebuild}
+					<button class="rebuild" onclick={restart} disabled={building}>
+						{building ? 'Restarting…' : 'Restart to apply'}
+					</button>
+				{/if}
+			</div>
+			<div class="ports-body">
+				{#if forwards.length}
+					<ul class="port-list">
+						{#each forwards as f (f.container_port)}
+							<li>
+								<span class="cp">:{f.container_port}</span>
+								<span class="arr">→</span>
+								<a href={forwardedPortUrl(f.host_port)} target="_blank" rel="noopener"
+									>{forwardedPortUrl(f.host_port).replace('http://', '')}
+									<ArrowUpRight size={12} /></a
+								>
+								<button class="rm" title="Remove" onclick={() => removePort(f.container_port)}
+									>×</button
+								>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="empty">No ports forwarded yet.</p>
+				{/if}
 
-			{#if portError}<p class="port-err">{portError}</p>{/if}
-			{#if pendingRebuild}
-				<p class="hint pending">
-					Port changes apply when you <strong>Restart</strong> (recreates the container).
+				<form class="add" onsubmit={addPort}>
+					<input
+						type="number"
+						min="1"
+						max="65535"
+						placeholder="container port (e.g. 3000)"
+						bind:value={newPort}
+						spellcheck="false"
+					/>
+					<button type="submit">Add</button>
+				</form>
+
+				{#if portError}<p class="port-err">{portError}</p>{/if}
+				{#if pendingRebuild}
+					<p class="hint pending">
+						Port changes apply when you <strong>Restart</strong> (recreates the container).
+					</p>
+				{/if}
+				<p class="hint">
+					Your app must bind to <code>0.0.0.0</code> inside the container to be reachable.
 				</p>
-			{/if}
-			<p class="hint">
-				Your app must bind to <code>0.0.0.0</code> inside the container to be reachable.
-			</p>
-		</div>
-	</section>
+			</div>
+		</section>
+	{/if}
 
 	<div class="logwrap panel">
 		<div class="log-bar panel-bar">

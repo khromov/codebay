@@ -59,7 +59,17 @@ import {
 	setOption
 } from './lib/db.server.ts';
 import { APP_VERSION, DEFAULT_COPY_IGNORE, DEFAULT_IMAGE } from './lib/config.server.ts';
-import { wsUpgradeAllowed } from './lib/auth.server.ts';
+import { hostTerminalRefusal, wsUpgradeAllowed } from './lib/auth.server.ts';
+import {
+	DEFAULT_NONO_PROFILE,
+	getNonoProfile,
+	isNonoPane,
+	nonoArgs,
+	nonoAvailable,
+	type NonoPane
+} from './lib/nono.server.ts';
+import { attachSession, detachSession, resizeSession, writeSession } from './lib/pty.server.ts';
+import { decodeClientFrame, encodeOutput } from './lib/terminal-frames.ts';
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
@@ -90,7 +100,7 @@ async function preflight() {
 				})
 		)
 	]);
-	return { docker, cli, auth, defaultMode: getDefaultMode() };
+	return { docker, cli, nono: nonoAvailable(), auth, defaultMode: getDefaultMode() };
 }
 
 /** The header pet logo, resolved from the DB option. A name that left the catalog reads as "off". */
@@ -201,6 +211,10 @@ export const routes: Record<string, MochiRouteValue> = {
 				defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
 				builtinImage: DEFAULT_IMAGE,
 				disableBuildCache: getOption('disable_build_cache') === '1',
+				// Sandbox mode: the nono registry pack whose profile wraps Claude Code.
+				nonoAvailable: nonoAvailable(),
+				nonoProfile: getNonoProfile(),
+				builtinNonoProfile: DEFAULT_NONO_PROFILE,
 				// An explicit empty string (as opposed to unset) means "copy everything".
 				copyIgnorePatterns: getOption('copy_ignore_patterns') ?? DEFAULT_COPY_IGNORE,
 				builtinCopyIgnore: DEFAULT_COPY_IGNORE,
@@ -245,7 +259,15 @@ export const routes: Record<string, MochiRouteValue> = {
 			};
 		},
 		actions: {
-			// The default editor surface (full IDE vs terminal) new instances start in.
+			// Read on every PTY spawn, so a change applies to the next pane without a rebuild.
+			nonoProfile: ({ formData }) => {
+				const profile = str(formData, 'profile');
+				if (!profile) return fail(400, { error: 'profile is required' });
+				setOption('nono_profile', profile);
+				return success({ profile });
+			},
+
+			// The default editor surface (full IDE, terminal or sandbox) new instances start in.
 			defaultMode: ({ formData }) => {
 				const mode = normalizeMode(str(formData, 'mode'));
 				setOption('default_mode', mode);
@@ -591,6 +613,79 @@ export const routes: Record<string, MochiRouteValue> = {
 			`[bridge] accepted id=${id} → attention=${state === 'done' || state === 'waiting' ? state : 'cleared'}`
 		);
 		return json({ ok: true });
+	}),
+
+	/**
+	 * Sandbox mode's terminal. Speaks the same frame protocol as the proxied ttyd so
+	 * `TerminalPane` drives both, but the PTY is local: `pty.server.ts` owns it, and it outlives
+	 * this socket so a reload reattaches instead of restarting Claude.
+	 */
+	'/api/instances/:id/terminal': Mochi.ws<{
+		id: string;
+		pane: NonoPane;
+		cwd: string;
+		/** Set when the host-shell gate said no; the socket opens only to explain and close. */
+		refusal?: string;
+		sink?: (data: Uint8Array) => void;
+	}>({
+		upgrade: (req, params) => {
+			// Mochi.ws routes bypass the global basicAuth handle, so enforce origin + auth here.
+			if (!wsUpgradeAllowed(req) || !params.id) return false;
+			const row = getInstance(params.id);
+			if (!row || row.mode !== 'nono' || row.status !== 'running') return false;
+			const requested = new URL(req.url).searchParams.get('pane');
+			return {
+				id: row.id,
+				pane: isNonoPane(requested) ? requested : 'claude',
+				cwd: row.workspace_path,
+				// Carried rather than refused outright: a rejected upgrade is indistinguishable
+				// from a dropped connection, so the client would just reconnect forever.
+				refusal: hostTerminalRefusal(req) ?? undefined
+			};
+		},
+		open(ws) {
+			const { refusal } = ws.data.user;
+			if (!refusal) return;
+			ws.send(encodeOutput(new TextEncoder().encode(`\r\n\x1b[31m${refusal}\x1b[0m\r\n`)));
+			// 1008 (policy violation) is the client's signal to stop retrying.
+			ws.close(1008, 'sandbox terminal not permitted for this client');
+			// Otherwise idle: the PTY is spawned by the client's init frame, so it is born at
+			// the browser's real geometry rather than at a default that would need repainting.
+		},
+		message(ws, raw) {
+			if (ws.data.user.refusal) return;
+			const frame = decodeClientFrame(typeof raw === 'string' ? raw : raw.toString('utf8'));
+			const { id, pane } = ws.data.user;
+			if (frame.type === 'input') {
+				writeSession(id, pane, frame.data);
+			} else if (frame.type === 'resize') {
+				resizeSession(id, pane, frame.cols, frame.rows);
+			} else if (frame.type === 'init') {
+				const sink = (data: Uint8Array) => {
+					try {
+						ws.send(encodeOutput(data));
+					} catch {
+						/* socket closed */
+					}
+				};
+				ws.data.user.sink = sink;
+				attachSession({
+					instanceId: id,
+					pane,
+					// Resolved per attach, so changing the profile or permission mode in Settings
+					// applies to the next pane opened rather than needing a restart.
+					argv: nonoArgs(getNonoProfile(), pane, getClaudePermissionMode()),
+					cwd: ws.data.user.cwd,
+					cols: frame.cols,
+					rows: frame.rows,
+					sink
+				});
+			}
+		},
+		close(ws) {
+			const { id, pane, sink } = ws.data.user;
+			if (sink) detachSession(id, pane, sink);
+		}
 	}),
 
 	'/api/instances/:id/logs': Mochi.ws<{ id: string; unsub?: () => void }>({

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Button from './Button.svelte';
-	import type { InstanceMode } from '../types.ts';
+	import { isSandboxMode, usesTerminalUi, type InstanceMode } from '../types.ts';
 
 	// A fixed flip count per tick, rather than a per-bit probability, is what keeps
 	// the cadence visually even; `speed` scales only the interval, never the churn.
@@ -17,7 +17,9 @@
 		onoverride?: () => void;
 	} = $props();
 
-	const isTerminal = $derived(mode === 'terminal');
+	const isTerminal = $derived(usesTerminalUi(mode));
+	// Sandbox mode has no container, so the "waiting" copy would name the wrong thing.
+	const isSandbox = $derived(isSandboxMode(mode));
 
 	let stalled = $state(false);
 	$effect(() => {
@@ -67,7 +69,11 @@
 	{#if stalled}
 		<div class="stalled">
 			<p>
-				Waiting for {isTerminal ? 'the terminal' : 'code-server'} to answer inside the container.
+				{#if isSandbox}
+					Waiting for the sandboxed shell to start on this machine.
+				{:else}
+					Waiting for {isTerminal ? 'the terminal' : 'code-server'} to answer inside the container.
+				{/if}
 			</p>
 			{#if onoverride}
 				<Button size="sm" onclick={onoverride}>Open anyway</Button>

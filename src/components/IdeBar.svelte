@@ -4,6 +4,7 @@
 	import RotateCw from '@lucide/svelte/icons/rotate-cw';
 	import Terminal from '@lucide/svelte/icons/terminal';
 	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
+	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import Avatar from './Avatar.svelte';
 	import AppBar from './AppBar.svelte';
 	import { withPopupMarker } from '../lib/popup-nav.ts';
@@ -70,7 +71,11 @@
 						>
 							<Avatar id={inst.id} name={inst.name} scale={4} />
 							<span class="tab-name">{inst.name}</span>
-							{#if inst.mode === 'terminal'}
+							{#if inst.mode === 'nono'}
+								<span class="tab-mode" title="Sandboxed instance (nono, no container)">
+									<ShieldCheck size={13} />
+								</span>
+							{:else if inst.mode === 'terminal'}
 								<span class="tab-mode" title="Terminal-only instance"><Terminal size={13} /></span>
 							{:else}
 								<span class="tab-mode" title="Full IDE instance"><LayoutTemplate size={13} /></span>

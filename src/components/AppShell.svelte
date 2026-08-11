@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { ideUrl, type Instance, type InstanceFilter, type Preflight } from '../types.ts';
+	import {
+		ideUrl,
+		isSandboxMode,
+		usesTerminalUi,
+		type Instance,
+		type InstanceFilter,
+		type Preflight
+	} from '../types.ts';
 	import { findAvatar, type AvatarArt } from '../avatars/index.ts';
 	import { SvelteSet } from 'svelte/reactivity';
 	import DashboardView from './DashboardView.svelte';
@@ -168,7 +175,7 @@
 
 	function reloadActive() {
 		const inst = activeInstance;
-		if (!inst || inst.mode === 'terminal') return;
+		if (!inst || usesTerminalUi(inst.mode)) return;
 		loadedFrames.delete(inst.id);
 		// `location.replace`, not `src =`: assigning src pushes a parent session-history entry,
 		// which would break the shell's pushState back button.
@@ -195,7 +202,12 @@
 		return liveStream(
 			(msg) => {
 				if (msg.type === 'preflight') {
-					livePreflight = { ...livePreflight, docker: msg.data.docker, cli: msg.data.cli };
+					livePreflight = {
+						...livePreflight,
+						docker: msg.data.docker,
+						cli: msg.data.cli,
+						nono: msg.data.nono
+					};
 					return;
 				}
 				if (msg.type === 'pet') {
@@ -223,6 +235,12 @@
 				// Re-arm the gate: a replaced container must prove code-server is up again.
 				const live = new Set(next.filter((i) => i.status === 'running').map((i) => i.id));
 				for (const id of [...everReady]) if (!live.has(id)) everReady.delete(id);
+				// Sandbox instances have no container to probe, so no health event ever arrives for
+				// them — `running` already means "ready to attach", and the pane shows its own
+				// "connecting…" while the PTY spawns.
+				for (const inst of next) {
+					if (isSandboxMode(inst.mode) && inst.status === 'running') everReady.add(inst.id);
+				}
 				for (const id of [...forced]) if (!live.has(id)) forced.delete(id);
 				for (const id of [...loadedFrames]) if (!live.has(id)) loadedFrames.delete(id);
 				const nextAttention: Record<string, 'done' | 'waiting' | null> = {};
@@ -280,7 +298,7 @@
 			{attention}
 			{editingId}
 			bind:editingName
-			onreload={activeInstance && activeInstance.mode !== 'terminal' && mountable(active)
+			onreload={activeInstance && !usesTerminalUi(activeInstance.mode) && mountable(active)
 				? reloadActive
 				: undefined}
 			onselect={(id) => navigate(`/ide/${id}`)}
@@ -305,10 +323,11 @@
 			{#if visited.has(inst.id)}
 				<div class="pane" class:active={inst.id === active}>
 					{#if mountable(inst.id)}
-						{#if inst.mode === 'terminal'}
+						{#if usesTerminalUi(inst.mode)}
 							<TerminalSplit
 								id={inst.id}
 								active={inst.id === active}
+								host={isSandboxMode(inst.mode)}
 								initialOpen={inst.terminal_split === 1}
 							/>
 						{:else}
@@ -329,7 +348,7 @@
 							stalledAfterMs={STALLED_AFTER_MS}
 							onoverride={() => forced.add(inst.id)}
 						/>
-					{:else if inst.mode !== 'terminal' && !loadedFrames.has(inst.id)}
+					{:else if !usesTerminalUi(inst.mode) && !loadedFrames.has(inst.id)}
 						<IdeLoader />
 					{/if}
 				</div>

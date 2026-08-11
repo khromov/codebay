@@ -7,8 +7,9 @@
 	let {
 		id,
 		active,
+		host = false,
 		initialOpen = false
-	}: { id: string; active: boolean; initialOpen?: boolean } = $props();
+	}: { id: string; active: boolean; host?: boolean; initialOpen?: boolean } = $props();
 
 	// Seeding from the persisted flag is intentional — from here on the toggle owns the state.
 	// svelte-ignore state_referenced_locally
@@ -77,6 +78,7 @@
 		<TerminalPane
 			{id}
 			{active}
+			{host}
 			focus={active && focusSide === 'left'}
 			actions={open ? undefined : splitToggle}
 		/>
@@ -108,6 +110,7 @@
 		>
 			<TerminalPane
 				{id}
+				{host}
 				arg="shell"
 				active={active && open}
 				focus={active && open && focusSide === 'right'}
