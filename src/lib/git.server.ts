@@ -29,8 +29,15 @@ async function gitExitCode(workspaceDir: string, args: string[]): Promise<number
 	}
 }
 
-export async function isTrackedFile(workspaceDir: string, relPath: string): Promise<boolean> {
-	return (await gitExitCode(workspaceDir, ['ls-files', '--error-unmatch', '--', relPath])) === 0;
+/** `null` means git itself failed to answer (missing binary, corrupt repo) — not "untracked". */
+export async function isTrackedFile(
+	workspaceDir: string,
+	relPath: string
+): Promise<boolean | null> {
+	const code = await gitExitCode(workspaceDir, ['ls-files', '--error-unmatch', '--', relPath]);
+	if (code === 0) return true;
+	if (code === 1) return false; // ls-files --error-unmatch reserves 1 for "no such tracked file"
+	return null;
 }
 
 export async function restoreTrackedFile(workspaceDir: string, relPath: string): Promise<boolean> {

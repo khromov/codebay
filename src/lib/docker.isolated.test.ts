@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { hostPortsInUse, removeContainer } from './docker.server.ts';
+import { hostPortsInUse, removeContainer, removeContainerOnly } from './docker.server.ts';
 
 /**
  * `getDocker()` resolves a dockerode client pinned to `globalThis.__codebayDocker`.
@@ -105,6 +105,29 @@ describe('removeContainer', () => {
 		});
 		expect(await removeContainer('c1')).toBe(true);
 		expect(calls.volumesRemoved).toEqual(['v1']);
+	});
+});
+
+describe('removeContainerOnly', () => {
+	afterEach(() => {
+		g.__codebayDocker = undefined;
+	});
+
+	test('never passes v — a rebuild must not destroy the container’s anonymous volumes', async () => {
+		const calls = fakeDocker({});
+		expect(await removeContainerOnly('c1')).toBe(true);
+		// The CLI's own --remove-existing-container is `docker rm -f` without -v; match it exactly.
+		expect(calls.removeOpts).toEqual({ force: true });
+	});
+
+	test('treats an already-absent container (404) as success', async () => {
+		fakeDocker({ removeStatus: 404 });
+		expect(await removeContainerOnly('c1')).toBe(true);
+	});
+
+	test('reports failure on any other daemon error so the caller can warn', async () => {
+		fakeDocker({ removeStatus: 500 });
+		expect(await removeContainerOnly('c1')).toBe(false);
 	});
 });
 

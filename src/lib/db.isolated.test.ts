@@ -31,7 +31,8 @@ function makeInstance(id: string, hostPort: number): InstanceRow {
 		remote_user: null,
 		image_source: null,
 		mode: 'ide',
-		terminal_split: 0
+		terminal_split: 0,
+		config_migrated: 1
 	};
 }
 

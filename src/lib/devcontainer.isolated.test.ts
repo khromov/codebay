@@ -525,6 +525,68 @@ describe('writeOverrideConfig separate config file', () => {
 		writeFileSync(join(dir, '.devcontainer', 'devcontainer.json'), '{}');
 		expect(overrideConfigPath(dir)).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
 	});
+
+	test('discovers the spec subfolder form and merges beside it', async () => {
+		mkdirSync(join(dir, '.devcontainer', 'app'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'app', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1' })
+		);
+		const { imageSource, configPath } = await writeOverrideConfig(dir, 8001);
+		// Booting the default image here would silently override the project's declared one.
+		expect(imageSource).toBe('local');
+		expect(configPath).toBe(join(dir, '.devcontainer', 'app', 'codebay.devcontainer.json'));
+		const merged = JSON.parse(readFileSync(configPath, 'utf8'));
+		expect(merged.image).toBe('ships/own:1');
+		// Features stage beside the subfolder config — the CLI only promises `./`-descendant paths.
+		expect(merged.features['./codebay-tmux']).toEqual({});
+		expect(existsSync(join(dir, '.devcontainer', 'app', 'codebay-tmux', 'install.sh'))).toBe(true);
+	});
+
+	// What legacy versions appended to the canonical file's postStartCommand.
+	const legacyLaunch =
+		'bash -c "mkdir -p ~/.local/share/code-server/User; nohup code-server --bind-addr 0.0.0.0:8080 --auth none \\"$PWD\\" >/tmp/code-server.log 2>&1 &"';
+
+	test('strips legacy in-place injections from an un-restorable canonical before merging', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({
+				image: 'ships/own:1',
+				features: {
+					'ghcr.io/coder/devcontainer-features/code-server:1': { host: '0.0.0.0', auth: 'none' },
+					'./codebay-tmux': {},
+					'ghcr.io/devcontainers/features/go:1': {}
+				},
+				postStartCommand: `npm run prep && ${legacyLaunch}`
+			})
+		);
+		await writeOverrideConfig(dir, 8001);
+		const merged = JSON.parse(
+			readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8')
+		);
+		// Exactly the user's own command plus the current launcher — no double-chained launch.
+		expect(merged.postStartCommand).toBe(`npm run prep && ${launchCommandFor('ide')}`);
+		// The project's own feature survives the strip.
+		expect(merged.features['ghcr.io/devcontainers/features/go:1']).toEqual({});
+	});
+
+	test('a legacy canonical whose postStartCommand is only the launcher loses it entirely', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({
+				image: 'ships/own:1',
+				features: { './codebay-tmux': {} },
+				postStartCommand: legacyLaunch
+			})
+		);
+		await writeOverrideConfig(dir, 8001);
+		const merged = JSON.parse(
+			readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8')
+		);
+		expect(merged.postStartCommand).toBe(launchCommandFor('ide'));
+	});
 });
 
 describe('restoreCanonicalConfig', () => {
@@ -562,7 +624,7 @@ describe('restoreCanonicalConfig', () => {
 		features: { './codebay-tmux': {} }
 	});
 
-	test('restores a tracked config the legacy scheme overwrote', async () => {
+	test('restores a tracked config the legacy scheme overwrote, stashing a backup', async () => {
 		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
 		writeFileSync(configFile(), pristine);
 		git('init');
@@ -571,6 +633,8 @@ describe('restoreCanonicalConfig', () => {
 		writeFileSync(configFile(), overwritten);
 		expect(await restoreCanonicalConfig(dir)).toBe('restored');
 		expect(readFileSync(configFile(), 'utf8')).toBe(pristine);
+		// The discarded file may have held user edits on top of the injection — it must survive.
+		expect(readFileSync(configFile() + '.codebay-backup', 'utf8')).toBe(overwritten);
 	});
 
 	test('deletes an untracked fingerprinted config (created for a config-less project)', async () => {
@@ -579,6 +643,19 @@ describe('restoreCanonicalConfig', () => {
 		writeFileSync(configFile(), overwritten);
 		expect(await restoreCanonicalConfig(dir)).toBe('deleted');
 		expect(existsSync(configFile())).toBe(false);
+		expect(readFileSync(configFile() + '.codebay-backup', 'utf8')).toBe(overwritten);
+	});
+
+	test('reports none (not restored) when the injection itself was committed', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(configFile(), overwritten);
+		git('init');
+		git('add', '.');
+		git('commit', '-m', 'committed with injection baked in');
+		// git checkout is a no-op here — pretending it restored anything would mislead the boot log.
+		expect(await restoreCanonicalConfig(dir)).toBe('none');
+		expect(readFileSync(configFile(), 'utf8')).toBe(overwritten);
+		expect(existsSync(configFile() + '.codebay-backup')).toBe(false);
 	});
 
 	test('never touches a config without the injection fingerprint', async () => {

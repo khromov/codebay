@@ -1,0 +1,1 @@
+ALTER TABLE instances ADD COLUMN config_migrated INTEGER NOT NULL DEFAULT 0;

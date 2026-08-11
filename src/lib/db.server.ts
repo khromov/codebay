@@ -34,6 +34,8 @@ export interface InstanceRow {
 	mode: InstanceMode;
 	/** Terminal mode only: 1 when the scratch-shell pane was left open, so a reload restores it. */
 	terminal_split: number;
+	/** 0 until the legacy in-place config injection has been checked/undone; new rows start at 1. */
+	config_migrated: number;
 }
 
 export interface PortForwardRow {
@@ -64,8 +66,8 @@ export function closeDb(): void {
 export function insertInstance(row: InstanceRow): void {
 	db.query(
 		`INSERT INTO instances
-       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source, mode, terminal_split)
-     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source, $mode, $terminal_split)`
+       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source, mode, terminal_split, config_migrated)
+     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source, $mode, $terminal_split, $config_migrated)`
 	).run({
 		$id: row.id,
 		$name: row.name,
@@ -81,7 +83,8 @@ export function insertInstance(row: InstanceRow): void {
 		$remote_user: row.remote_user,
 		$image_source: row.image_source,
 		$mode: row.mode,
-		$terminal_split: row.terminal_split
+		$terminal_split: row.terminal_split,
+		$config_migrated: row.config_migrated
 	});
 }
 
@@ -144,6 +147,7 @@ const UPDATABLE_COLUMNS = [
 	'remote_user',
 	'image_source',
 	'terminal_split',
+	'config_migrated',
 	// Reassigned when a rebuild finds the recorded port taken over on the host.
 	'host_port'
 ] as const;

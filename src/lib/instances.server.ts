@@ -393,12 +393,21 @@ async function rescueHijackedPort(row: InstanceRow): Promise<void> {
 /** Never re-copies the workspace, so in-container edits survive a rebuild. */
 async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Promise<void> {
 	try {
-		// Migrates instances created before the merged config moved to its own file.
-		if ((await restoreCanonicalConfig(row.workspace_path)) !== 'none') {
-			appendLog(
-				row.id,
-				'Restored the project devcontainer config (Codebay now keeps its merged config in a separate file)\n'
-			);
+		// Migrates instances created before the merged config moved to its own file — one-shot per
+		// instance, so a later rebuild can never claw back a config the user has since edited.
+		if (!row.config_migrated) {
+			const migrated = await restoreCanonicalConfig(row.workspace_path);
+			if (migrated === 'restored' || migrated === 'deleted') {
+				appendLog(
+					row.id,
+					'Restored the project devcontainer config (Codebay now keeps its merged config in a separate file)\n'
+				);
+			}
+			// 'unknown' means git itself failed to answer; leave the flag unset so the next rebuild retries.
+			if (migrated !== 'unknown') {
+				updateInstance(row.id, { config_migrated: 1 });
+				row.config_migrated = 1;
+			}
 		}
 		await rescueHijackedPort(row);
 		const forwards = listForwards(row.id).map((f) => ({
@@ -423,7 +432,12 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 
 		// The CLI's --remove-existing-container matches by the devcontainer.config_file label, which
 		// no longer matches containers built from the pre-separate-config path — drop them ourselves.
-		if (row.container_id) await removeContainerOnly(row.container_id);
+		if (row.container_id && !(await removeContainerOnly(row.container_id))) {
+			appendLog(
+				row.id,
+				`⚠ Could not remove the previous container (${row.container_id.slice(0, 12)}) — if the boot fails on a busy port, remove it manually\n`
+			);
+		}
 
 		appendLog(row.id, `Starting devcontainer…\n`);
 		const upStart = Date.now();
@@ -546,7 +560,9 @@ export async function createInstance(
 		remote_user: null,
 		image_source: null,
 		mode: opts.mode ?? getDefaultMode(),
-		terminal_split: 0
+		terminal_split: 0,
+		// Born under the separate-config scheme, so there is never a legacy injection to undo.
+		config_migrated: 1
 	};
 	insertInstance(row);
 	// Strip the de-dup `#2` suffix so the recent-folders list keeps the base name.
