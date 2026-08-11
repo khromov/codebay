@@ -6,7 +6,12 @@ import {
 	isSandboxMode,
 	normalizeMode,
 	normalizePermissionMode,
+	parseEnabledModes,
+	resolveSecondaryMode,
+	SECONDARY_MODE_NONE,
+	serializeEnabledModes,
 	usesTerminalUi,
+	type InstanceMode,
 	type Preflight
 } from './types.ts';
 
@@ -45,6 +50,8 @@ describe('canCreate', () => {
 		nono: true,
 		auth: [],
 		defaultMode: 'ide',
+		secondaryMode: null,
+		enabledModes: ['ide', 'terminal', 'nono'],
 		...over
 	});
 
@@ -99,5 +106,60 @@ describe('claudePermissionFlags', () => {
 		for (const mode of ['manual', 'auto', 'plan'] as const) {
 			expect(claudePermissionFlags(mode)).toBe(`--permission-mode ${mode}`);
 		}
+	});
+});
+
+describe('parseEnabledModes', () => {
+	// Existing installs have no stored value and must keep every mode after an update.
+	test('unset means all three', () => {
+		for (const v of [null, undefined, '', '   ']) {
+			expect(parseEnabledModes(v)).toEqual(['ide', 'terminal', 'nono']);
+		}
+	});
+
+	test('keeps only recognised modes, in canonical order', () => {
+		expect(parseEnabledModes('nono,ide')).toEqual(['ide', 'nono']);
+		expect(parseEnabledModes(' terminal , bogus ')).toEqual(['terminal']);
+	});
+
+	// Otherwise a stale or corrupt value would leave no way to create anything at all.
+	test('falls back to all when nothing recognisable survives', () => {
+		expect(parseEnabledModes('bogus,nonsense')).toEqual(['ide', 'terminal', 'nono']);
+	});
+
+	test('round-trips through serializeEnabledModes', () => {
+		const modes: InstanceMode[] = ['ide', 'nono'];
+		expect(parseEnabledModes(serializeEnabledModes(modes))).toEqual(modes);
+	});
+});
+
+describe('resolveSecondaryMode', () => {
+	const all: InstanceMode[] = ['ide', 'terminal', 'nono'];
+
+	// Preserves what existing installs had before the button became configurable.
+	test('unset picks the first enabled mode that is not the primary', () => {
+		expect(resolveSecondaryMode(null, 'ide', all)).toBe('terminal');
+		expect(resolveSecondaryMode(undefined, 'terminal', all)).toBe('ide');
+	});
+
+	test('honours an explicit choice', () => {
+		expect(resolveSecondaryMode('nono', 'ide', all)).toBe('nono');
+	});
+
+	test("'none' hides the button", () => {
+		expect(resolveSecondaryMode(SECONDARY_MODE_NONE, 'ide', all)).toBeNull();
+	});
+
+	// Two buttons doing the same thing is noise, so the shortcut drops out instead.
+	test('never duplicates the primary', () => {
+		expect(resolveSecondaryMode('ide', 'ide', all)).toBeNull();
+	});
+
+	test('drops a choice that has since been disabled', () => {
+		expect(resolveSecondaryMode('nono', 'ide', ['ide', 'terminal'])).toBeNull();
+	});
+
+	test('returns null when only one mode is enabled', () => {
+		expect(resolveSecondaryMode(null, 'ide', ['ide'])).toBeNull();
 	});
 });

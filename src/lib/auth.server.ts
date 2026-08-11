@@ -4,18 +4,26 @@ import { timingSafeEqualStr } from './crypto.server.ts';
 
 const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1', '0:0:0:0:0:0:0:1']);
 
-// Set once at boot; `Mochi.ws` upgrade callbacks receive only (req, params), so there is no
-// other route to the peer address.
-let server: { requestIP(req: Request): { address: string } | null } | null = null;
+interface PeerResolver {
+	requestIP(req: Request): { address: string } | null;
+}
 
-export function setServer(next: typeof server): void {
-	server = next;
+/**
+ * `Mochi.ws` upgrade callbacks receive only (req, params), so the peer address has to come from
+ * the server handle stashed here. Pinned to `globalThis` and re-captured from every HTTP request
+ * because dev-mode hot reload re-evaluates this module but never re-runs `src/index.ts` — a
+ * boot-only assignment would silently go null and make the gate refuse everyone.
+ */
+const globalForServer = globalThis as unknown as { __codebayServer?: PeerResolver | null };
+
+export function setServer(next: PeerResolver | null): void {
+	globalForServer.__codebayServer = next;
 }
 
 export function isLoopbackPeer(req: Request): boolean {
-	const address = server?.requestIP(req)?.address;
+	const address = globalForServer.__codebayServer?.requestIP(req)?.address;
 	// Unknown peer is treated as remote — the safe direction for a gate in front of a host shell.
-	return address !== undefined && LOOPBACK_ADDRESSES.has(address);
+	return address !== undefined && address !== null && LOOPBACK_ADDRESSES.has(address);
 }
 
 /**
@@ -105,6 +113,11 @@ function credentialsOk(header: string | null): boolean {
  * server it's the only thing between a malicious page and the destructive endpoints.
  */
 export const basicAuth: Handle = async ({ event, resolve }) => {
+	// The one place that sees the server on every request. `Mochi.ws` routes bypass this handle,
+	// but the page load that opens them never does — so the sandbox terminal's peer check always
+	// has a handle by the time an upgrade arrives, with or without a fresh `src/index.ts` run.
+	if (event.server) setServer(event.server);
+
 	const path = new URL(event.request.url).pathname;
 
 	// Containers can carry neither the app password nor the CSRF header; the route checks a token.

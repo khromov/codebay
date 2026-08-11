@@ -41,6 +41,49 @@ export function normalizeMode(value: unknown): InstanceMode {
 	return INSTANCE_MODES.includes(value as InstanceMode) ? (value as InstanceMode) : 'ide';
 }
 
+export const MODE_LABELS: Record<InstanceMode, string> = {
+	ide: 'Full IDE',
+	terminal: 'Terminal',
+	nono: 'Sandboxed'
+};
+
+/**
+ * Which modes the picker offers. Unset means "all" so existing installs keep every mode after an
+ * update, and an all-empty selection falls back to all rather than leaving no way to create
+ * anything at all.
+ */
+export function parseEnabledModes(raw: string | null | undefined): InstanceMode[] {
+	const picked = (raw ?? '')
+		.split(',')
+		.map((m) => m.trim())
+		.filter((m): m is InstanceMode => INSTANCE_MODES.includes(m as InstanceMode));
+	return picked.length ? INSTANCE_MODES.filter((m) => picked.includes(m)) : [...INSTANCE_MODES];
+}
+
+export function serializeEnabledModes(modes: InstanceMode[]): string {
+	return INSTANCE_MODES.filter((m) => modes.includes(m)).join(',');
+}
+
+/** The stored value for the secondary button: a mode, `'none'` to hide it, or unset for auto. */
+export const SECONDARY_MODE_AUTO = 'auto';
+export const SECONDARY_MODE_NONE = 'none';
+
+/**
+ * Which mode the small shortcut button next to "New instance" creates. Unset means "auto" — the
+ * first enabled mode that isn't the primary — which is what existing installs had before this
+ * was configurable. Never returns the primary mode: two buttons doing the same thing is noise.
+ */
+export function resolveSecondaryMode(
+	raw: string | null | undefined,
+	primary: InstanceMode,
+	enabled: InstanceMode[]
+): InstanceMode | null {
+	if (raw === SECONDARY_MODE_NONE) return null;
+	const explicit = INSTANCE_MODES.find((m) => m === raw);
+	if (explicit) return explicit !== primary && enabled.includes(explicit) ? explicit : null;
+	return enabled.find((m) => m !== primary) ?? null;
+}
+
 /** The non-IDE modes render an xterm pane rather than a code-server iframe. */
 export function usesTerminalUi(mode: InstanceMode): boolean {
 	return mode !== 'ide';
@@ -106,13 +149,23 @@ export interface Preflight {
 	/** The `nono` binary on the host's PATH — the only dependency sandbox mode has. */
 	nono: boolean;
 	auth: AuthProvider[];
-	/** Global default the picker's mode toggle starts on; per-instance override wins. */
+	/** What the primary "New instance" button creates, and what the picker's toggle starts on. */
 	defaultMode: InstanceMode;
+	/** What the small shortcut button creates; null hides it. */
+	secondaryMode: InstanceMode | null;
+	/** Which modes the user has switched on in Settings; never empty. */
+	enabledModes: InstanceMode[];
 }
 
 /** Sandbox mode needs no daemon, so a dead Docker must not disable instance creation outright. */
 export function canCreate(preflight: Preflight, mode: InstanceMode): boolean {
+	if (!preflight.enabledModes.includes(mode)) return false;
 	return isSandboxMode(mode) ? preflight.nono : preflight.docker && preflight.cli;
+}
+
+/** Modes the picker should actually show — switched on, and with their dependency present. */
+export function creatableModes(preflight: Preflight): InstanceMode[] {
+	return preflight.enabledModes.filter((mode) => canCreate(preflight, mode));
 }
 
 /** Same-origin so the app's Basic Auth covers the editor too. */

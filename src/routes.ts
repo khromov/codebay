@@ -30,11 +30,13 @@ import { pickNamePrompt } from './avatars/name-prompts.ts';
 import { avatars, findAvatar } from './avatars/index.ts';
 import {
 	addForwardedPort,
-	broadcastDefaultMode,
+	broadcastModeConfig,
 	broadcastFilter,
 	broadcastPet,
 	createInstance,
 	getDefaultMode,
+	getEnabledModes,
+	getSecondaryMode,
 	deleteAllInstances,
 	deleteDatabaseAndShutdown,
 	deleteInstance,
@@ -63,6 +65,7 @@ import { hostTerminalRefusal, wsUpgradeAllowed } from './lib/auth.server.ts';
 import {
 	DEFAULT_NONO_PROFILE,
 	getNonoProfile,
+	hostStatusLineReadFiles,
 	isNonoPane,
 	nonoArgs,
 	nonoAvailable,
@@ -74,9 +77,14 @@ import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
 import {
+	INSTANCE_MODES,
 	isInstanceFilter,
+	SECONDARY_MODE_AUTO,
+	SECONDARY_MODE_NONE,
+	MODE_LABELS,
 	normalizeMode,
 	normalizePermissionMode,
+	serializeEnabledModes,
 	type InstanceFilter
 } from './types.ts';
 
@@ -100,7 +108,15 @@ async function preflight() {
 				})
 		)
 	]);
-	return { docker, cli, nono: nonoAvailable(), auth, defaultMode: getDefaultMode() };
+	return {
+		docker,
+		cli,
+		nono: nonoAvailable(),
+		auth,
+		defaultMode: getDefaultMode(),
+		secondaryMode: getSecondaryMode(),
+		enabledModes: getEnabledModes()
+	};
 }
 
 /** The header pet logo, resolved from the DB option. A name that left the catalog reads as "off". */
@@ -207,6 +223,11 @@ export const routes: Record<string, MochiRouteValue> = {
 			return {
 				pet: currentPet(),
 				defaultMode: getDefaultMode(),
+				secondaryMode: getOption('secondary_mode') ?? SECONDARY_MODE_AUTO,
+				resolvedSecondaryMode: getSecondaryMode(),
+				enabledModes: getEnabledModes(),
+				allModes: INSTANCE_MODES,
+				modeLabels: MODE_LABELS,
 				claudePermissionMode: getClaudePermissionMode(),
 				defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
 				builtinImage: DEFAULT_IMAGE,
@@ -271,8 +292,29 @@ export const routes: Record<string, MochiRouteValue> = {
 			defaultMode: ({ formData }) => {
 				const mode = normalizeMode(str(formData, 'mode'));
 				setOption('default_mode', mode);
-				broadcastDefaultMode(mode);
+				broadcastModeConfig();
 				return success({ mode });
+			},
+
+			// Which mode the small shortcut button next to "New instance" creates.
+			secondaryMode: ({ formData }) => {
+				const raw = str(formData, 'mode');
+				const value =
+					raw === SECONDARY_MODE_NONE || raw === SECONDARY_MODE_AUTO ? raw : normalizeMode(raw);
+				setOption('secondary_mode', value);
+				broadcastModeConfig();
+				return success({ mode: value });
+			},
+
+			// Which modes the picker offers at all. Unchecking every box would leave no way to
+			// create an instance, so an empty selection is refused rather than silently stored.
+			enabledModes: ({ formData }) => {
+				const picked = formData.getAll('modes').map((v) => normalizeMode(String(v)));
+				const modes = INSTANCE_MODES.filter((m) => picked.includes(m));
+				if (!modes.length) return fail(400, { error: 'At least one mode must stay enabled' });
+				setOption('enabled_modes', serializeEnabledModes(modes));
+				broadcastModeConfig();
+				return success({ modes });
 			},
 
 			// Baked into the container launcher at provision time, so it lands on create/rebuild.
@@ -624,20 +666,24 @@ export const routes: Record<string, MochiRouteValue> = {
 		id: string;
 		pane: NonoPane;
 		cwd: string;
+		readFiles: string[];
 		/** Set when the host-shell gate said no; the socket opens only to explain and close. */
 		refusal?: string;
 		sink?: (data: Uint8Array) => void;
 	}>({
-		upgrade: (req, params) => {
+		upgrade: async (req, params) => {
 			// Mochi.ws routes bypass the global basicAuth handle, so enforce origin + auth here.
 			if (!wsUpgradeAllowed(req) || !params.id) return false;
 			const row = getInstance(params.id);
 			if (!row || row.mode !== 'nono' || row.status !== 'running') return false;
 			const requested = new URL(req.url).searchParams.get('pane');
+			const pane = isNonoPane(requested) ? requested : 'claude';
 			return {
 				id: row.id,
-				pane: isNonoPane(requested) ? requested : 'claude',
+				pane,
 				cwd: row.workspace_path,
+				// Only the Claude pane renders a statusline, so the grant stays off the shell pane.
+				readFiles: pane === 'claude' ? await hostStatusLineReadFiles() : [],
 				// Carried rather than refused outright: a rejected upgrade is indistinguishable
 				// from a dropped connection, so the client would just reconnect forever.
 				refusal: hostTerminalRefusal(req) ?? undefined
@@ -674,7 +720,7 @@ export const routes: Record<string, MochiRouteValue> = {
 					pane,
 					// Resolved per attach, so changing the profile or permission mode in Settings
 					// applies to the next pane opened rather than needing a restart.
-					argv: nonoArgs(getNonoProfile(), pane, getClaudePermissionMode()),
+					argv: nonoArgs(getNonoProfile(), pane, getClaudePermissionMode(), ws.data.user.readFiles),
 					cwd: ws.data.user.cwd,
 					cols: frame.cols,
 					rows: frame.rows,

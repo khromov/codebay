@@ -36,6 +36,16 @@ Because the sandboxed terminal is a shell on the host rather than inside a conta
 
 Ports, rebuilds and the health panel don't apply to this mode and are hidden.
 
+Claude's statusline works here too: the sandbox only grants `~/.claude`, so codebay adds a read-only grant for whatever script your `statusLine` command points at (commonly `~/statusline.sh`).
+
+## Choosing which modes you see
+
+Settings has three related controls:
+
+- **Enabled modes** — which of the three this codebay can create at all. All are on by default, including after an update. Switching one off hides it from the picker.
+- **"New instance" button** — what the primary dashboard button creates, and what the picker starts on.
+- **Shortcut button** — what the small square button next to it creates, or **None** to hide it.
+
 ## Configuration
 
 - `PORT` — server port (default `6969`)

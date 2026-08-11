@@ -256,6 +256,30 @@ describe('host terminal gate', () => {
 		setServer(null);
 		expect(hostTerminalRefusal(req())).not.toBeNull();
 	});
+
+	/**
+	 * Regression: the server handle used to be assigned only by `src/index.ts` at boot. Dev-mode
+	 * hot reload re-evaluates this module but never re-runs the entry, so the handle went null and
+	 * the gate refused every client — including the localhost browser it is meant to allow.
+	 * Capturing it from the handle is what makes a hot-reloaded server self-heal.
+	 */
+	test('recovers the peer resolver from an ordinary request, not just from boot', async () => {
+		setPassword('');
+		setServer(null);
+		expect(hostTerminalRefusal(req())).not.toBeNull();
+
+		const event = {
+			request: request('/', { origin: ORIGIN }),
+			url: new URL(`http://${HOST}/`),
+			locals: {},
+			kind: 'page',
+			isWarmup: false,
+			server: { requestIP: () => ({ address: '127.0.0.1' }) } as never
+		} as MochiEvent;
+		await basicAuth({ event, resolve: async () => new Response('ok') });
+
+		expect(hostTerminalRefusal(req())).toBeNull();
+	});
 });
 
 describe('proxy route wiring', () => {

@@ -7,7 +7,6 @@
 	import PawPrint from '@lucide/svelte/icons/paw-print';
 	import SunMoon from '@lucide/svelte/icons/sun-moon';
 	import ThemePicker from './ThemePicker.svelte';
-	import Layers from '@lucide/svelte/icons/layers';
 	import FolderMinus from '@lucide/svelte/icons/folder-minus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Hammer from '@lucide/svelte/icons/hammer';
@@ -33,12 +32,16 @@
 	import { avatars, findAvatar, type AvatarArt } from '../avatars/index.ts';
 	import {
 		CLAUDE_PERMISSION_MODES,
+		SECONDARY_MODE_NONE,
 		type ClaudePermissionMode,
 		type InstanceMode
 	} from '../types.ts';
 	import Terminal from '@lucide/svelte/icons/terminal';
 	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
+	import Layers from '@lucide/svelte/icons/layers';
+	import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
+	import SquarePlus from '@lucide/svelte/icons/square-plus';
 	import { installPopupBackTrap } from '../lib/popup-nav.ts';
 
 	/** Every settings form action fails with the same `{ error }` shape. */
@@ -47,6 +50,11 @@
 	let {
 		pet,
 		defaultMode,
+		secondaryMode: _storedSecondaryMode,
+		resolvedSecondaryMode,
+		enabledModes,
+		allModes,
+		modeLabels,
 		nonoAvailable,
 		nonoProfile,
 		builtinNonoProfile,
@@ -87,6 +95,12 @@
 	}: {
 		pet?: AvatarArt;
 		defaultMode: InstanceMode;
+		/** Raw stored value; the resolved one is what the UI shows. */
+		secondaryMode: string;
+		resolvedSecondaryMode: InstanceMode | null;
+		enabledModes: InstanceMode[];
+		allModes: InstanceMode[];
+		modeLabels: Record<InstanceMode, string>;
 		nonoAvailable: boolean;
 		nonoProfile: string;
 		builtinNonoProfile: string;
@@ -145,6 +159,8 @@
 		setError: (v: string | null) => void;
 		setMsg?: (v: string | null) => void;
 		onSuccess: (data: Success | undefined) => void;
+		/** Roll back an optimistic local change the server refused. */
+		onFailure?: () => void;
 		confirmMessage?: string;
 	}): MochiEnhanceOptions<Success, ActionFailure> {
 		return {
@@ -161,8 +177,10 @@
 						handlers.onSuccess(result.data);
 					} else if (result.type === 'failure') {
 						handlers.setError(result.data?.error ?? 'Request failed');
+						handlers.onFailure?.();
 					} else if (result.type === 'error') {
 						handlers.setError('Network error. Try again.');
+						handlers.onFailure?.();
 					}
 				};
 			}
@@ -200,12 +218,69 @@
 		};
 	}
 
+	const MODE_ICONS = { ide: LayoutTemplate, terminal: Terminal, nono: ShieldCheck };
+	/** Sandbox mode is the only one with a host dependency, so it's the only one that can be unusable. */
+	const modeUnavailable = (mode: InstanceMode) => mode === 'nono' && !nonoAvailable;
+
+	// svelte-ignore state_referenced_locally
+	let enabled = $state<InstanceMode[]>([...enabledModes]);
+	let savingEnabled = $state(false);
+	let enabledError = $state<string | null>(null);
+	let enabledFormEl: HTMLFormElement | undefined;
+
+	const enabledModesOpts = saveOpts<{ modes: InstanceMode[] }>({
+		setSaving: (v) => (savingEnabled = v),
+		setError: (v) => (enabledError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.modes) enabled = data.modes;
+		},
+		// The server refuses an empty selection, so the checkbox has to un-tick itself again.
+		onFailure: () => (enabled = lastEnabled)
+	});
+
+	// Seeded from the prop by design — the toggle owns it from here, same as `enabled` above.
+	// svelte-ignore state_referenced_locally
+	let lastEnabled: InstanceMode[] = [...enabledModes];
+	function toggleEnabled(mode: InstanceMode, on: boolean) {
+		lastEnabled = enabled;
+		enabled = on
+			? allModes.filter((m) => m === mode || enabled.includes(m))
+			: enabled.filter((m) => m !== mode);
+		flushSync(() => enabled);
+		enabledFormEl?.requestSubmit();
+	}
+
+	// Only an enabled mode can sit on a button; the server resolves the same way.
+	const buttonModes = $derived(allModes.filter((m) => enabled.includes(m)));
+
 	// DB-backed, so it initializes from the prop; a per-instance choice in the picker overrides it.
 	// svelte-ignore state_referenced_locally
 	let modeChoice = $state<InstanceMode>(defaultMode);
 	let savingMode = $state(false);
 	let modeError = $state<string | null>(null);
 	let modeFormEl: HTMLFormElement | undefined;
+
+	// svelte-ignore state_referenced_locally
+	let secondaryChoice = $state<string>(resolvedSecondaryMode ?? SECONDARY_MODE_NONE);
+	let savingSecondary = $state(false);
+	let secondaryError = $state<string | null>(null);
+	let secondaryFormEl: HTMLFormElement | undefined;
+
+	const secondaryModeOpts = saveOpts<{ mode: string }>({
+		setSaving: (v) => (savingSecondary = v),
+		setError: (v) => (secondaryError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.mode) secondaryChoice = data.mode;
+		}
+	});
+
+	function chooseSecondary(next: string) {
+		if (next === secondaryChoice) return;
+		flushSync(() => (secondaryChoice = next));
+		secondaryFormEl?.requestSubmit();
+	}
 
 	const defaultModeOpts = saveOpts<{ mode: InstanceMode }>({
 		setSaving: (v) => (savingMode = v),
@@ -745,62 +820,138 @@
 			<form
 				class="row"
 				method="POST"
+				action="?/enabledModes"
+				bind:this={enabledFormEl}
+				{@attach enhance(enabledModesOpts)}
+			>
+				<div class="label">
+					<Layers size={20} />
+					<div class="text">
+						<div class="name">Enabled modes</div>
+						<div class="desc">
+							Which kinds of instance this codebay can create. <strong>Full IDE</strong> serves
+							browser VS Code; <strong>Terminal</strong> is lighter — just Claude Code in a
+							terminal, no code-server; <strong>Sandboxed</strong> skips Docker entirely and runs Claude
+							Code on this machine under nono. Switching one off hides it from the picker.
+						</div>
+					</div>
+				</div>
+				<div class="mode-checks">
+					{#each allModes as m (m)}
+						{@const Icon = MODE_ICONS[m]}
+						<label class="mode-check" class:off={modeUnavailable(m)}>
+							<input
+								type="checkbox"
+								name="modes"
+								value={m}
+								checked={enabled.includes(m)}
+								disabled={savingEnabled}
+								onchange={(e) => toggleEnabled(m, e.currentTarget.checked)}
+							/>
+							<Icon size={15} />
+							{modeLabels[m]}
+							{#if modeUnavailable(m)}<span class="warn">needs nono</span>{/if}
+						</label>
+					{/each}
+				</div>
+			</form>
+			{#if enabledError}
+				<div class="sub"><div class="msg error">{enabledError}</div></div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
 				action="?/defaultMode"
 				bind:this={modeFormEl}
 				{@attach enhance(defaultModeOpts)}
 			>
 				<div class="label">
-					<Terminal size={20} />
+					<MousePointerClick size={20} />
 					<div class="text">
-						<div class="name">Default editor</div>
+						<div class="name">"New instance" button</div>
 						<div class="desc">
-							What new instances start in. <strong>Full IDE</strong> serves browser VS Code;
-							<strong>Terminal</strong> is lighter — just Claude Code in a terminal, no code-server;
-							<strong>Sandboxed</strong> skips Docker entirely and runs Claude Code on this machine under
-							nono. You can override this per instance when creating one.
+							What the primary button on the dashboard creates. It's also what the picker's mode
+							toggle starts on — you can still override it per instance when creating one.
 						</div>
 					</div>
 				</div>
 				<input type="hidden" name="mode" value={modeChoice} />
-				<div class="mode-toggle" role="group" aria-label="Default editor mode">
-					<button
-						type="button"
-						class="mode-btn"
-						class:active={modeChoice === 'ide'}
-						aria-pressed={modeChoice === 'ide'}
-						disabled={savingMode}
-						onclick={() => chooseMode('ide')}
-					>
-						<LayoutTemplate size={15} />
-						Full IDE
-					</button>
-					<button
-						type="button"
-						class="mode-btn"
-						class:active={modeChoice === 'terminal'}
-						aria-pressed={modeChoice === 'terminal'}
-						disabled={savingMode}
-						onclick={() => chooseMode('terminal')}
-					>
-						<Terminal size={15} />
-						Terminal
-					</button>
-					<button
-						type="button"
-						class="mode-btn"
-						class:active={modeChoice === 'nono'}
-						aria-pressed={modeChoice === 'nono'}
-						disabled={savingMode || !nonoAvailable}
-						title={nonoAvailable ? undefined : 'Requires nono: install it with `brew install nono`'}
-						onclick={() => chooseMode('nono')}
-					>
-						<ShieldCheck size={15} />
-						Sandboxed
-					</button>
+				<div class="mode-toggle" role="group" aria-label="Primary button mode">
+					{#each buttonModes as m (m)}
+						{@const Icon = MODE_ICONS[m]}
+						<button
+							type="button"
+							class="mode-btn"
+							class:active={modeChoice === m}
+							aria-pressed={modeChoice === m}
+							disabled={savingMode || modeUnavailable(m)}
+							title={modeUnavailable(m)
+								? 'Requires nono: install it with `brew install nono`'
+								: undefined}
+							onclick={() => chooseMode(m)}
+						>
+							<Icon size={15} />
+							{modeLabels[m]}
+						</button>
+					{/each}
 				</div>
 			</form>
 			{#if modeError}
 				<div class="sub"><div class="msg error">{modeError}</div></div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/secondaryMode"
+				bind:this={secondaryFormEl}
+				{@attach enhance(secondaryModeOpts)}
+			>
+				<div class="label">
+					<SquarePlus size={20} />
+					<div class="text">
+						<div class="name">Shortcut button</div>
+						<div class="desc">
+							The small square button next to "New instance", for creating in a second mode without
+							opening the picker. Set it to <strong>None</strong> to hide it.
+						</div>
+					</div>
+				</div>
+				<input type="hidden" name="mode" value={secondaryChoice} />
+				<div class="mode-toggle" role="group" aria-label="Shortcut button mode">
+					{#each buttonModes.filter((m) => m !== modeChoice) as m (m)}
+						{@const Icon = MODE_ICONS[m]}
+						<button
+							type="button"
+							class="mode-btn"
+							class:active={secondaryChoice === m}
+							aria-pressed={secondaryChoice === m}
+							disabled={savingSecondary || modeUnavailable(m)}
+							onclick={() => chooseSecondary(m)}
+						>
+							<Icon size={15} />
+							{modeLabels[m]}
+						</button>
+					{/each}
+					<button
+						type="button"
+						class="mode-btn"
+						class:active={secondaryChoice === SECONDARY_MODE_NONE}
+						aria-pressed={secondaryChoice === SECONDARY_MODE_NONE}
+						disabled={savingSecondary}
+						onclick={() => chooseSecondary(SECONDARY_MODE_NONE)}
+					>
+						None
+					</button>
+				</div>
+			</form>
+			{#if secondaryError}
+				<div class="sub"><div class="msg error">{secondaryError}</div></div>
 			{/if}
 		</section>
 
@@ -2273,6 +2424,34 @@
 	}
 	.mode-btn + .mode-btn {
 		border-left: 1px solid var(--ink);
+	}
+	.mode-checks {
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+	.mode-check {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 7px 12px;
+		border: 1px solid var(--ink);
+		font-family: var(--font-mono);
+		font-weight: 700;
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		cursor: pointer;
+		user-select: none;
+	}
+	.mode-check.off {
+		opacity: 0.6;
+	}
+	.mode-check .warn {
+		font-weight: 400;
+		text-transform: none;
+		letter-spacing: 0;
+		color: var(--ink-faint);
 	}
 	.mode-btn.active {
 		background: var(--ink);

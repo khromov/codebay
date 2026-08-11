@@ -67,7 +67,10 @@ import { killSessions } from './pty.server.ts';
 import {
 	isInstanceFilter,
 	isSandboxMode,
+	MODE_LABELS,
 	normalizeMode,
+	parseEnabledModes,
+	resolveSecondaryMode,
 	type Instance,
 	type InstanceFilter,
 	type InstanceHealth
@@ -132,7 +135,14 @@ export type StreamEvent =
 	// The dashboard run-state filter, so a change in one tab propagates to every open client.
 	| { type: 'filter'; data: { value: InstanceFilter } }
 	// The global default editor surface, so the picker's toggle follows a settings change.
-	| { type: 'default-mode'; data: { mode: InstanceMode } };
+	| {
+			type: 'default-mode';
+			data: {
+				mode: InstanceMode;
+				secondaryMode: InstanceMode | null;
+				enabledModes: InstanceMode[];
+			};
+	  };
 
 interface StreamHub {
 	sockets: Set<ServerWebSocket<unknown>>;
@@ -188,9 +198,16 @@ export function broadcastFilter(value: InstanceFilter): void {
 	broadcast({ type: 'filter', data: { value } });
 }
 
-/** Settings opens in its own popup, so the dashboard behind it needs the new default pushed. */
-export function broadcastDefaultMode(mode: InstanceMode): void {
-	broadcast({ type: 'default-mode', data: { mode } });
+/** Settings opens in its own popup, so the dashboard behind it needs the new mode config pushed. */
+export function broadcastModeConfig(): void {
+	broadcast({
+		type: 'default-mode',
+		data: {
+			mode: getDefaultMode(),
+			secondaryMode: getSecondaryMode(),
+			enabledModes: getEnabledModes()
+		}
+	});
 }
 
 async function reconcileInstances(force = false): Promise<void> {
@@ -240,8 +257,15 @@ export function streamOpen(ws: ServerWebSocket<unknown>): void {
 		type: 'filter',
 		data: { value: isInstanceFilter(savedFilter) ? savedFilter : 'all' }
 	});
-	// Same, for the default mode the picker's toggle seeds from.
-	sendTo(ws, { type: 'default-mode', data: { mode: getDefaultMode() } });
+	// Same, for the mode config the picker's toggle seeds from.
+	sendTo(ws, {
+		type: 'default-mode',
+		data: {
+			mode: getDefaultMode(),
+			secondaryMode: getSecondaryMode(),
+			enabledModes: getEnabledModes()
+		}
+	});
 }
 
 export function streamClose(ws: ServerWebSocket<unknown>): void {
@@ -499,9 +523,24 @@ function uniqueName(desired: string, excludeId?: string): string {
 	}
 }
 
-/** The global fallback the picker's mode toggle starts on; a per-instance choice overrides it. */
+export function getEnabledModes(): InstanceMode[] {
+	return parseEnabledModes(getOption('enabled_modes'));
+}
+
+/**
+ * The global fallback the picker's mode toggle starts on; a per-instance choice overrides it.
+ * Falls back to an enabled mode so switching the default's mode off can't leave the picker
+ * pointing at something it refuses to create.
+ */
 export function getDefaultMode(): InstanceMode {
-	return normalizeMode(getOption('default_mode'));
+	const mode = normalizeMode(getOption('default_mode'));
+	const enabled = getEnabledModes();
+	return enabled.includes(mode) ? mode : enabled[0]!;
+}
+
+/** What the dashboard's small shortcut button creates; null hides it. */
+export function getSecondaryMode(): InstanceMode | null {
+	return resolveSecondaryMode(getOption('secondary_mode'), getDefaultMode(), getEnabledModes());
 }
 
 /** `source` is either a local folder (copied) or a Git URL (cloned); boot runs in the background. */
@@ -520,6 +559,10 @@ export async function createInstance(
 	const id = crypto.randomUUID();
 	const folderName = parsedRepo?.repo || basename(source) || 'workspace';
 	const mode = opts.mode ?? getDefaultMode();
+	// The picker hides disabled modes; this is the guard for a direct API call.
+	if (!getEnabledModes().includes(mode)) {
+		throw new Error(`${MODE_LABELS[mode]} mode is switched off in settings`);
+	}
 	// Sandbox mode serves nothing over HTTP, so burning a port from the 8001–8999 range would
 	// only shrink the pool the Docker modes draw from.
 	const hostPort = isSandboxMode(mode) ? 0 : await allocatePort();

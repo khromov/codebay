@@ -219,7 +219,12 @@
 					return;
 				}
 				if (msg.type === 'default-mode') {
-					livePreflight = { ...livePreflight, defaultMode: msg.data.mode };
+					livePreflight = {
+						...livePreflight,
+						defaultMode: msg.data.mode,
+						secondaryMode: msg.data.secondaryMode,
+						enabledModes: msg.data.enabledModes
+					};
 					return;
 				}
 				if (msg.type === 'health') {

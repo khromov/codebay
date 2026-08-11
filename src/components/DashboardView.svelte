@@ -158,6 +158,7 @@
 	{filter}
 	{onFilter}
 	defaultMode={preflight.defaultMode}
+	secondaryMode={preflight.secondaryMode}
 	onNew={(mode) => {
 		browserMode = mode ?? null;
 		browserOpen = true;
@@ -214,9 +215,8 @@
 {#if browserOpen}
 	<FolderBrowser
 		onpick={createFrom}
-		defaultMode={preflight.defaultMode}
+		{preflight}
 		initialMode={browserMode}
-		nonoAvailable={preflight.nono}
 		onclose={() => (browserOpen = false)}
 	/>
 {/if}

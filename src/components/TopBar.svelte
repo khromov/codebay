@@ -4,7 +4,13 @@
 	import Terminal from '@lucide/svelte/icons/terminal';
 	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import { isDev } from 'mochi-framework';
-	import type { AuthProvider, InstanceFilter, InstanceMode } from '../types.ts';
+	import {
+		MODE_LABELS,
+		type AuthProvider,
+		type InstanceFilter,
+		type InstanceMode
+	} from '../types.ts';
+	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import type { AvatarArt } from '../avatars/index.ts';
 	import Brand from './Brand.svelte';
 	import InstanceFilterControl from './InstanceFilter.svelte';
@@ -21,6 +27,7 @@
 		creating = false,
 		filter,
 		defaultMode = 'ide',
+		secondaryMode = null,
 		onFilter,
 		onNew,
 		onDeleteAll
@@ -31,16 +38,18 @@
 		ready?: boolean;
 		creating?: boolean;
 		filter?: InstanceFilter;
-		/** Drives the shortcut button, which always offers the mode the main button won't create. */
+		/** What the primary button creates. */
 		defaultMode?: InstanceMode;
+		/** What the small shortcut button creates; null hides it. */
+		secondaryMode?: InstanceMode | null;
 		onFilter?: (v: InstanceFilter) => void;
 		onNew?: (mode?: InstanceMode) => void;
 		onDeleteAll?: () => void;
 	} = $props();
 
-	// Deliberately only flips between the two container modes: a third button would make this a
-	// mode picker, which the dialog already is — and sandbox mode is where you go to choose.
-	const altMode = $derived<InstanceMode>(defaultMode === 'terminal' ? 'ide' : 'terminal');
+	// Both buttons are configured in Settings rather than derived, so "New instance" and its
+	// shortcut can be any two modes — or just the one, when the shortcut is switched off.
+	const MODE_ICONS = { ide: LayoutTemplate, terminal: Terminal, nono: ShieldCheck };
 </script>
 
 <header class="topbar">
@@ -62,22 +71,25 @@
 				variant="primary"
 				size="sm"
 				icon={creating ? undefined : Plus}
-				onclick={() => onNew?.()}
+				onclick={() => onNew?.(defaultMode)}
 				disabled={!ready || creating}
+				title={`New ${MODE_LABELS[defaultMode].toLowerCase()} instance`}
 			>
 				{creating ? 'Creating…' : 'New instance'}
 			</Button>
-			<Button
-				variant="primary"
-				size="sm"
-				square
-				icon={altMode === 'terminal' ? Terminal : LayoutTemplate}
-				iconSize={15}
-				onclick={() => onNew?.(altMode)}
-				disabled={!ready || creating}
-				title={altMode === 'terminal' ? 'New terminal instance' : 'New full IDE instance'}
-				aria-label={altMode === 'terminal' ? 'New terminal instance' : 'New full IDE instance'}
-			/>
+			{#if secondaryMode}
+				<Button
+					variant="primary"
+					size="sm"
+					square
+					icon={MODE_ICONS[secondaryMode]}
+					iconSize={15}
+					onclick={() => onNew?.(secondaryMode)}
+					disabled={!ready || creating}
+					title={`New ${MODE_LABELS[secondaryMode].toLowerCase()} instance`}
+					aria-label={`New ${MODE_LABELS[secondaryMode].toLowerCase()} instance`}
+				/>
+			{/if}
 		</div>
 	</div>
 </header>

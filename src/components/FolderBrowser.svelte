@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { BrowseResult, FolderHistoryEntry, InstanceMode } from '../types.ts';
+	import {
+		canCreate,
+		MODE_LABELS,
+		type BrowseResult,
+		type FolderHistoryEntry,
+		type InstanceMode,
+		type Preflight
+	} from '../types.ts';
 	import { isRepoUrl } from '../lib/repo-url.ts';
 	import Terminal from '@lucide/svelte/icons/terminal';
 	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
@@ -16,24 +23,44 @@
 	let {
 		onpick,
 		onclose,
-		defaultMode = 'ide',
-		initialMode = null,
-		nonoAvailable = false
+		preflight,
+		initialMode = null
 	}: {
 		onpick: (source: string, opts?: { branch?: string; mode?: InstanceMode }) => void;
 		onclose: () => void;
-		defaultMode?: InstanceMode;
+		/** Carries the enabled modes, their host dependencies, and the global default. */
+		preflight: Preflight;
 		/** Opens pinned to this mode — set by the dashboard's mode shortcut button. */
 		initialMode?: InstanceMode | null;
-		/** Sandbox mode's only host dependency; without it the toggle is offered but disabled. */
-		nonoAvailable?: boolean;
 	} = $props();
+
+	/** A mode switched off in settings isn't offered; one whose dependency is missing is shown
+	    disabled, so the reason is discoverable rather than the button just vanishing. */
+	const offered = $derived(
+		preflight.enabledModes.map((m) => ({
+			mode: m,
+			available: canCreate(preflight, m),
+			title:
+				m === 'nono'
+					? preflight.nono
+						? 'Run Claude Code on this machine under the nono sandbox — no Docker'
+						: 'Requires nono: install it with `brew install nono`'
+					: preflight.docker && preflight.cli
+						? undefined
+						: 'Requires a running Docker daemon and the devcontainer CLI'
+		}))
+	);
 
 	// Follows the global default live — settings opens in its own popup, so the toggle there can
 	// move while this picker is open. An explicit choice here wins and is never yanked back.
 	// svelte-ignore state_referenced_locally
 	let modeOverride = $state<InstanceMode | null>(initialMode);
-	const mode = $derived(modeOverride ?? defaultMode);
+	const mode = $derived(
+		modeOverride ??
+			(preflight.enabledModes.includes(preflight.defaultMode)
+				? preflight.defaultMode
+				: preflight.enabledModes[0]!)
+	);
 
 	let result = $state<BrowseResult | null>(null);
 	let loading = $state(true);
@@ -122,45 +149,30 @@
 			<button class="x" onclick={onclose} aria-label="Close"><X size={16} /></button>
 		</div>
 
-		<div class="mode">
-			<div class="mode-label">Editor</div>
-			<div class="mode-toggle" role="group" aria-label="Editor mode">
-				<button
-					type="button"
-					class="mode-btn"
-					class:active={mode === 'ide'}
-					aria-pressed={mode === 'ide'}
-					onclick={() => (modeOverride = 'ide')}
-				>
-					<LayoutTemplate size={15} />
-					Full IDE
-				</button>
-				<button
-					type="button"
-					class="mode-btn"
-					class:active={mode === 'terminal'}
-					aria-pressed={mode === 'terminal'}
-					onclick={() => (modeOverride = 'terminal')}
-				>
-					<Terminal size={15} />
-					Terminal
-				</button>
-				<button
-					type="button"
-					class="mode-btn"
-					class:active={mode === 'nono'}
-					aria-pressed={mode === 'nono'}
-					disabled={!nonoAvailable}
-					title={nonoAvailable
-						? 'Run Claude Code on this machine under the nono sandbox — no Docker'
-						: 'Requires nono: install it with `brew install nono`'}
-					onclick={() => (modeOverride = 'nono')}
-				>
-					<ShieldCheck size={15} />
-					Sandboxed
-				</button>
+		<!-- One enabled mode needs no chooser; the picker just creates in it. -->
+		{#if offered.length > 1}
+			<div class="mode">
+				<div class="mode-label">Editor</div>
+				<div class="mode-toggle" role="group" aria-label="Editor mode">
+					{#each offered as option (option.mode)}
+						<button
+							type="button"
+							class="mode-btn"
+							class:active={mode === option.mode}
+							aria-pressed={mode === option.mode}
+							disabled={!option.available}
+							title={option.title}
+							onclick={() => (modeOverride = option.mode)}
+						>
+							{#if option.mode === 'ide'}<LayoutTemplate size={15} />
+							{:else if option.mode === 'terminal'}<Terminal size={15} />
+							{:else}<ShieldCheck size={15} />{/if}
+							{MODE_LABELS[option.mode]}
+						</button>
+					{/each}
+				</div>
 			</div>
-		</div>
+		{/if}
 		{#if mode === 'nono'}
 			<p class="mode-note">
 				Runs on this machine under <a href="https://nono.sh" target="_blank" rel="noopener">nono</a>

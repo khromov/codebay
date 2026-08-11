@@ -1,4 +1,9 @@
 import { getOption } from './db.server.ts';
+import {
+	expandTilde,
+	extractScriptPath,
+	readHostClaudeSettings
+} from '../container-injections/claude-statusline.ts';
 import { claudePermissionFlags, type ClaudePermissionMode } from '../types.ts';
 
 /**
@@ -29,9 +34,20 @@ export function isNonoPane(value: unknown): value is NonoPane {
 export function nonoArgs(
 	profile: string,
 	pane: NonoPane,
-	permissionMode: ClaudePermissionMode
+	permissionMode: ClaudePermissionMode,
+	/** Extra single-file read grants; see `hostStatusLineReadFiles`. */
+	readFiles: string[] = []
 ): string[] {
-	const base = ['nono', 'run', '--profile', profile, '--allow-cwd', '--no-rollback-prompt', '--'];
+	const base = [
+		'nono',
+		'run',
+		'--profile',
+		profile,
+		'--allow-cwd',
+		'--no-rollback-prompt',
+		...readFiles.flatMap((file) => ['--read-file', file]),
+		'--'
+	];
 	if (pane === 'shell') return [...base, 'bash', '-l'];
 	// The trailing `exec bash -l` runs as a child of the sandboxed shell, so it inherits the
 	// sandbox — mirroring the container launcher's "drop to a shell when Claude exits".
@@ -40,6 +56,23 @@ export function nonoArgs(
 
 export function nonoAvailable(): boolean {
 	return Bun.which('nono') !== null;
+}
+
+/**
+ * The stock profile grants `~/.claude`, but a statusLine command typically points at a script
+ * elsewhere in `$HOME` — `bash ~/statusline.sh` being the common shape. Claude Code swallows a
+ * failing statusline, so without an explicit grant the bar just silently never appears.
+ *
+ * Granted read-only, one file, and only for the pane that runs Claude. The container path solves
+ * the same problem by *copying* the script in; here the file is the user's real one, so widening
+ * the sandbox by a single file beats writing into their live `~/.claude`.
+ */
+export async function hostStatusLineReadFiles(): Promise<string[]> {
+	const settings = await readHostClaudeSettings();
+	const statusLine = settings?.statusLine as { type?: string; command?: string } | undefined;
+	if (statusLine?.type !== 'command' || !statusLine.command) return [];
+	const token = extractScriptPath(statusLine.command);
+	return token ? [expandTilde(token)] : [];
 }
 
 async function run(args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> {

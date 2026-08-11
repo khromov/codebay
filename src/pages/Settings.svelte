@@ -8,6 +8,11 @@
 	let {
 		pet,
 		defaultMode,
+		secondaryMode,
+		resolvedSecondaryMode,
+		enabledModes,
+		allModes,
+		modeLabels,
 		nonoAvailable,
 		nonoProfile,
 		builtinNonoProfile,
@@ -48,6 +53,11 @@
 	}: {
 		pet?: AvatarArt;
 		defaultMode: InstanceMode;
+		secondaryMode: string;
+		resolvedSecondaryMode: InstanceMode | null;
+		enabledModes: InstanceMode[];
+		allModes: InstanceMode[];
+		modeLabels: Record<InstanceMode, string>;
 		nonoAvailable: boolean;
 		nonoProfile: string;
 		builtinNonoProfile: string;
@@ -91,6 +101,11 @@
 <SettingsView
 	{pet}
 	{defaultMode}
+	{secondaryMode}
+	{resolvedSecondaryMode}
+	{enabledModes}
+	{allModes}
+	{modeLabels}
 	{nonoAvailable}
 	{nonoProfile}
 	{builtinNonoProfile}
