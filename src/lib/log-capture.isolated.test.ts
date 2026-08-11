@@ -65,7 +65,7 @@ describe('planFetch', () => {
 			path: '/c/.claude/projects/e/s.jsonl',
 			hostFileName: 'transcript-id-s.jsonl',
 			startByte: 1,
-			mode: 'rewrite'
+			mode: 'rollover'
 		});
 	});
 });
@@ -142,7 +142,7 @@ describe('runCapturePass', () => {
 	const HIST = '/home/node/.claude/history.jsonl';
 	const SESS = '/home/node/.claude/projects/enc/s1.jsonl';
 
-	test('mirrors files, appends incrementally, rewrites on shrink, and indexes', async () => {
+	test('mirrors files, appends incrementally, rolls over on shrink, and indexes', async () => {
 		logsDir = mkdtempSync(join(tmpdir(), 'codebay-logs-'));
 		const files = new Map<string, Buffer>([
 			[HIST, Buffer.from('h1\n')],
@@ -162,10 +162,22 @@ describe('runCapturePass', () => {
 		await runCapturePass(row(), deps);
 		expect(readFileSync(sessPath, 'utf8')).toBe('line1\nline2\nline3\n');
 
-		// Container transcript shrinks (session reset): the whole file is re-pulled.
+		// Container transcript shrinks (rebuild): the mirror is archived, not overwritten.
 		files.set(SESS, Buffer.from('fresh\n'));
 		await runCapturePass(row(), deps);
 		expect(readFileSync(sessPath, 'utf8')).toBe('fresh\n');
+		expect(readFileSync(join(logsDir, 'transcript-inst1-s1.1.jsonl'), 'utf8')).toBe(
+			'line1\nline2\nline3\n'
+		);
+
+		// A second rebuild archives alongside the first rather than clobbering it.
+		files.set(SESS, Buffer.from('r2\n'));
+		await runCapturePass(row(), deps);
+		expect(readFileSync(sessPath, 'utf8')).toBe('r2\n');
+		expect(readFileSync(join(logsDir, 'transcript-inst1-s1.1.jsonl'), 'utf8')).toBe(
+			'line1\nline2\nline3\n'
+		);
+		expect(readFileSync(join(logsDir, 'transcript-inst1-s1.2.jsonl'), 'utf8')).toBe('fresh\n');
 
 		// Index maps the opaque filenames back to the instance.
 		const index = JSON.parse(readFileSync(join(logsDir, 'index.json'), 'utf8'));
@@ -187,7 +199,17 @@ describe('runCapturePass', () => {
 			called = true;
 			return { ok: true, stdout: '' };
 		}) as typeof execInContainer;
-		await runCapturePass(row({ container_id: null }), { exec, logsDir });
+		expect(await runCapturePass(row({ container_id: null }), { exec, logsDir })).toBe(false);
 		expect(called).toBe(false);
+	});
+
+	test('reports a failed pass so the capture chain can self-terminate', async () => {
+		logsDir = mkdtempSync(join(tmpdir(), 'codebay-logs-'));
+		const exec = (async () => ({
+			ok: false,
+			stdout: '',
+			error: 'no such container'
+		})) as typeof execInContainer;
+		expect(await runCapturePass(row(), { exec, logsDir })).toBe(false);
 	});
 });

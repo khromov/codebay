@@ -60,7 +60,7 @@ import {
 	surfaceAccessible,
 	syncHealthMonitors
 } from './health.server.ts';
-import { stopLogCapture, syncLogCapture } from './log-capture.server.ts';
+import { runCapturePass, stopLogCapture, syncLogCapture } from './log-capture.server.ts';
 import { isHostPortBindable, pickBindablePort } from './ports.server.ts';
 import type { ServerWebSocket } from 'bun';
 import {
@@ -359,6 +359,12 @@ async function rescueHijackedPort(row: InstanceRow): Promise<void> {
 /** Never re-copies the workspace, so in-container edits survive a rebuild. */
 async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Promise<void> {
 	try {
+		// On a rebuild `devcontainer up --remove-existing-container` discards the old container's
+		// ~/.claude, so drain it first; a first boot has no container_id and skips straight past.
+		if (row.container_id) {
+			stopLogCapture(row.id);
+			await runCapturePass(row).catch(() => undefined);
+		}
 		await rescueHijackedPort(row);
 		const forwards = listForwards(row.id).map((f) => ({
 			container_port: f.container_port,
@@ -697,6 +703,9 @@ export async function startInstance(id: string): Promise<InstanceRow> {
 export async function stopInstance(id: string): Promise<InstanceRow> {
 	const row = getInstance(id);
 	if (!row) throw new Error('Instance not found');
+	// A later delete can't exec into a stopped container, so this is the last chance to mirror.
+	stopLogCapture(id);
+	if (row.container_id) await runCapturePass(row).catch(() => undefined);
 	const ok = row.container_id ? await stopContainer(row.container_id) : true;
 	updateInstance(id, {
 		status: ok ? 'stopped' : 'error',
@@ -710,14 +719,19 @@ export async function stopInstance(id: string): Promise<InstanceRow> {
 export async function deleteInstance(id: string): Promise<void> {
 	const row = getInstance(id);
 	if (!row) return;
-	if (row.container_id) await removeContainer(row.container_id);
+	stopHealthMonitor(id);
+	// Mirror the tail of the session before the transcripts die with the container; the periodic
+	// chain is stopped first so it can't race this last pass. Retention outlives the instance —
+	// <LOGS_DIR>/*-<id>.jsonl is deliberately left on disk.
+	stopLogCapture(id);
+	if (row.container_id) {
+		await runCapturePass(row).catch(() => undefined);
+		await removeContainer(row.container_id);
+	}
 	await rm(join(INSTANCES_DIR, id), { recursive: true, force: true });
 	deleteForwards(id);
 	deleteInstanceRow(id);
 	registry.delete(id);
-	stopHealthMonitor(id);
-	// Stop capturing but leave <LOGS_DIR>/*-<id>.jsonl on disk — retention outlives the instance.
-	stopLogCapture(id);
 	clearAttention(id);
 	triggerReconcile();
 }
