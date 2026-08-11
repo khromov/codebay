@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { PassThrough } from 'node:stream';
-import { deleteInstanceRow, insertInstance, type InstanceRow } from './db.server.ts';
-import { relaunchSurface, startInstance } from './instances.server.ts';
+import { deleteInstanceRow, insertInstance, setOption, type InstanceRow } from './db.server.ts';
+import {
+	invalidateSecretValues,
+	redactSecrets,
+	relaunchSurface,
+	startInstance
+} from './instances.server.ts';
 
 /**
  * `getDocker()` resolves a client pinned to `globalThis.__codebayDocker`; seeding that slot
@@ -186,5 +191,38 @@ describe('startInstance', () => {
 		fakeDocker();
 		const row = seed({ container_id: null });
 		await expect(startInstance(row.id)).rejects.toThrow('no container');
+	});
+});
+
+describe('redactSecrets', () => {
+	beforeEach(() => {
+		setOption('custom_env_vars_enabled', '0');
+		setOption('custom_env_vars', '[]');
+		invalidateSecretValues();
+	});
+	afterEach(() => {
+		setOption('custom_env_vars_enabled', '0');
+		setOption('custom_env_vars', '[]');
+		invalidateSecretValues();
+	});
+
+	test('masks every occurrence of a configured secret value', () => {
+		setOption('custom_env_vars_enabled', '1');
+		setOption('custom_env_vars', JSON.stringify([{ name: 'TOKEN', value: 'supersecret' }]));
+		invalidateSecretValues();
+		expect(redactSecrets('echo supersecret && cat supersecret')).toBe('echo •••• && cat ••••');
+	});
+
+	test('does nothing when the feature is disabled', () => {
+		setOption('custom_env_vars', JSON.stringify([{ name: 'TOKEN', value: 'supersecret' }]));
+		invalidateSecretValues();
+		expect(redactSecrets('echo supersecret')).toBe('echo supersecret');
+	});
+
+	test('leaves values shorter than 4 chars alone so short strings do not blank the log', () => {
+		setOption('custom_env_vars_enabled', '1');
+		setOption('custom_env_vars', JSON.stringify([{ name: 'SHORT', value: 'ab' }]));
+		invalidateSecretValues();
+		expect(redactSecrets('ab about grab')).toBe('ab about grab');
 	});
 });

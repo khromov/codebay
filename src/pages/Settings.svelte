@@ -39,6 +39,8 @@
 		hostEnvVarsEnabled,
 		hostEnvVarNames,
 		hostEnvVarPresence,
+		customEnvVarsEnabled,
+		customEnvVarNames,
 		advancedSerialInjections,
 		advancedNoBuildkit,
 		advancedBlockingExtInstall,
@@ -77,6 +79,8 @@
 		hostEnvVarsEnabled: boolean;
 		hostEnvVarNames: string[];
 		hostEnvVarPresence: Record<string, boolean>;
+		customEnvVarsEnabled: boolean;
+		customEnvVarNames: string[];
 		advancedSerialInjections: boolean;
 		advancedNoBuildkit: boolean;
 		advancedBlockingExtInstall: boolean;
@@ -118,6 +122,8 @@
 	{hostEnvVarsEnabled}
 	{hostEnvVarNames}
 	{hostEnvVarPresence}
+	{customEnvVarsEnabled}
+	{customEnvVarNames}
 	{advancedSerialInjections}
 	{advancedNoBuildkit}
 	{advancedBlockingExtInstall}

@@ -15,6 +15,7 @@
 	import UserCog from '@lucide/svelte/icons/user-cog';
 	import Cpu from '@lucide/svelte/icons/cpu';
 	import Variable from '@lucide/svelte/icons/variable';
+	import KeySquare from '@lucide/svelte/icons/key-square';
 	import Plus from '@lucide/svelte/icons/plus';
 	import X from '@lucide/svelte/icons/x';
 	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
@@ -81,6 +82,8 @@
 		hostEnvVarsEnabled,
 		hostEnvVarNames,
 		hostEnvVarPresence,
+		customEnvVarsEnabled,
+		customEnvVarNames,
 		advancedSerialInjections,
 		advancedNoBuildkit,
 		advancedBlockingExtInstall,
@@ -119,6 +122,8 @@
 		hostEnvVarsEnabled: boolean;
 		hostEnvVarNames: string[];
 		hostEnvVarPresence: Record<string, boolean>;
+		customEnvVarsEnabled: boolean;
+		customEnvVarNames: string[];
 		advancedSerialInjections: boolean;
 		advancedNoBuildkit: boolean;
 		advancedBlockingExtInstall: boolean;
@@ -693,6 +698,75 @@
 			onSuccess: (data) => {
 				hostEnvNames = hostEnvNames.filter((n) => n !== name);
 				hostEnvPresence = data?.presence ?? {};
+			}
+		});
+	}
+
+	// svelte-ignore state_referenced_locally
+	let customEnvEnabled = $state(customEnvVarsEnabled);
+	let savingCustomEnvToggle = $state(false);
+	let customEnvToggleError = $state<string | null>(null);
+
+	const customEnvVarsToggleOpts = toggleOpts({
+		set: (v) => (customEnvEnabled = v),
+		setSaving: (v) => (savingCustomEnvToggle = v),
+		setError: (v) => (customEnvToggleError = v)
+	});
+
+	// Only names round-trip; the secret values live server-side and are shown here as a placeholder.
+	// svelte-ignore state_referenced_locally
+	let customEnvNames = $state([...customEnvVarNames]);
+	let newCustomEnvName = $state('');
+	let newCustomEnvValue = $state('');
+	let savingCustomEnv = $state(false);
+	let customEnvMsg = $state<string | null>(null);
+	let customEnvError = $state<string | null>(null);
+
+	/**
+	 * Add/update one var: name + secret value are submitted alone (the client never holds the other
+	 * secrets to resubmit), so re-adding an existing name upserts its value server-side.
+	 */
+	const addCustomEnvOpts: MochiEnhanceOptions<{ names: string[] }, ActionFailure> = {
+		onPending: (v) => (savingCustomEnv = v),
+		submit: ({ formData, cancel }) => {
+			customEnvError = null;
+			customEnvMsg = null;
+			const name = String(formData.get('name') ?? '').trim();
+			const value = String(formData.get('value') ?? '');
+			if (!name || !value) {
+				customEnvError = !name ? 'Name is required.' : 'Value is required.';
+				cancel();
+				return;
+			}
+			if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+				customEnvError = `Invalid variable name: ${name}`;
+				cancel();
+				return;
+			}
+			formData.set('name', name);
+			return ({ result }) => {
+				if (result.type === 'success') {
+					customEnvNames = result.data?.names ?? customEnvNames;
+					newCustomEnvName = '';
+					newCustomEnvValue = '';
+					customEnvMsg = 'Saved.';
+				} else if (result.type === 'failure') {
+					customEnvError = result.data?.error ?? 'Request failed';
+				} else if (result.type === 'error') {
+					customEnvError = 'Network error. Try again.';
+				}
+			};
+		}
+	};
+
+	/** Remove form (one per row): posts just this var's name. */
+	function removeCustomEnvOpts(name: string) {
+		return saveOpts<{ names: string[] }>({
+			setSaving: (v) => (savingCustomEnv = v),
+			setError: (v) => (customEnvError = v),
+			setMsg: (v) => (customEnvMsg = v),
+			onSuccess: (data) => {
+				customEnvNames = data?.names ?? customEnvNames.filter((n) => n !== name);
 			}
 		});
 	}
@@ -1759,6 +1833,110 @@
 						<div class="msg error">{hostEnvNamesError}</div>
 					{:else if hostEnvNamesMsg}
 						<div class="msg ok">{hostEnvNamesMsg}</div>
+					{/if}
+				</div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/customEnvVarsToggle"
+				{@attach enhance(customEnvVarsToggleOpts)}
+			>
+				<div class="label">
+					<KeySquare size={20} />
+					<div class="text">
+						<div class="name">Custom environment variables</div>
+						<div class="desc">
+							Inject your own <code>NAME=value</code> pairs into every new container as
+							<code>containerEnv</code>, available to all processes. Values are secret — stored
+							locally, masked in the build log, and never shown here after saving. Re-add a name to
+							update its value.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={customEnvEnabled}
+						disabled={savingCustomEnvToggle}
+						onchange={(e) => {
+							customEnvEnabled = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if customEnvToggleError}
+				<div class="sub"><div class="msg error">{customEnvToggleError}</div></div>
+			{/if}
+
+			{#if customEnvEnabled}
+				<div class="row divided var-row">
+					<div class="var-list">
+						{#each customEnvNames as name (name)}
+							<form
+								class="var-item"
+								method="POST"
+								action="?/removeCustomEnvVar"
+								{@attach enhance(removeCustomEnvOpts(name))}
+							>
+								<input type="hidden" name="name" value={name} />
+								<span class="var-name">{name}</span>
+								<span class="var-status present" title="Set — injected into every new container">
+									•••• saved
+								</span>
+								<button
+									type="submit"
+									class="var-remove"
+									disabled={savingCustomEnv}
+									aria-label={`Remove ${name}`}
+								>
+									<X size={13} />
+								</button>
+							</form>
+						{:else}
+							<div class="var-empty">No variables added yet.</div>
+						{/each}
+					</div>
+					<form
+						class="var-add"
+						method="POST"
+						action="?/setCustomEnvVar"
+						{@attach enhance(addCustomEnvOpts)}
+					>
+						<input
+							type="text"
+							name="name"
+							class="image-input"
+							bind:value={newCustomEnvName}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							autocomplete="off"
+							placeholder="MY_SECRET"
+						/>
+						<input
+							type="password"
+							name="value"
+							class="image-input"
+							bind:value={newCustomEnvValue}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							autocomplete="off"
+							placeholder="value"
+						/>
+						<Button type="submit" icon={Plus} disabled={savingCustomEnv}>Add</Button>
+					</form>
+					{#if customEnvError}
+						<div class="msg error">{customEnvError}</div>
+					{:else if customEnvMsg}
+						<div class="msg ok">{customEnvMsg}</div>
 					{/if}
 				</div>
 			{/if}
