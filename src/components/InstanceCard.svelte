@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { type Instance } from '../types.ts';
+	import { findAvatar } from '../avatars/index.ts';
 	import Avatar from './Avatar.svelte';
 	import BranchBox from './BranchBox.svelte';
 	import PortsBox from './PortsBox.svelte';
@@ -52,7 +53,11 @@
 		</div>
 	{/if}
 	<div class="card-head">
-		<Avatar id={instance.id} name={instance.name} interactive />
+		<Avatar
+			name={instance.name}
+			art={findAvatar(instance.avatar ?? undefined) ?? null}
+			interactive
+		/>
 		{#if editing}
 			<!-- svelte-ignore a11y_autofocus -->
 			<input
