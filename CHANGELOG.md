@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.10.0](https://github.com/khromov/codebay/compare/codebay-v0.9.1...codebay-v0.10.0) (2026-08-11)
+
+
+### Features
+
+* claude permission mode setting, terminal-mode env fix, mode shortcut ([#122](https://github.com/khromov/codebay/issues/122)) ([f5c39c9](https://github.com/khromov/codebay/commit/f5c39c9fde9a79356814f3189c8c840723cecd20))
+* continuously extract Claude Code logs to &lt;DATA_DIR&gt;/logs ([#136](https://github.com/khromov/codebay/issues/136)) ([954ad68](https://github.com/khromov/codebay/commit/954ad68b4eec067e30be65d966437cb1af4c17e1))
+* default Claude Code effort level setting ([#132](https://github.com/khromov/codebay/issues/132)) ([cdef824](https://github.com/khromov/codebay/commit/cdef82401ee0f67fa6cfcf0317f135701ba929eb))
+* inject custom environment variables (secrets) into all containers ([#135](https://github.com/khromov/codebay/issues/135)) ([71cb47b](https://github.com/khromov/codebay/commit/71cb47b5c7ff6f179fbebc32e1d18e26f8dadf1b))
+
+
+### Bug Fixes
+
+* allow manual vscode reload ([1b33d2e](https://github.com/khromov/codebay/commit/1b33d2ea3a50b77e10010a424f25f1f3c60bb6d4))
+* guarantee unique instance avatars ([#134](https://github.com/khromov/codebay/issues/134)) ([ecc588d](https://github.com/khromov/codebay/commit/ecc588dc5551012e42ca771a2c2e1f08b56f9f18))
+* keep the boot-log Follow toggle from turning itself off ([#133](https://github.com/khromov/codebay/issues/133)) ([223b723](https://github.com/khromov/codebay/commit/223b72359a6869fc4e1424e159e03efa06529b0c))
+* relaunch the terminal when a stopped instance is started again ([#130](https://github.com/khromov/codebay/issues/130)) ([8575e69](https://github.com/khromov/codebay/commit/8575e69c19be8796c2e71bdab3ce94e4f7dcad13))
+* stop stranding instances on host ports taken over outside Docker ([#131](https://github.com/khromov/codebay/issues/131)) ([84fb0f8](https://github.com/khromov/codebay/commit/84fb0f88774eabbaa14fce500876a025bf937813))
+
+
+### Performance Improvements
+
+* cut instance boot latency (background extension install, eager health, staged parallel injections) ([#125](https://github.com/khromov/codebay/issues/125)) ([94ee732](https://github.com/khromov/codebay/commit/94ee732936fefb847ddb6edb39cb7631f88a6f07))
+
 ## [0.9.1](https://github.com/khromov/codebay/compare/codebay-v0.9.0...codebay-v0.9.1) (2026-08-10)
 
 
