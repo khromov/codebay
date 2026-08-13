@@ -315,8 +315,8 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 14px 18px;
-		border-bottom: 1px solid var(--ink);
-		background: var(--ink);
+		border-bottom: 1px solid var(--edge);
+		background: var(--slab);
 	}
 	.head h2 {
 		margin: 0;
@@ -325,7 +325,7 @@
 		font-size: 17px;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		color: var(--bg);
+		color: var(--slab-ink);
 	}
 	.x {
 		display: inline-flex;
@@ -333,7 +333,7 @@
 		border: none;
 		background: none;
 		cursor: pointer;
-		color: var(--bg);
+		color: var(--slab-ink);
 	}
 	.x:hover {
 		opacity: 0.7;
@@ -353,7 +353,7 @@
 	}
 	.mode-toggle {
 		display: flex;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 	}
 	.mode-btn {
 		display: inline-flex;
@@ -371,11 +371,12 @@
 		cursor: pointer;
 	}
 	.mode-btn + .mode-btn {
-		border-left: 1px solid var(--ink);
+		border-left: 1px solid var(--edge);
 	}
 	.mode-btn.active {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		border-color: var(--slab);
+		color: var(--slab-ink);
 	}
 	.clone {
 		padding: 12px 18px;
@@ -397,7 +398,7 @@
 		font-family: var(--font-mono);
 		font-size: 13px;
 		padding: 8px 12px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg);
 		color: var(--ink);
 	}
@@ -425,9 +426,9 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		padding: 8px 14px;
-		border: 1px solid var(--ink);
-		background: var(--ink);
-		color: var(--bg);
+		border: 1px solid var(--edge);
+		background: var(--slab);
+		color: var(--slab-ink);
 		cursor: pointer;
 		white-space: nowrap;
 	}
@@ -490,11 +491,11 @@
 		color: var(--ink);
 	}
 	.recent-pick:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 	.recent-pick:hover .recent-path {
-		color: var(--bg);
+		color: var(--slab-ink);
 	}
 	.recent-text {
 		display: flex;
@@ -534,8 +535,8 @@
 		opacity: 1;
 	}
 	.recent-x:hover {
-		color: var(--bg);
-		background: var(--ink);
+		color: var(--slab-ink);
+		background: var(--slab);
 	}
 	.recent-toggle {
 		margin: 4px 6px 2px;
@@ -561,7 +562,7 @@
 		font-family: var(--font-mono);
 		font-size: 13px;
 		padding: 8px 12px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg);
 		color: var(--ink);
 	}
@@ -603,11 +604,11 @@
 		color: var(--ink);
 	}
 	.row .nav:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 	.row .nav:hover .icon {
-		color: var(--bg);
+		color: var(--slab-ink);
 	}
 	.ename {
 		overflow: hidden;
@@ -622,11 +623,11 @@
 		letter-spacing: 0.08em;
 		color: var(--ink);
 		background: transparent;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 2px 5px;
 	}
 	.row .nav:hover .badge {
-		color: var(--bg);
+		color: var(--slab-ink);
 		border-color: var(--bg);
 	}
 	.pick-inline {
@@ -636,14 +637,14 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		padding: 6px 10px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg-card);
 		cursor: pointer;
 		color: var(--ink);
 	}
 	.pick-inline:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 	.muted {
 		padding: 18px;
@@ -683,7 +684,7 @@
 		justify-content: space-between;
 		gap: 12px;
 		padding: 14px 18px;
-		border-top: 1px solid var(--ink);
+		border-top: 1px solid var(--edge);
 	}
 	.hint {
 		font-family: var(--font-mono);
@@ -697,9 +698,9 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		padding: 9px 16px;
-		border: 1px solid var(--ink);
-		background: var(--ink);
-		color: var(--bg);
+		border: 1px solid var(--edge);
+		background: var(--slab);
+		color: var(--slab-ink);
 		cursor: pointer;
 		white-space: nowrap;
 	}

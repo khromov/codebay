@@ -414,8 +414,8 @@
 		border-bottom: 1px solid var(--ink);
 	}
 	.gallery-link:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 	.grid {
 		display: flex;
@@ -445,12 +445,12 @@
 		font-size: 12px;
 		color: var(--ink);
 		background: var(--bg);
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 5px 7px;
 	}
 	.showcase :global(.fields input[type='range']),
 	.showcase :global(.fields input[type='checkbox']) {
-		accent-color: var(--ink);
+		accent-color: var(--slab);
 	}
 	/* IdeLoader is an inset:0 overlay, so give it a sized, positioned stage. */
 	.loader-stage {
@@ -478,13 +478,13 @@
 		letter-spacing: 0.06em;
 		color: var(--ink);
 		background: var(--bg-card);
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 5px 0;
 		cursor: pointer;
 	}
 	.presets button:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 
 	.palette-card {

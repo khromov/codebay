@@ -113,7 +113,7 @@
 		grid-template-columns: repeat(10, 1fr);
 		grid-template-rows: repeat(10, 1fr);
 		flex: none;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg);
 	}
 	.px {

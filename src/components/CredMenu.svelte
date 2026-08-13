@@ -88,9 +88,9 @@
 		height: 32px;
 		font-size: 14px;
 		line-height: 1;
-		border: 1px solid var(--ink);
-		background: var(--ink);
-		color: var(--bg);
+		border: 1px solid var(--edge);
+		background: var(--slab);
+		color: var(--slab-ink);
 		cursor: pointer;
 	}
 	.cred:hover {
@@ -146,11 +146,11 @@
 		cursor: pointer;
 	}
 	.cred-row:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 	.cred-row:hover .cred-state {
-		color: var(--bg);
+		color: var(--slab-ink);
 	}
 	.dot {
 		flex: none;

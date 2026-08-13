@@ -265,8 +265,8 @@
 		justify-content: space-between;
 		gap: 12px;
 		padding: 14px 18px;
-		border-bottom: 1px solid var(--ink);
-		background: var(--ink);
+		border-bottom: 1px solid var(--edge);
+		background: var(--slab);
 	}
 	.head h2 {
 		margin: 0;
@@ -275,7 +275,7 @@
 		font-size: 17px;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		color: var(--bg);
+		color: var(--slab-ink);
 	}
 	.head-cancel {
 		display: inline-flex;
@@ -285,7 +285,7 @@
 		padding: 5px 10px;
 		border: 1px solid var(--bg);
 		background: transparent;
-		color: var(--bg);
+		color: var(--slab-ink);
 		font-family: var(--font-mono);
 		font-size: 11px;
 		text-transform: uppercase;
@@ -313,7 +313,7 @@
 		width: 400px;
 		height: 400px;
 		flex: none;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg);
 	}
 	.ring-cell {
@@ -374,7 +374,7 @@
 		font-family: var(--font-mono);
 		font-size: 13px;
 		padding: 8px 12px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg);
 		color: var(--ink);
 	}
@@ -396,13 +396,13 @@
 	}
 	.modes {
 		display: flex;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 	}
 	.mode {
 		flex: 1;
 		padding: 7px 6px;
 		border: none;
-		border-right: 1px solid var(--ink);
+		border-right: 1px solid var(--edge);
 		background: var(--bg);
 		color: var(--ink);
 		font-family: var(--font-mono);
@@ -415,8 +415,9 @@
 		border-right: none;
 	}
 	.mode.active {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		border-color: var(--slab);
+		color: var(--slab-ink);
 	}
 	.mode:focus-visible {
 		outline: none;
@@ -433,7 +434,7 @@
 		gap: 12px;
 		flex-wrap: wrap;
 		padding: 14px 18px;
-		border-top: 1px solid var(--ink);
+		border-top: 1px solid var(--edge);
 	}
 	.hint {
 		font-family: var(--font-mono);

@@ -36,7 +36,7 @@
 		border-right: 1px solid var(--rule);
 	}
 	.home:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 </style>

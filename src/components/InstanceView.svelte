@@ -323,12 +323,12 @@
 		letter-spacing: 0.06em;
 		color: var(--ink);
 		text-decoration: none;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 7px 12px;
 	}
 	.open:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 	.restart {
 		display: inline-flex;
@@ -341,13 +341,13 @@
 		letter-spacing: 0.06em;
 		color: var(--ink);
 		background: var(--bg);
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 7px 12px;
 		cursor: pointer;
 	}
 	.restart:hover:not(:disabled) {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 	.restart:disabled {
 		opacity: 0.5;
@@ -399,6 +399,7 @@
 		align-items: center;
 		justify-content: space-between;
 	}
+	/* Sits on the inverted .ports-bar, so its own colours are inverted again. */
 	.rebuild {
 		font-family: var(--font-mono);
 		font-weight: 600;
@@ -406,14 +407,14 @@
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		padding: 4px 9px;
-		background: var(--bg);
-		color: var(--ink);
-		border: 1px solid var(--bg);
+		background: var(--slab-ink);
+		color: var(--slab);
+		border: 1px solid var(--slab-ink);
 		cursor: pointer;
 	}
 	.rebuild:hover:not(:disabled) {
 		background: transparent;
-		color: var(--bg);
+		color: var(--slab-ink);
 	}
 	.rebuild:disabled {
 		opacity: 0.5;
@@ -487,7 +488,7 @@
 		font-family: var(--font-mono);
 		font-size: 13px;
 		padding: 6px 9px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg);
 		color: var(--ink);
 		outline: none;
@@ -499,14 +500,14 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		padding: 6px 14px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg-card);
 		color: var(--ink);
 		cursor: pointer;
 	}
 	.add button:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 	.port-err {
 		margin: 10px 0 0;
@@ -539,6 +540,7 @@
 		gap: 6px;
 		align-items: center;
 	}
+	/* Sits on the inverted .log-bar, so its own colours are inverted again. */
 	.copy {
 		display: inline-flex;
 		align-items: center;
@@ -549,18 +551,18 @@
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		padding: 4px 9px;
-		background: var(--bg);
-		color: var(--ink);
-		border: 1px solid var(--bg);
+		background: var(--slab-ink);
+		color: var(--slab);
+		border: 1px solid var(--slab-ink);
 		cursor: pointer;
 	}
 	.copy:hover:not(:disabled) {
 		background: transparent;
-		color: var(--bg);
+		color: var(--slab-ink);
 	}
 	.copy.active {
 		background: transparent;
-		color: var(--bg);
+		color: var(--slab-ink);
 	}
 	/* The dot, not the inverted fill, is what separates "following" from a mere hover. */
 	.dot {
@@ -615,7 +617,7 @@
 		padding: 12px 14px;
 		background: var(--bg-card);
 		color: var(--ink);
-		border-top: 2px solid var(--ink);
+		border-top: 2px solid var(--edge);
 		font-family: var(--font-mono);
 		font-size: 13px;
 	}

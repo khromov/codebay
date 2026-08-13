@@ -233,7 +233,7 @@
 	.banner.error {
 		background: var(--bg-card);
 		color: var(--ink);
-		border: 2px solid var(--ink);
+		border: 2px solid var(--edge);
 		box-shadow: 4px 4px 0 var(--shadow);
 	}
 	.empty {

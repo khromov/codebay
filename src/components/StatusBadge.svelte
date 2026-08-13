@@ -22,12 +22,12 @@
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
 		padding: 3px 7px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		white-space: nowrap;
 	}
 	.status.running {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 	.status.stopped {
 		background: transparent;
@@ -35,8 +35,8 @@
 		border-color: var(--ink-faint);
 	}
 	.status.creating {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 		animation: lcd-blink 1.1s steps(1) infinite;
 	}
 	.status.error {

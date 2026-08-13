@@ -263,8 +263,8 @@
 	.overlay :global(button:focus-visible),
 	.overlay :global(button[aria-pressed='true']) {
 		opacity: 1;
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.overlay :global(button) {

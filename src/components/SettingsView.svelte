@@ -2192,7 +2192,7 @@
 <Toaster
 	toastOptions={{
 		style:
-			'border:1px solid var(--ink); background:var(--bg-card); color:var(--ink); box-shadow:4px 4px 0 var(--ink); font-family:var(--font-mono); font-size:13px;'
+			'border:1px solid var(--edge); background:var(--bg-card); color:var(--ink); box-shadow:4px 4px 0 var(--ink); font-family:var(--font-mono); font-size:13px;'
 	}}
 />
 
@@ -2437,7 +2437,7 @@
 	.mode-toggle {
 		display: flex;
 		flex: none;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 	}
 	.mode-btn {
 		display: inline-flex;
@@ -2455,11 +2455,12 @@
 		cursor: pointer;
 	}
 	.mode-btn + .mode-btn {
-		border-left: 1px solid var(--ink);
+		border-left: 1px solid var(--edge);
 	}
 	.mode-btn.active {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		border-color: var(--slab);
+		color: var(--slab-ink);
 	}
 	.mode-btn:disabled {
 		cursor: not-allowed;
@@ -2501,7 +2502,7 @@
 	}
 	.switch input:checked + .track .thumb {
 		transform: translateX(20px);
-		background: var(--ink);
+		background: var(--slab);
 	}
 	.switch input:focus-visible + .track {
 		outline: 2px solid var(--ink);

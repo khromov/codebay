@@ -161,9 +161,9 @@
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
 		padding: 4px 9px;
-		border: 1px solid var(--ink);
-		background: var(--ink);
-		color: var(--bg);
+		border: 1px solid var(--edge);
+		background: var(--slab);
+		color: var(--slab-ink);
 		animation: lcd-blink 1.1s steps(1) infinite;
 	}
 	@keyframes lcd-blink {
@@ -186,7 +186,7 @@
 		flex: none;
 		width: 14px;
 		height: 14px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 	}
 	.attn.attn-done {
 		background: var(--attn-done);
@@ -246,7 +246,7 @@
 		font-size: 15px;
 		margin: 0;
 		padding: 2px 4px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg);
 		color: var(--ink);
 		outline: none;
@@ -266,7 +266,7 @@
 		font-size: 12px;
 		color: var(--ink);
 		background: var(--bg);
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 8px 10px;
 		max-height: 80px;
 		overflow: auto;

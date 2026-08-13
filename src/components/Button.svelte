@@ -69,7 +69,7 @@
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg-card);
 		color: var(--ink);
 		cursor: pointer;
@@ -119,14 +119,14 @@
 	}
 
 	.btn.default:hover:not(:disabled) {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 
 	.btn.primary {
 		font-weight: 700;
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 	}
 	.btn.primary:hover:not(:disabled) {
 		background: var(--bg-card);
@@ -138,8 +138,8 @@
 		border-style: dashed;
 	}
 	.btn.ghost:hover:not(:disabled) {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--slab);
+		color: var(--slab-ink);
 		border-style: solid;
 	}
 

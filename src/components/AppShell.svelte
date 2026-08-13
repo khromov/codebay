@@ -345,7 +345,7 @@
 <Toaster
 	toastOptions={{
 		style:
-			'border:1px solid var(--ink); background:var(--bg-card); color:var(--ink); box-shadow:4px 4px 0 var(--ink); font-family:var(--font-mono); font-size:13px;'
+			'border:1px solid var(--edge); background:var(--bg-card); color:var(--ink); box-shadow:4px 4px 0 var(--ink); font-family:var(--font-mono); font-size:13px;'
 	}}
 />
 
