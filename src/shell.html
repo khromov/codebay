@@ -11,32 +11,52 @@
 	       below, which forces every light-dark() to that side. */
 			:root {
 				color-scheme: light dark;
-				--bg: light-dark(#d7d8d2, #1b1c15);
-				--bg-card: light-dark(#e7e8e2, #24261c);
-				--ink: light-dark(#14150f, #e8e9df);
-				--ink-soft: light-dark(#45463e, #b7b8a9);
-				--ink-faint: light-dark(#7d7e74, #85867a);
+				--bg: light-dark(#d7d8d2, #211b12);
+				--bg-card: light-dark(#e7e8e2, #322a1c);
+				--ink: light-dark(#14150f, #ede3d3);
+				--ink-soft: light-dark(#45463e, #bfb4a4);
+				--ink-faint: light-dark(#7d7e74, #9d9281);
 				/* Half-lit avatar LED — a true mid-tone sitting evenly between the off and on cells, so all three levels stay distinct even at tiny sizes. */
-				--led-gray: light-dark(#6b6c62, #8d8e83);
-				--rule: light-dark(#20211a, #46473a);
-				--rule-soft: light-dark(#b9bab2, #34352a);
-				--warn-bg: light-dark(#e4d98f, #4a3d12);
-				--warn-line: light-dark(#9c8729, #c9a83a);
-				--warn-ink: light-dark(#463b08, #f3e3a0);
-				--ok-bg: light-dark(#8fbf6e, #23421a);
-				--ok-line: light-dark(#4c7a2e, #6fa84a);
-				--ok-ink: light-dark(#1c3110, #cdeab8);
-				--danger: light-dark(#b23a2e, #e2564a);
-				--danger-soft: light-dark(#e3c6c1, #4a231e);
-				--screen-bg: #0d0e0a;
-				--screen-ink: #d8d9cf;
-				--screen-line: rgba(255, 255, 255, 0.04);
-				--attn-done: #22c55e;
-				--attn-waiting: #f59e0b;
-				--info: #388bfd;
-				--grid-line: light-dark(rgba(0, 0, 0, 0.035), rgba(255, 255, 255, 0.035));
+				--led-gray: light-dark(#6b6c62, #9a9080);
+				/* --ink is text only. Light mode wants the same near-black for structure, but
+	         dark mode does not: a border, a shadow and a filled slab each need their own
+	         value, so the three roles are separate tokens that happen to coincide in light. */
+				--edge: light-dark(#14150f, #877a64);
+				--slab: light-dark(#14150f, #d2c0a0);
+				/* The knocked-out text on a --slab fill; light side is --bg, since that is what it replaces. */
+				--slab-ink: light-dark(#d7d8d2, #191308);
+				/* A shadow is an absence of light — in dark it must sit below --bg, never above it. */
+				--shadow: light-dark(#14150f, #060301);
+				--scrim: light-dark(rgba(20, 21, 15, 0.5), rgba(6, 4, 1, 0.72));
+				--rule: light-dark(#20211a, #817460);
+				--rule-soft: light-dark(#b9bab2, #4f4534);
+				/* Shimmer highlight; must stay lighter than --rule-soft, which dark --bg-card is not. */
+				--skel-sheen: light-dark(#e7e8e2, #675c49);
+				--warn-bg: light-dark(#e4d98f, #54470d);
+				--warn-line: light-dark(#9c8729, #c3aa3b);
+				--warn-ink: light-dark(#463b08, #f2e2a1);
+				/* Lifts a chip off the warn band; the dark band needs far less lift than the light one. */
+				--warn-chip: light-dark(rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.12));
+				--ok-bg: light-dark(#8fbf6e, #234921);
+				--ok-line: light-dark(#4c7a2e, #5daf59);
+				--ok-ink: light-dark(#1c3110, #c4ebbc);
+				--danger: light-dark(#b23a2e, #f26a5d);
+				--danger-soft: light-dark(#e3c6c1, #481e1a);
+				/* The boot log is a device screen, so dark mode renders it in amber phosphor. */
+				--screen-bg: light-dark(#0d0e0a, #0d0702);
+				--screen-ink: light-dark(#d8d9cf, #f0b758);
+				--screen-line: light-dark(rgba(255, 255, 255, 0.04), rgba(255, 176, 0, 0.07));
+				--screen-glow: light-dark(transparent, rgba(255, 176, 0, 0.35));
+				/* Signal hues stay well clear of the amber chrome: the greens hold at ~145°, and
+	         waiting is pushed to 60° so it cannot be mistaken for a lit surface. */
+				--attn-done: light-dark(#22c55e, #49d069);
+				--attn-waiting: light-dark(#f59e0b, #ff8f00);
+				--info: light-dark(#388bfd, #56acf0);
+				--grid-line: light-dark(rgba(0, 0, 0, 0.035), rgba(255, 220, 174, 0.075));
+				/* Backlight bleeding from the top edge; transparent in light, so that layer paints nothing. */
+				--bloom: light-dark(transparent, rgba(255, 176, 0, 0.05));
 				/* --attn-done at reduced opacity — reads correctly on both themes' track color. */
-				--switch-on-bg: rgba(34, 197, 94, 0.32);
+				--switch-on-bg: light-dark(rgba(34, 197, 94, 0.32), rgba(73, 208, 105, 0.3));
 				--font-display: 'Doto Variable', 'JetBrains Mono Variable', monospace;
 				--font-mono:
 					'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
