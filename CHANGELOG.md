@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/khromov/codebay/compare/codebay-v0.10.0...codebay-v0.10.1) (2026-08-13)
+
+
+### Bug Fixes
+
+* stop the terminal launching claude before injections finish ([#139](https://github.com/khromov/codebay/issues/139)) ([3638389](https://github.com/khromov/codebay/commit/3638389f3ad8a01b816256c69bdd57ee7422fd3b))
+
 ## [0.10.0](https://github.com/khromov/codebay/compare/codebay-v0.9.1...codebay-v0.10.0) (2026-08-11)
 
 
