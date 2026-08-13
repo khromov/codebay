@@ -3,6 +3,8 @@ import { PassThrough } from 'node:stream';
 import { deleteInstanceRow, insertInstance, setOption, type InstanceRow } from './db.server.ts';
 import {
 	invalidateSecretValues,
+	listInstances,
+	reconcilesFromDocker,
 	redactSecrets,
 	relaunchSurface,
 	sanitizeInstance,
@@ -82,6 +84,12 @@ function seed(overrides: Partial<InstanceRow> = {}): InstanceRow {
 }
 
 const scriptOf = (call: ExecCall) => call.Cmd[2]!;
+
+/** Polls a fire-and-forget effect instead of racing it on a fixed sleep. */
+async function until(done: () => boolean, tries = 50): Promise<void> {
+	for (let i = 0; i < tries && !done(); i++) await Bun.sleep(5);
+	expect(done()).toBe(true);
+}
 
 afterEach(() => {
 	globalThis.fetch = realFetch;
@@ -207,6 +215,61 @@ describe('startInstance', () => {
 		fakeDocker();
 		const row = seed({ container_id: null });
 		await expect(startInstance(row.id)).rejects.toThrow('no container');
+	});
+});
+
+describe('reconcilesFromDocker', () => {
+	const building = new Set(['booting']);
+
+	test('leaves a live boot to open its own instance', () => {
+		expect(reconcilesFromDocker({ id: 'booting', status: 'creating' }, building)).toBe(false);
+	});
+
+	test('reclaims a creating row whose boot died with the manager', () => {
+		// Nothing else would ever move it: Rebuild refuses a booting row, so it would be stuck at
+		// "Booting…" with only Delete available.
+		expect(reconcilesFromDocker({ id: 'orphan', status: 'creating' }, building)).toBe(true);
+	});
+
+	test('never overwrites a recorded failure', () => {
+		expect(reconcilesFromDocker({ id: 'x', status: 'error' }, building)).toBe(false);
+	});
+
+	test('always reconciles a settled row', () => {
+		expect(reconcilesFromDocker({ id: 'x', status: 'running' }, building)).toBe(true);
+		expect(reconcilesFromDocker({ id: 'x', status: 'stopped' }, building)).toBe(true);
+	});
+});
+
+describe('listInstances orphan recovery', () => {
+	/** The in-flight claim `provision()` holds; reaching it directly stands in for a live boot. */
+	const provisioning = (globalThis as unknown as { __codebayProvisioning: Set<string> })
+		.__codebayProvisioning;
+
+	test('leaves a row alone while its boot still owns it', async () => {
+		fakeDocker();
+		const row = seed({ status: 'creating' });
+		provisioning.add(row.id);
+
+		const list = await listInstances();
+
+		// Flipping it here would open the IDE mid-injection, which is the whole point of the gate.
+		expect(list.find((i) => i.id === row.id)?.status).toBe('creating');
+		provisioning.delete(row.id);
+		deleteInstanceRow(row.id);
+	});
+
+	test('settles a stranded creating row and releases its terminal launcher', async () => {
+		const calls = fakeDocker();
+		const row = seed({ status: 'creating' });
+
+		const list = await listInstances();
+
+		// The stub reports the container stopped, so the row rejoins the normal lifecycle.
+		expect(list.find((i) => i.id === row.id)?.status).toBe('stopped');
+		// Its injections will never finish, so the in-container wait must not sit out its full bound.
+		await until(() => calls.execs.some((c) => scriptOf(c).includes('.codebay-injections-done')));
+		deleteInstanceRow(row.id);
 	});
 });
 

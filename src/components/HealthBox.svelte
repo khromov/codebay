@@ -103,7 +103,7 @@
 	}
 	/* Container isn't running yet: gray the panel out instead of loading it. */
 	.healthwrap.dim {
-		opacity: 0.5;
+		opacity: var(--dim-panel);
 	}
 	.health {
 		background: var(--bg-card);
@@ -127,15 +127,16 @@
 	.box {
 		width: 16px;
 		height: 16px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		color: var(--ink);
 	}
 	.box.ok {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 	.box.bad {
 		background: transparent;

@@ -23,6 +23,7 @@
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import Puzzle from '@lucide/svelte/icons/puzzle';
 	import { Toaster } from 'svelte-french-toast';
+	import { TOAST_OPTIONS } from '../toast.ts';
 	import { flushSync } from 'svelte';
 	import { enhance } from 'mochi-framework';
 	import type { MochiEnhanceOptions } from 'mochi-framework';
@@ -2189,12 +2190,7 @@
 </div>
 
 <!-- Settings renders outside AppShell, which hosts the app-wide Toaster. -->
-<Toaster
-	toastOptions={{
-		style:
-			'border:1px solid var(--ink); background:var(--bg-card); color:var(--ink); box-shadow:4px 4px 0 var(--ink); font-family:var(--font-mono); font-size:13px;'
-	}}
-/>
+<Toaster toastOptions={TOAST_OPTIONS} />
 
 <style>
 	.page {
@@ -2437,7 +2433,7 @@
 	.mode-toggle {
 		display: flex;
 		flex: none;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 	}
 	.mode-btn {
 		display: inline-flex;
@@ -2455,11 +2451,11 @@
 		cursor: pointer;
 	}
 	.mode-btn + .mode-btn {
-		border-left: 1px solid var(--ink);
+		border-left: 1px solid var(--edge);
 	}
 	.mode-btn.active {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.mode-btn:disabled {
 		cursor: not-allowed;
@@ -2589,7 +2585,7 @@
 		border-color: var(--danger);
 	}
 	.var-remove:disabled {
-		opacity: 0.4;
+		opacity: var(--dim);
 		cursor: not-allowed;
 	}
 	.var-empty {

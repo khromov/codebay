@@ -8,35 +8,68 @@
 			/* Each themed variable is defined once as light-dark(light, dark). With no
 	       data-theme attribute (the "auto" mode) `color-scheme: light dark` lets the
 	       browser preference pick the value; an explicit choice pins color-scheme
-	       below, which forces every light-dark() to that side. */
+	       below, which forces every light-dark() to that side.
+
+	       Light is a pale LCD panel; dark is an amber-phosphor CRT. They are not
+	       inverses of each other, which is why --ink is text ONLY — the structural
+	       roles it used to double as (border, drop shadow, inverted chip) are the
+	       four tokens below. Collapsing them again turns every panel bar, active
+	       tab and drop shadow into a glowing near-white slab in dark mode. */
 			:root {
 				color-scheme: light dark;
-				--bg: light-dark(#d7d8d2, #1b1c15);
-				--bg-card: light-dark(#e7e8e2, #24261c);
-				--ink: light-dark(#14150f, #e8e9df);
-				--ink-soft: light-dark(#45463e, #b7b8a9);
-				--ink-faint: light-dark(#7d7e74, #85867a);
+				--bg: light-dark(#d7d8d2, #16130d);
+				--bg-card: light-dark(#e7e8e2, #211d13);
+				--ink: light-dark(#14150f, #e9e0cb);
+				--ink-soft: light-dark(#45463e, #b8ac93);
+				--ink-faint: light-dark(#7d7e74, #8a806c);
 				/* Half-lit avatar LED — a true mid-tone sitting evenly between the off and on cells, so all three levels stay distinct even at tiny sizes. */
-				--led-gray: light-dark(#6b6c62, #8d8e83);
-				--rule: light-dark(#20211a, #46473a);
-				--rule-soft: light-dark(#b9bab2, #34352a);
-				--warn-bg: light-dark(#e4d98f, #4a3d12);
-				--warn-line: light-dark(#9c8729, #c9a83a);
-				--warn-ink: light-dark(#463b08, #f3e3a0);
+				--led-gray: light-dark(#6b6c62, #8d8875);
+				--rule: light-dark(#20211a, #4a4132);
+				--rule-soft: light-dark(#b9bab2, #332c1f);
+				/* The .panel hairline. Distinct from --ink so it can stay a warm mid-tone
+	           in dark rather than tracing every card in near-white. */
+				--edge: light-dark(#14150f, #645741);
+				/* The hard un-blurred offset block. Light casts it darker than the page;
+	           dark can't — black on near-black is invisible — so there it becomes a
+	           warm plate that stays a step under --edge, keeping outline-then-plate
+	           reading order without the near-white glare it had before. */
+				--shadow: light-dark(#14150f, #4a3f28);
+				/* The inverted chip: active tabs, primary buttons, panel bars, filled
+	           ticks. In dark this is where the amber lives. */
+				--fill: light-dark(#14150f, #d9963a);
+				--fill-ink: light-dark(#d7d8d2, #17130a);
+				/* Modal scrim. Has to DARKEN whatever it covers, so it can't be derived
+	           from --ink (near-white in dark) or --shadow (a warm mid-tone in dark). */
+				--scrim: light-dark(rgba(20, 21, 15, 0.5), rgba(0, 0, 0, 0.66));
+				--warn-bg: light-dark(#e4d98f, #43350f);
+				/* Kept yellower than --fill in dark so a warning doesn't read as chrome. */
+				--warn-line: light-dark(#9c8729, #cbb45a);
+				--warn-ink: light-dark(#463b08, #f3e6ad);
+				/* Glint lifting a code chip off --warn-bg — pale in both themes, since
+	           mixing toward --warn-ink would darken the chip on the light side. */
+				--warn-chip: light-dark(rgba(255, 255, 255, 0.35), rgba(243, 230, 173, 0.14));
 				--ok-bg: light-dark(#8fbf6e, #23421a);
 				--ok-line: light-dark(#4c7a2e, #6fa84a);
 				--ok-ink: light-dark(#1c3110, #cdeab8);
 				--danger: light-dark(#b23a2e, #e2564a);
 				--danger-soft: light-dark(#e3c6c1, #4a231e);
-				--screen-bg: #0d0e0a;
-				--screen-ink: #d8d9cf;
-				--screen-line: rgba(255, 255, 255, 0.04);
+				--screen-bg: light-dark(#0d0e0a, #100c04);
+				--screen-ink: light-dark(#d8d9cf, #e8b055);
+				--screen-line: light-dark(rgba(255, 255, 255, 0.04), rgba(232, 176, 85, 0.05));
 				--attn-done: #22c55e;
-				--attn-waiting: #f59e0b;
-				--info: #388bfd;
-				--grid-line: light-dark(rgba(0, 0, 0, 0.035), rgba(255, 255, 255, 0.035));
+				--attn-waiting: light-dark(#f59e0b, #ff7a2f);
+				/* Softened in dark — a saturated blue is the one hue that fights the warm ground. */
+				--info: light-dark(#388bfd, #6c9fd8);
+				/* The pixel matrix. 3.5% white over a near-black ground is invisible, so
+	           dark gets amber at double the alpha to read as a grid rather than noise. */
+				--grid-line: light-dark(rgba(0, 0, 0, 0.035), rgba(217, 150, 58, 0.07));
 				/* --attn-done at reduced opacity — reads correctly on both themes' track color. */
 				--switch-on-bg: rgba(34, 197, 94, 0.32);
+				/* The two dim levels, named so they stay consistent. Deliberately not
+	           themed: at equal alpha, dark disabled text measures higher contrast
+	           than light, so a dark-only boost would read as "enabled". */
+				--dim: 0.4;
+				--dim-panel: 0.5;
 				--font-display: 'Doto Variable', 'JetBrains Mono Variable', monospace;
 				--font-mono:
 					'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -66,14 +99,14 @@
          rule higher specificity than this global one, so local overrides
          always win regardless of source order. */
 			.panel {
-				border: 1px solid var(--ink);
-				box-shadow: 4px 4px 0 var(--ink);
+				border: 1px solid var(--edge);
+				box-shadow: 4px 4px 0 var(--shadow);
 			}
-			/* Shared dark header bar — the inverted label strip at the top of a panel. */
+			/* Shared header bar — the inverted label strip at the top of a panel. */
 			.panel-bar {
 				padding: 9px 14px;
-				background: var(--ink);
-				color: var(--bg);
+				background: var(--fill);
+				color: var(--fill-ink);
 				font-family: var(--font-display);
 				font-weight: 700;
 				font-size: 12px;

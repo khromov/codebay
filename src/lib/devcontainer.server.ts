@@ -162,13 +162,36 @@ export const INJECTIONS_DONE_FILE = '.codebay-injections-done';
 export const TERMINAL_LAUNCHED_MARKER = '.codebay-terminal-launched';
 
 /**
+ * Far above the ~107s a real injection phase measures: at 60s this expired mid-phase and released
+ * the launcher into the window where `claude-code-update`'s `npm install -g` had unlinked the
+ * binary. `provision()` writes the sentinel on its failure path too, so a dead boot never waits here.
+ */
+const INJECTIONS_WAIT_SECONDS = 600;
+
+/** Long enough to ride out an in-flight `npm install -g` of Claude Code. */
+const CLAUDE_BINARY_WAIT_SECONDS = 60;
+
+/**
  * An auto-launched `claude` that starts mid-injection reads `~/.claude.json` before the trust
  * keys land and clobbers them on its next rewrite, so hold it until the sentinel appears.
  * Bounded so a failed boot (sentinel never written) still yields a usable terminal.
  */
 const WAIT_FOR_INJECTIONS =
 	`[ -e "$HOME/${INJECTIONS_DONE_FILE}" ] || echo "Waiting for codebay setup to finish…"; ` +
-	`i=0; until [ -e "$HOME/${INJECTIONS_DONE_FILE}" ] || [ "$i" -ge 60 ]; do sleep 1; i=$((i + 1)); done; `;
+	`i=0; until [ -e "$HOME/${INJECTIONS_DONE_FILE}" ] || [ "$i" -ge ${INJECTIONS_WAIT_SECONDS} ]; do sleep 1; i=$((i + 1)); done; ` +
+	`[ -e "$HOME/${INJECTIONS_DONE_FILE}" ] || echo "codebay: setup did not finish in time — starting anyway"; `;
+
+/**
+ * Never exec a binary that may not be there: the update injection unlinks `claude` while it
+ * reinstalls, and an IDE-mode project image is free to ship no Claude Code at all — both used to
+ * surface as a bare `command not found` under the "Waiting for codebay setup" line. The retry is
+ * skipped once the sentinel exists, since no injection can be mid-reinstall by then and a missing
+ * binary is permanent. No single quotes: this is spliced into the single-quoted tmux commands below.
+ */
+const launchClaude = (permissionMode: ClaudePermissionMode): string =>
+	`if [ ! -e "$HOME/${INJECTIONS_DONE_FILE}" ]; then i=0; until command -v claude >/dev/null 2>&1 || [ "$i" -ge ${CLAUDE_BINARY_WAIT_SECONDS} ]; do sleep 1; i=$((i + 1)); done; fi; ` +
+	`if command -v claude >/dev/null 2>&1; then claude ${claudePermissionFlags(permissionMode)}; ` +
+	`else echo "codebay: claude is not installed in this container — check the boot log, then Rebuild"; fi; `;
 
 /**
  * claude scans `~/.claude/ide/*.lock` once at startup and never retries, so it must not race
@@ -203,7 +226,7 @@ const terminalTask = (permissionMode: ClaudePermissionMode) => ({
 	type: 'shell',
 	command:
 		// `"$SHELL"` must reach tmux unexpanded; VS Code would substitute a `${…}` form first.
-		`if command -v tmux >/dev/null 2>&1; then exec tmux new-session -A -s ${TMUX_SESSION} '${WAIT_FOR_INJECTIONS}${WAIT_FOR_IDE_BRIDGE}${SOURCE_INJECTED_ENV}claude ${claudePermissionFlags(permissionMode)}; exec "$SHELL" -l'; fi; ` +
+		`if command -v tmux >/dev/null 2>&1; then exec tmux new-session -A -s ${TMUX_SESSION} '${WAIT_FOR_INJECTIONS}${WAIT_FOR_IDE_BRIDGE}${SOURCE_INJECTED_ENV}${launchClaude(permissionMode)}exec "$SHELL" -l'; fi; ` +
 		// Without tmux there's no run-once gate, and folderOpen re-fires on every workspace load.
 		'MARK="$HOME/' +
 		TERMINAL_LAUNCHED_MARKER +
@@ -211,7 +234,8 @@ const terminalTask = (permissionMode: ClaudePermissionMode) => ({
 		WAIT_FOR_INJECTIONS +
 		WAIT_FOR_IDE_BRIDGE +
 		SOURCE_INJECTED_ENV +
-		`claude ${claudePermissionFlags(permissionMode)}; exec \${env:SHELL} -l`,
+		launchClaude(permissionMode) +
+		'exec ${env:SHELL} -l',
 	presentation: { reveal: 'always', panel: 'shared', focus: true },
 	runOptions: { runOn: 'folderOpen' },
 	problemMatcher: []
@@ -284,11 +308,12 @@ const ttydLaunchScript = (permissionMode: ClaudePermissionMode): string =>
 	WAIT_FOR_INJECTIONS +
 	'\n' +
 	`if command -v tmux >/dev/null 2>&1; then\n` +
-	`  exec tmux new-session -A -s ${TMUX_SESSION} '${SOURCE_INJECTED_ENV}claude ${claudePermissionFlags(permissionMode)}; exec "$SHELL" -l'\n` +
+	`  exec tmux new-session -A -s ${TMUX_SESSION} '${SOURCE_INJECTED_ENV}${launchClaude(permissionMode)}exec "$SHELL" -l'\n` +
 	'fi\n' +
 	SOURCE_INJECTED_ENV +
 	'\n' +
-	`claude ${claudePermissionFlags(permissionMode)}\n` +
+	launchClaude(permissionMode) +
+	'\n' +
 	'exec "$SHELL" -l\n';
 
 // ttyd defaults to read-only, so --writable is required for keyboard input. Guarded by `pgrep -x`
