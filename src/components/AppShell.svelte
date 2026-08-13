@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { ideUrl, type Instance, type InstanceFilter, type Preflight } from '../types.ts';
 	import { findAvatar, type AvatarArt } from '../avatars/index.ts';
+	import { tick } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { nextTabIndex } from '../lib/tab-nav.ts';
 	import DashboardView from './DashboardView.svelte';
 	import IdeBar from './IdeBar.svelte';
 	import IdeLoader from './IdeLoader.svelte';
@@ -42,6 +44,8 @@
 	let loaded = $state(snapshot.length > 0);
 	const running = $derived(instances.filter((i) => i.status === 'running'));
 
+	// Seeded from the SSR snapshot like `instances` above — the live stream overwrites it.
+	// svelte-ignore state_referenced_locally
 	let attention = $state<Record<string, 'done' | 'waiting' | null>>(
 		Object.fromEntries(snapshot.map((i) => [i.id, i.attention]))
 	);
@@ -179,6 +183,60 @@
 		document.title = onIde && activeInstance ? `${activeInstance.name} — Codebay` : 'Codebay';
 	});
 
+	// Alt+1-9 switches tabs. Alt, specifically: Cmd/Ctrl+digit is reserved by the browser
+	// for its own tabs and can't be intercepted, and Ctrl+Alt is AltGr on many European
+	// layouts, so it would collide with typing punctuation.
+	function jumpToTab(e: KeyboardEvent, fromFrame: boolean) {
+		if (!e.altKey || e.ctrlKey || e.metaKey || editingId) return;
+		// `code`, not `key`: Alt+digit emits punctuation on macOS layouts.
+		const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
+		if (!digit) return;
+		const next = nextTabIndex(
+			running.findIndex((i) => i.id === active),
+			digit,
+			running.length
+		);
+		const target = next === null ? undefined : running[next];
+		if (!target) return;
+		e.preventDefault();
+		// Stops the editor acting on the same keystroke as well.
+		e.stopPropagation();
+		navigate(`/ide/${target.id}`);
+		// Came from inside an editor, so land inside the next one rather than dumping
+		// focus on the body — after a tick, once the destination pane is no longer hidden.
+		if (fromFrame) void tick().then(() => frames[target.id]?.contentWindow?.focus());
+	}
+
+	// Joined rather than an array so the value compares equal across reconcile ticks —
+	// otherwise the effect below would tear down and re-add every listener every few
+	// seconds, with a window each time where a keystroke lands on nothing.
+	const framedTabIds = $derived(
+		running
+			.filter((i) => i.mode !== 'terminal' && loadedFrames.has(i.id))
+			.map((i) => i.id)
+			.join(' ')
+	);
+
+	// A focused iframe never bubbles keydown to the parent, so the shortcut has to be
+	// installed inside each editor document as well — possible only because the proxy
+	// serves code-server same-origin under /p/:id/. Capture phase, so it lands before
+	// VS Code's own handlers (and before xterm.js in the terminal panes).
+	$effect(() => {
+		if (!onIde) return;
+		function listen(target: Window, fromFrame: boolean) {
+			const handler = (e: KeyboardEvent) => jumpToTab(e, fromFrame);
+			target.addEventListener('keydown', handler, { capture: true });
+			return () => target.removeEventListener('keydown', handler, { capture: true });
+		}
+		const detach = [listen(window, false)];
+		// A reloaded iframe gets a fresh Window, and the old listener dies with it.
+		for (const id of framedTabIds.split(' ').filter(Boolean)) {
+			const frameWindow = frames[id]?.contentWindow;
+			if (frameWindow) detach.push(listen(frameWindow, true));
+		}
+		return () => detach.forEach((off) => off());
+	});
+
 	// Browsers block audio until the page has been interacted with.
 	$effect(() => {
 		window.addEventListener('pointerdown', unlockAudio);
@@ -303,7 +361,12 @@
 	<div class="panes" class:hidden={!onIde}>
 		{#each running as inst (inst.id)}
 			{#if visited.has(inst.id)}
-				<div class="pane" class:active={inst.id === active}>
+				<div
+					class="pane"
+					class:active={inst.id === active}
+					role="tabpanel"
+					aria-labelledby="tab-{inst.id}"
+				>
 					{#if mountable(inst.id)}
 						{#if inst.mode === 'terminal'}
 							<TerminalSplit
