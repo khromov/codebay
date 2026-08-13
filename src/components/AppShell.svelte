@@ -9,7 +9,8 @@
 	import { playChime, unlockAudio } from '../sound.ts';
 	import { liveStream } from '../live.ts';
 	import { apiPost } from '../api.ts';
-	import toast, { Toaster } from 'svelte-french-toast';
+	import toast from 'svelte-french-toast';
+	import AppToaster from './AppToaster.svelte';
 
 	// `snapshot` seeds the live state so neither view renders a loading flash first.
 	let {
@@ -342,12 +343,7 @@
 </div>
 
 <!-- Hoisted out of DashboardView so IDE-route toasts have somewhere to render too. -->
-<Toaster
-	toastOptions={{
-		style:
-			'border:1px solid var(--edge); background:var(--bg-card); color:var(--ink); box-shadow:4px 4px 0 var(--ink); font-family:var(--font-mono); font-size:13px;'
-	}}
-/>
+<AppToaster />
 
 <style>
 	/* The IDE route fills the viewport; the dashboard stays in normal scrolling flow. */

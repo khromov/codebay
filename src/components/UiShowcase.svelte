@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Plus from '@lucide/svelte/icons/plus';
-	import toast, { Toaster } from 'svelte-french-toast';
+	import toast from 'svelte-french-toast';
+	import AppToaster from './AppToaster.svelte';
 	import { avatars } from '../avatars/index.ts';
 	import type { AuthProvider, InstanceHealth, PortForward, Preflight } from '../types.ts';
 
@@ -141,7 +142,7 @@
 	let badgeStatus = $state<Instance['status']>('error');
 </script>
 
-<Toaster />
+<AppToaster />
 
 <TopBar
 	auth={providers}

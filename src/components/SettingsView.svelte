@@ -22,7 +22,7 @@
 	import ListOrdered from '@lucide/svelte/icons/list-ordered';
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import Puzzle from '@lucide/svelte/icons/puzzle';
-	import { Toaster } from 'svelte-french-toast';
+	import AppToaster from './AppToaster.svelte';
 	import { flushSync } from 'svelte';
 	import { enhance } from 'mochi-framework';
 	import type { MochiEnhanceOptions } from 'mochi-framework';
@@ -2189,12 +2189,7 @@
 </div>
 
 <!-- Settings renders outside AppShell, which hosts the app-wide Toaster. -->
-<Toaster
-	toastOptions={{
-		style:
-			'border:1px solid var(--edge); background:var(--bg-card); color:var(--ink); box-shadow:4px 4px 0 var(--ink); font-family:var(--font-mono); font-size:13px;'
-	}}
-/>
+<AppToaster />
 
 <style>
 	.page {
