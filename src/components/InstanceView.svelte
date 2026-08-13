@@ -323,12 +323,13 @@
 		letter-spacing: 0.06em;
 		color: var(--ink);
 		text-decoration: none;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 7px 12px;
 	}
 	.open:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 	.restart {
 		display: inline-flex;
@@ -341,16 +342,17 @@
 		letter-spacing: 0.06em;
 		color: var(--ink);
 		background: var(--bg);
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 7px 12px;
 		cursor: pointer;
 	}
 	.restart:hover:not(:disabled) {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 	.restart:disabled {
-		opacity: 0.5;
+		opacity: var(--dim-panel);
 		cursor: not-allowed;
 	}
 	.restart-err {
@@ -406,17 +408,17 @@
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		padding: 4px 9px;
-		background: var(--bg);
-		color: var(--ink);
-		border: 1px solid var(--bg);
+		background: var(--fill-ink);
+		color: var(--fill);
+		border: 1px solid var(--fill-ink);
 		cursor: pointer;
 	}
 	.rebuild:hover:not(:disabled) {
 		background: transparent;
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.rebuild:disabled {
-		opacity: 0.5;
+		opacity: var(--dim-panel);
 		cursor: not-allowed;
 	}
 	.ports-body {
@@ -499,14 +501,15 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		padding: 6px 14px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg-card);
 		color: var(--ink);
 		cursor: pointer;
 	}
 	.add button:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 	.port-err {
 		margin: 10px 0 0;
@@ -549,18 +552,18 @@
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		padding: 4px 9px;
-		background: var(--bg);
-		color: var(--ink);
-		border: 1px solid var(--bg);
+		background: var(--fill-ink);
+		color: var(--fill);
+		border: 1px solid var(--fill-ink);
 		cursor: pointer;
 	}
 	.copy:hover:not(:disabled) {
 		background: transparent;
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.copy.active {
 		background: transparent;
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	/* The dot, not the inverted fill, is what separates "following" from a mere hover. */
 	.dot {
@@ -571,7 +574,7 @@
 		background: var(--attn-done);
 	}
 	.copy:disabled {
-		opacity: 0.5;
+		opacity: var(--dim-panel);
 		cursor: not-allowed;
 	}
 	.logs {

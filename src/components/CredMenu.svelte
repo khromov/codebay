@@ -88,13 +88,14 @@
 		height: 32px;
 		font-size: 14px;
 		line-height: 1;
-		border: 1px solid var(--ink);
-		background: var(--ink);
-		color: var(--bg);
+		border: 1px solid var(--fill);
+		background: var(--fill);
+		color: var(--fill-ink);
 		cursor: pointer;
 	}
 	.cred:hover {
 		background: var(--bg);
+		border-color: var(--edge);
 		color: var(--ink);
 	}
 	/* Auth states: ok = muted green, warn = tasteful yellow, error = outline-only. */
@@ -120,6 +121,7 @@
 	}
 	.cred.error {
 		background: var(--bg);
+		border-color: var(--edge);
 		color: var(--ink);
 	}
 	.cred-dropdown {
@@ -146,11 +148,11 @@
 		cursor: pointer;
 	}
 	.cred-row:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.cred-row:hover .cred-state {
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.dot {
 		flex: none;

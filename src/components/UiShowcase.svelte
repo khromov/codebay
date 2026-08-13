@@ -1,6 +1,8 @@
 <script lang="ts">
 	import Plus from '@lucide/svelte/icons/plus';
+	import { onMount } from 'svelte';
 	import toast, { Toaster } from 'svelte-french-toast';
+	import { TOAST_OPTIONS } from '../toast.ts';
 	import { avatars } from '../avatars/index.ts';
 	import type { AuthProvider, InstanceHealth, PortForward, Preflight } from '../types.ts';
 
@@ -19,55 +21,67 @@
 	import ComponentDemo from './ui-showcase/ComponentDemo.svelte';
 	import type { Instance } from '../types.ts';
 
-	// The swatch fill reads var(--token) so it auto-syncs with shell.html; `hex` is
-	// only a label and always shows the light-theme value.
-	const palette: { group: string; swatches: { token: string; hex: string; border?: boolean }[] }[] =
-		[
-			{
-				group: 'Surfaces',
-				swatches: [
-					{ token: '--bg', hex: '#d7d8d2', border: true },
-					{ token: '--bg-card', hex: '#e7e8e2', border: true },
-					{ token: '--screen-bg', hex: '#0d0e0a' }
-				]
-			},
-			{
-				group: 'Ink / text',
-				swatches: [
-					{ token: '--ink', hex: '#14150f' },
-					{ token: '--ink-soft', hex: '#45463e' },
-					{ token: '--ink-faint', hex: '#7d7e74' }
-				]
-			},
-			{
-				group: 'Rules',
-				swatches: [
-					{ token: '--rule', hex: '#20211a' },
-					{ token: '--rule-soft', hex: '#b9bab2', border: true }
-				]
-			},
-			{
-				group: 'Semantic',
-				swatches: [
-					{ token: '--warn-bg', hex: '#e4d98f', border: true },
-					{ token: '--warn-line', hex: '#9c8729' },
-					{ token: '--warn-ink', hex: '#463b08' },
-					{ token: '--ok-bg', hex: '#8fbf6e' },
-					{ token: '--ok-line', hex: '#4c7a2e' },
-					{ token: '--ok-ink', hex: '#1c3110' },
-					{ token: '--danger', hex: '#b23a2e' },
-					{ token: '--danger-soft', hex: '#e3c6c1', border: true },
-					{ token: '--info', hex: '#388bfd' }
-				]
-			},
-			{
-				group: 'Attention',
-				swatches: [
-					{ token: '--attn-done', hex: '#22c55e' },
-					{ token: '--attn-waiting', hex: '#f59e0b' }
-				]
-			}
-		];
+	// Both the fill and the printed value are read back off the rendered chip, so this
+	// list is the only thing to touch when shell.html gains a token — and the labels
+	// can't drift from the theme the way a hardcoded hex did.
+	const palette: { group: string; tokens: string[] }[] = [
+		{ group: 'Surfaces', tokens: ['--bg', '--bg-card', '--screen-bg', '--screen-ink'] },
+		{ group: 'Ink / text', tokens: ['--ink', '--ink-soft', '--ink-faint', '--led-gray'] },
+		{ group: 'Structure', tokens: ['--edge', '--shadow', '--rule', '--rule-soft', '--grid-line'] },
+		{ group: 'Inverted fill', tokens: ['--fill', '--fill-ink'] },
+		{
+			group: 'Semantic',
+			tokens: [
+				'--warn-bg',
+				'--warn-line',
+				'--warn-ink',
+				'--ok-bg',
+				'--ok-line',
+				'--ok-ink',
+				'--danger',
+				'--danger-soft',
+				'--info'
+			]
+		},
+		{ group: 'Attention', tokens: ['--attn-done', '--attn-waiting', '--switch-on-bg'] }
+	];
+
+	const chips: Record<string, HTMLElement> = {};
+	let hexes = $state<Record<string, string>>({});
+
+	/** `rgb(r g b / a)` or `rgba(r, g, b, a)` -> `#rrggbb`, with any alpha spelled out. */
+	function toHex(value: string): string {
+		const parts = value.match(/[\d.]+/g);
+		if (!parts || parts.length < 3) return value;
+		const hex = parts
+			.slice(0, 3)
+			.map((n) => Math.round(Number(n)).toString(16).padStart(2, '0'))
+			.join('');
+		const alpha = parts.length > 3 ? Number(parts[3]) : 1;
+		return alpha < 1 ? `#${hex} ${Math.round(alpha * 100)}%` : `#${hex}`;
+	}
+
+	function readHexes() {
+		hexes = Object.fromEntries(
+			Object.entries(chips).map(([token, node]) => [
+				token,
+				toHex(getComputedStyle(node).backgroundColor)
+			])
+		);
+	}
+
+	onMount(() => {
+		readHexes();
+		// An explicit pick mutates data-theme; "auto" only moves when the OS does.
+		const obs = new MutationObserver(readHexes);
+		obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+		const scheme = window.matchMedia('(prefers-color-scheme: dark)');
+		scheme.addEventListener('change', readHexes);
+		return () => {
+			obs.disconnect();
+			scheme.removeEventListener('change', readHexes);
+		};
+	});
 
 	let avatarScale = $state(8);
 	let avatarName = $state('demo-instance');
@@ -141,7 +155,7 @@
 	let badgeStatus = $state<Instance['status']>('error');
 </script>
 
-<Toaster />
+<Toaster toastOptions={TOAST_OPTIONS} />
 
 <TopBar
 	auth={providers}
@@ -166,16 +180,20 @@
 				<span class="palette-hint">Design tokens — tap to expand</span>
 			</summary>
 			<div class="palette">
-				{#each palette as { group, swatches } (group)}
+				{#each palette as { group, tokens } (group)}
 					<div class="swatch-group">
 						<h3>{group}</h3>
 						<div class="swatches">
-							{#each swatches as { token, hex, border } (token)}
+							{#each tokens as token (token)}
 								<figure class="swatch">
-									<div class="chip" class:bordered={border} style="background: var({token});"></div>
+									<div
+										class="chip"
+										bind:this={chips[token]}
+										style="background: var({token});"
+									></div>
 									<figcaption>
 										<code>{token}</code>
-										<span>{hex}</span>
+										<span>{hexes[token] ?? '…'}</span>
 									</figcaption>
 								</figure>
 							{/each}
@@ -386,7 +404,6 @@
 		max-width: 740px;
 		margin: 0 auto;
 		padding: 32px;
-		background: var(--bg);
 		color: var(--ink);
 	}
 	header {
@@ -414,8 +431,8 @@
 		border-bottom: 1px solid var(--ink);
 	}
 	.gallery-link:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.grid {
 		display: flex;
@@ -478,13 +495,14 @@
 		letter-spacing: 0.06em;
 		color: var(--ink);
 		background: var(--bg-card);
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 5px 0;
 		cursor: pointer;
 	}
 	.presets button:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 
 	.palette-card {
@@ -550,10 +568,7 @@
 	}
 	.swatch .chip {
 		height: 44px;
-		border: 1px solid transparent;
-	}
-	.swatch .chip.bordered {
-		border-color: var(--rule-soft);
+		border: 1px solid var(--rule-soft);
 	}
 	.swatch figcaption {
 		display: flex;

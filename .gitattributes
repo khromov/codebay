@@ -1,0 +1,3 @@
+# Svelte sources are text; one historically carried a NUL byte in a {#key}
+# sentinel, which made git hide the whole file from diffs.
+*.svelte diff

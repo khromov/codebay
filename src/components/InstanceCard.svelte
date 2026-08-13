@@ -142,7 +142,7 @@
 	}
 	.card:hover:not(.busy) {
 		transform: translate(-1px, -1px);
-		box-shadow: 6px 6px 0 var(--ink);
+		box-shadow: 6px 6px 0 var(--shadow);
 	}
 	/* Translucent scrim dims the card body and blocks clicks on the buttons beneath. */
 	.busy-overlay {
@@ -161,15 +161,15 @@
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
 		padding: 4px 9px;
-		border: 1px solid var(--ink);
-		background: var(--ink);
-		color: var(--bg);
+		border: 1px solid var(--fill);
+		background: var(--fill);
+		color: var(--fill-ink);
 		animation: lcd-blink 1.1s steps(1) infinite;
 	}
 	@keyframes lcd-blink {
 		50% {
 			background: transparent;
-			color: var(--ink);
+			color: var(--fill);
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {
@@ -186,7 +186,7 @@
 		flex: none;
 		width: 14px;
 		height: 14px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 	}
 	.attn.attn-done {
 		background: var(--attn-done);
@@ -266,7 +266,7 @@
 		font-size: 12px;
 		color: var(--ink);
 		background: var(--bg);
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 8px 10px;
 		max-height: 80px;
 		overflow: auto;

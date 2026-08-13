@@ -139,8 +139,8 @@
 	}
 	.cog:hover,
 	.reload:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.tabs {
 		display: flex;
@@ -154,7 +154,7 @@
 		border-right: 1px solid var(--rule-soft);
 	}
 	.tab.active {
-		background: var(--ink);
+		background: var(--fill);
 	}
 	/* The focused tab never gets these, so a pulsing tab always means "needs your eyes". */
 	.tab.attn-done {
@@ -226,7 +226,7 @@
 		color: var(--ink);
 	}
 	.tab.active .tab-label {
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.tab-label.editing {
 		cursor: default;

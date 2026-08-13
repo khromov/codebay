@@ -265,8 +265,8 @@
 		justify-content: space-between;
 		gap: 12px;
 		padding: 14px 18px;
-		border-bottom: 1px solid var(--ink);
-		background: var(--ink);
+		border-bottom: 1px solid var(--fill);
+		background: var(--fill);
 	}
 	.head h2 {
 		margin: 0;
@@ -275,7 +275,7 @@
 		font-size: 17px;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.head-cancel {
 		display: inline-flex;
@@ -283,9 +283,9 @@
 		gap: 6px;
 		flex: none;
 		padding: 5px 10px;
-		border: 1px solid var(--bg);
+		border: 1px solid var(--fill-ink);
 		background: transparent;
-		color: var(--bg);
+		color: var(--fill-ink);
 		font-family: var(--font-mono);
 		font-size: 11px;
 		text-transform: uppercase;
@@ -293,8 +293,8 @@
 		cursor: pointer;
 	}
 	.head-cancel:hover {
-		background: var(--bg);
-		color: var(--ink);
+		background: var(--fill-ink);
+		color: var(--fill);
 	}
 	.head-cancel:focus-visible {
 		outline: none;
@@ -321,7 +321,7 @@
 		padding: 0 1px 1px 0;
 		background-clip: content-box;
 		background-color: var(--rule-soft);
-		opacity: 0.4; /* more muted than the paintable off cells — not part of the art */
+		opacity: var(--dim); /* more muted than the paintable off cells — not part of the art */
 	}
 	/* A stroke paints by pointer position, so cells need no individual handlers. */
 	.grid {
@@ -415,8 +415,8 @@
 		border-right: none;
 	}
 	.mode.active {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.mode:focus-visible {
 		outline: none;

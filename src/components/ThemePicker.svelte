@@ -39,7 +39,7 @@
 	.picker {
 		display: inline-flex;
 		flex: none;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg-card);
 	}
 	.segment {
@@ -58,16 +58,16 @@
 		cursor: pointer;
 	}
 	.segment + .segment {
-		border-left: 1px solid var(--ink);
+		border-left: 1px solid var(--edge);
 	}
 	.segment:hover:not(.active) {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.segment.active {
 		font-weight: 700;
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 		cursor: default;
 	}
 	.segment:focus-visible {

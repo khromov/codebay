@@ -295,7 +295,7 @@
 	.overlay {
 		position: fixed;
 		inset: 0;
-		background: color-mix(in srgb, var(--ink) 50%, transparent);
+		background: var(--scrim);
 		display: grid;
 		place-items: center;
 		padding: 24px;
@@ -308,15 +308,15 @@
 		flex-direction: column;
 		background: var(--bg-card);
 		overflow: hidden;
-		box-shadow: 8px 8px 0 var(--ink);
+		box-shadow: 8px 8px 0 var(--shadow);
 	}
 	.head {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		padding: 14px 18px;
-		border-bottom: 1px solid var(--ink);
-		background: var(--ink);
+		border-bottom: 1px solid var(--fill);
+		background: var(--fill);
 	}
 	.head h2 {
 		margin: 0;
@@ -325,7 +325,7 @@
 		font-size: 17px;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.x {
 		display: inline-flex;
@@ -333,7 +333,7 @@
 		border: none;
 		background: none;
 		cursor: pointer;
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.x:hover {
 		opacity: 0.7;
@@ -353,7 +353,7 @@
 	}
 	.mode-toggle {
 		display: flex;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 	}
 	.mode-btn {
 		display: inline-flex;
@@ -371,11 +371,11 @@
 		cursor: pointer;
 	}
 	.mode-btn + .mode-btn {
-		border-left: 1px solid var(--ink);
+		border-left: 1px solid var(--edge);
 	}
 	.mode-btn.active {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.clone {
 		padding: 12px 18px;
@@ -425,18 +425,19 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		padding: 8px 14px;
-		border: 1px solid var(--ink);
-		background: var(--ink);
-		color: var(--bg);
+		border: 1px solid var(--fill);
+		background: var(--fill);
+		color: var(--fill-ink);
 		cursor: pointer;
 		white-space: nowrap;
 	}
 	.clone-btn:hover:not(:disabled) {
 		background: var(--bg-card);
+		border-color: var(--edge);
 		color: var(--ink);
 	}
 	.clone-btn:disabled {
-		opacity: 0.4;
+		opacity: var(--dim);
 		cursor: not-allowed;
 	}
 	.crumbs {
@@ -490,11 +491,11 @@
 		color: var(--ink);
 	}
 	.recent-pick:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.recent-pick:hover .recent-path {
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.recent-text {
 		display: flex;
@@ -534,8 +535,8 @@
 		opacity: 1;
 	}
 	.recent-x:hover {
-		color: var(--bg);
-		background: var(--ink);
+		color: var(--fill-ink);
+		background: var(--fill);
 	}
 	.recent-toggle {
 		margin: 4px 6px 2px;
@@ -603,11 +604,11 @@
 		color: var(--ink);
 	}
 	.row .nav:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.row .nav:hover .icon {
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.ename {
 		overflow: hidden;
@@ -622,12 +623,12 @@
 		letter-spacing: 0.08em;
 		color: var(--ink);
 		background: transparent;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 2px 5px;
 	}
 	.row .nav:hover .badge {
-		color: var(--bg);
-		border-color: var(--bg);
+		color: var(--fill-ink);
+		border-color: var(--fill-ink);
 	}
 	.pick-inline {
 		font-family: var(--font-mono);
@@ -636,14 +637,15 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		padding: 6px 10px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg-card);
 		cursor: pointer;
 		color: var(--ink);
 	}
 	.pick-inline:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 	.muted {
 		padding: 18px;
@@ -672,8 +674,7 @@
 	.warn code {
 		font-family: var(--font-mono);
 		font-size: 0.9em;
-		/* Intentional white glint to lift the code chip off the amber warn bg — not a palette token. */
-		background: rgba(255, 255, 255, 0.35);
+		background: var(--warn-chip);
 		border: 1px solid var(--warn-line);
 		padding: 0 5px;
 	}
@@ -683,7 +684,7 @@
 		justify-content: space-between;
 		gap: 12px;
 		padding: 14px 18px;
-		border-top: 1px solid var(--ink);
+		border-top: 1px solid var(--edge);
 	}
 	.hint {
 		font-family: var(--font-mono);
@@ -697,18 +698,19 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		padding: 9px 16px;
-		border: 1px solid var(--ink);
-		background: var(--ink);
-		color: var(--bg);
+		border: 1px solid var(--fill);
+		background: var(--fill);
+		color: var(--fill-ink);
 		cursor: pointer;
 		white-space: nowrap;
 	}
 	.primary:hover:not(:disabled) {
 		background: var(--bg-card);
+		border-color: var(--edge);
 		color: var(--ink);
 	}
 	.primary:disabled {
-		opacity: 0.4;
+		opacity: var(--dim);
 		cursor: not-allowed;
 	}
 	.icon {
