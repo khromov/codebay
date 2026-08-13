@@ -19,12 +19,13 @@
 		justify-content: center;
 		width: 32px;
 		height: 32px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg-card);
 		color: var(--ink);
 	}
 	.cog:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 </style>

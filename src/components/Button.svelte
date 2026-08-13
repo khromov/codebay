@@ -69,21 +69,21 @@
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg-card);
 		color: var(--ink);
 		cursor: pointer;
 		text-decoration: none;
 	}
 	.btn:disabled {
-		opacity: 0.4;
+		opacity: var(--dim);
 		cursor: not-allowed;
 	}
 	/* `disabled` has no native effect on an <a> — the href branch above drops the
      href entirely when disabled, but it still needs the same visual treatment
      and to be excluded from the tab order / assistive-tech actions. */
 	.btn[aria-disabled='true'] {
-		opacity: 0.4;
+		opacity: var(--dim);
 		cursor: not-allowed;
 		pointer-events: none;
 	}
@@ -119,17 +119,20 @@
 	}
 
 	.btn.default:hover:not(:disabled) {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 
 	.btn.primary {
 		font-weight: 700;
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 	.btn.primary:hover:not(:disabled) {
 		background: var(--bg-card);
+		border-color: var(--edge);
 		color: var(--ink);
 	}
 
@@ -138,8 +141,9 @@
 		border-style: dashed;
 	}
 	.btn.ghost:hover:not(:disabled) {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 		border-style: solid;
 	}
 

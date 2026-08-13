@@ -244,8 +244,8 @@
 	}
 	.cog:hover,
 	.reload:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 
 	.strip {
@@ -295,11 +295,11 @@
 		border-left: 1px solid var(--rule);
 	}
 	.page:hover:not(:disabled) {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.page:disabled {
-		opacity: 0.4;
+		opacity: var(--dim);
 		cursor: default;
 	}
 	.page:focus-visible {
@@ -336,8 +336,8 @@
 		color: var(--ink);
 	}
 	.tab.active {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 		cursor: default;
 		/* The key has sunk into the chassis; this strip is the slot it dropped out of. */
 		box-shadow: inset 0 3px 0 var(--bg);
@@ -347,7 +347,7 @@
 		outline-offset: -2px;
 	}
 	.tab.active:focus-visible {
-		outline-color: var(--bg);
+		outline-color: var(--fill-ink);
 	}
 	.tab-name {
 		white-space: nowrap;
@@ -369,7 +369,7 @@
 		flex: none;
 		width: 10px;
 		height: 10px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		animation: tab-attn-pulse 1.4s ease-in-out infinite;
 	}
 	.attn.done {

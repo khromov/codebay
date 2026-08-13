@@ -69,14 +69,14 @@
 	}
 	.coin {
 		display: block;
-		box-shadow: 2px 2px 0 var(--ink);
+		box-shadow: 2px 2px 0 var(--shadow);
 		animation: coin-spin 2.6s ease-in-out infinite;
 	}
 	/* The spin has to stop, or it would override the press transform. */
 	.coin-btn:hover .coin {
 		animation: none;
 		transform: translate(1px, 1px);
-		box-shadow: 1px 1px 0 var(--ink);
+		box-shadow: 1px 1px 0 var(--shadow);
 	}
 	.coin-btn:focus-visible {
 		outline: 2px solid var(--ink);

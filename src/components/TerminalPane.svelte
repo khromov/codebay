@@ -129,16 +129,24 @@
 		}
 	}
 
+	/* Reads the *resolved* background/color off `.term` rather than the tokens behind
+	   them: getPropertyValue('--screen-bg') hands back the literal "light-dark(…)"
+	   token stream, which xterm can't parse and silently drops on the floor. */
 	function applyTheme() {
-		if (!term) return;
-		const cs = getComputedStyle(document.documentElement);
-		const bg = cs.getPropertyValue('--bg').trim() || '#1a1a1a';
-		const fg = cs.getPropertyValue('--ink').trim() || '#e6e6e6';
+		if (!term || !el) return;
+		const cs = getComputedStyle(el);
+		const bg = cs.backgroundColor || '#0d0e0a';
+		const fg = cs.color || '#d8d9cf';
 		term.options.theme = { background: bg, foreground: fg, cursor: fg, cursorAccent: bg };
 	}
 
 	onMount(() => {
 		let themeObs: MutationObserver | undefined;
+		// In "auto" there is no data-theme attribute to mutate, so the OS preference
+		// flipping is the only signal the mutation observer below would never see.
+		const scheme = window.matchMedia('(prefers-color-scheme: dark)');
+		const onScheme = () => applyTheme();
+		scheme.addEventListener('change', onScheme);
 		(async () => {
 			const [{ Terminal }, { FitAddon }] = await Promise.all([
 				import('@xterm/xterm'),
@@ -178,6 +186,7 @@
 			disposed = true;
 			sizeObs.disconnect();
 			themeObs?.disconnect();
+			scheme.removeEventListener('change', onScheme);
 			if (retry) clearTimeout(retry);
 			try {
 				ws?.close();
@@ -212,10 +221,13 @@
 </div>
 
 <style>
+	/* Also the source `applyTheme` reads xterm's colors back out of — resolved
+	   standard properties, since a custom property's own value is unresolved. */
 	.term {
 		width: 100%;
 		height: 100%;
-		background: var(--bg);
+		background: var(--screen-bg);
+		color: var(--screen-ink);
 		padding: 6px 8px;
 		box-sizing: border-box;
 	}
@@ -263,8 +275,8 @@
 	.overlay :global(button:focus-visible),
 	.overlay :global(button[aria-pressed='true']) {
 		opacity: 1;
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.overlay :global(button) {
