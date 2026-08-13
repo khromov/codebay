@@ -308,7 +308,7 @@
 		flex-direction: column;
 		background: var(--bg-card);
 		overflow: hidden;
-		box-shadow: 8px 8px 0 var(--ink);
+		box-shadow: 8px 8px 0 var(--shadow);
 	}
 	.head {
 		display: flex;

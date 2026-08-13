@@ -142,7 +142,7 @@
 	}
 	.card:hover:not(.busy) {
 		transform: translate(-1px, -1px);
-		box-shadow: 6px 6px 0 var(--ink);
+		box-shadow: 6px 6px 0 var(--shadow);
 	}
 	/* Translucent scrim dims the card body and blocks clicks on the buttons beneath. */
 	.busy-overlay {
