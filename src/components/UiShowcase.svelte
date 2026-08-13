@@ -19,6 +19,7 @@
 	import PortsBox from './PortsBox.svelte';
 	import StatusBadge from './StatusBadge.svelte';
 	import InstanceCard from './InstanceCard.svelte';
+	import IdeBar from './IdeBar.svelte';
 	import ComponentDemo from './ui-showcase/ComponentDemo.svelte';
 	import type { Instance } from '../types.ts';
 
@@ -184,6 +185,68 @@
 
 	const statuses: Instance['status'][] = ['creating', 'running', 'stopped', 'error'];
 	let badgeStatus = $state<Instance['status']>('error');
+
+	// The IDE tab strip only ever renders against running instances, and this
+	// environment may have no Docker at all — so the demo fabricates them.
+	const TAB_NAMES = [
+		'orion',
+		'meridian',
+		'atlas',
+		'vesper',
+		'cobalt',
+		'juniper',
+		'halcyon',
+		'zenith',
+		'perigee',
+		'lumen'
+	];
+	let tabCount = $state(4);
+	let tabActive = $state(0);
+	let tabAttention = $state(true);
+	let tabMixModes = $state(true);
+	let tabLongNames = $state(false);
+	let tabEditingId = $state<string | null>(null);
+	let tabEditingName = $state('');
+	// Renames are applied for real, so the inline editor is inspectable end to end.
+	let tabRenames = $state<Record<string, string>>({});
+
+	const demoTabs = $derived(
+		Array.from({ length: tabCount }, (_, i): Instance => {
+			const id = `demo-tab-${i}`;
+			const base = TAB_NAMES[i]!;
+			return {
+				id,
+				name: tabRenames[id] ?? (tabLongNames ? `${base}-refactor-spike-2026` : base),
+				source_path: `/home/demo/${base}`,
+				workspace_path: `/data/instances/${id}`,
+				host_port: 8001 + i,
+				container_id: `container-${i}`,
+				remote_workspace_folder: null,
+				status: 'running',
+				error: null,
+				created_at: 0,
+				image_source: 'local',
+				avatar: avatars[i % avatars.length]!.name,
+				mode: tabMixModes && i % 2 === 1 ? 'terminal' : 'ide',
+				terminal_split: 0,
+				git_branch: 'main',
+				attention: null,
+				forwarded_ports: []
+			};
+		})
+	);
+	// Clamped, since dragging the count down can strand the active index past the end.
+	const demoActiveIndex = $derived(Math.min(tabActive, tabCount - 1));
+	const demoActiveId = $derived(demoTabs[demoActiveIndex]?.id ?? '');
+	// Alternating states so both LED colors are comparable side by side.
+	const demoAttention = $derived(
+		Object.fromEntries(
+			demoTabs.map((inst, i) => [
+				inst.id,
+				tabAttention && i !== demoActiveIndex ? (i % 2 === 0 ? 'done' : 'waiting') : null
+			])
+		) as Record<string, 'done' | 'waiting' | null>
+	);
 </script>
 
 <Toaster toastOptions={TOAST_OPTIONS} />
@@ -477,6 +540,57 @@
 			{/snippet}
 		</ComponentDemo>
 
+		<ComponentDemo title="IdeBar">
+			<div class="ide-bar-demo">
+				<IdeBar
+					running={demoTabs}
+					active={demoActiveId}
+					attention={demoAttention}
+					editingId={tabEditingId}
+					bind:editingName={tabEditingName}
+					onreload={() => toast('Reload editor (demo)')}
+					onselect={(id) => (tabActive = demoTabs.findIndex((t) => t.id === id))}
+					onstartrename={(inst) => {
+						tabEditingId = inst.id;
+						tabEditingName = inst.name;
+					}}
+					oncommitrename={(id) => {
+						const name = tabEditingName.trim();
+						if (name) tabRenames[id] = name;
+						tabEditingId = null;
+					}}
+					oncancelrename={() => (tabEditingId = null)}
+				/>
+			</div>
+			<p class="demo-hint">
+				Click to select, double-click to rename. Arrow keys / Home / End move between tabs once one
+				has focus. The Alt+1–9 jump lives in AppShell rather than here, since it also installs
+				itself into the editor iframes — so it is inert in this demo.
+			</p>
+			{#snippet controls()}
+				<label>
+					<span>tabs ({tabCount})</span>
+					<input type="range" min="1" max="10" bind:value={tabCount} />
+				</label>
+				<label>
+					<span>active ({demoActiveIndex})</span>
+					<input type="range" min="0" max={tabCount - 1} bind:value={tabActive} />
+				</label>
+				<label>
+					<span>attention</span>
+					<input type="checkbox" bind:checked={tabAttention} />
+				</label>
+				<label>
+					<span>mixed modes</span>
+					<input type="checkbox" bind:checked={tabMixModes} />
+				</label>
+				<label>
+					<span>long names</span>
+					<input type="checkbox" bind:checked={tabLongNames} />
+				</label>
+			{/snippet}
+		</ComponentDemo>
+
 		<ComponentDemo title="Brand" note="No props — static branding.">
 			<Brand />
 		</ComponentDemo>
@@ -578,6 +692,17 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 10px;
+	}
+	/* The bar spans the full IDE viewport in situ, so give it the whole stage here. */
+	.ide-bar-demo {
+		width: 100%;
+		border: 1px solid var(--rule-soft);
+	}
+	.demo-hint {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		color: var(--ink-faint);
 	}
 	.presets {
 		display: flex;
