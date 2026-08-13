@@ -21,6 +21,24 @@ import {
 	writeOverrideConfig
 } from './devcontainer.server.ts';
 
+/** The `-ge <n>` bound the launcher gives the injections-done sentinel. */
+function sentinelWaitSeconds(script: string): number {
+	return Number(/\.codebay-injections-done" \] \|\| \[ "\$i" -ge (\d+) \]/.exec(script)?.[1]);
+}
+
+/**
+ * Every `claude <flags>` launch must sit behind a presence check. Without one, a `claude` the
+ * update injection has momentarily unlinked — or a project image that ships none — reaches the
+ * user as a bare `command not found` right under "Waiting for codebay setup to finish".
+ */
+function expectGuardedClaude(script: string): void {
+	const segments = script.split('claude --');
+	expect(segments.length).toBeGreaterThan(1);
+	for (const before of segments.slice(0, -1)) {
+		expect(before.endsWith('if command -v claude >/dev/null 2>&1; then ')).toBe(true);
+	}
+}
+
 /**
  * `relaunchSurface` re-runs these after a plain `docker start`, which never re-runs
  * postStartCommand. If the two ever fork, a restarted instance boots a different surface than a
@@ -157,8 +175,49 @@ describe('writeOverrideConfig terminal task + settings', () => {
 			expect(path).toContain('.codebay-injections-done');
 			expect(path.indexOf('.codebay-injections-done')).toBeLessThan(path.indexOf('claude'));
 		}
-		// Bounded: a boot that never writes the sentinel must still yield a terminal.
-		expect(terminal.command).toContain('-ge 60');
+		// Bounded: a boot that never writes the sentinel must still yield a terminal, and say so.
+		expect(terminal.command).toContain('setup did not finish in time');
+	});
+
+	test('waits out an injection phase far longer than a real one', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		// The bug this guards: a 60s bound against a phase measured at 106.5s released the launcher
+		// mid-`npm install -g`, straight into a `claude` the update injection had just unlinked.
+		expect(sentinelWaitSeconds(terminal.command)).toBeGreaterThanOrEqual(300);
+	});
+
+	test('never execs claude without proving it exists first', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		expectGuardedClaude(terminal.command);
+		// And an absent binary drops to a shell with an explanation rather than a bare error.
+		expect(terminal.command).toContain('else echo "codebay: claude is not installed');
+	});
+
+	test('retries a missing claude only while setup is unfinished', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		// Past the sentinel no injection can be mid-reinstall, so a missing binary is permanent and
+		// retrying would just stall the shell on every open of a project image without Claude Code.
+		expect(terminal.command).toContain(
+			'if [ ! -e "$HOME/.codebay-injections-done" ]; then i=0; until command -v claude'
+		);
+	});
+
+	test('keeps the tmux payload free of quoting and glob hazards', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		const payload = terminal.command.slice(
+			terminal.command.indexOf("new-session -A -s codebay '") +
+				"new-session -A -s codebay '".length,
+			terminal.command.indexOf("'; fi; MARK=")
+		);
+		// A `'` would end the tmux command early, `${` would be eaten by VS Code's substitution, and
+		// an unmatched glob makes zsh print "no matches found" on every loop iteration.
+		expect(payload).not.toContain("'");
+		expect(payload).not.toContain('${');
+		expect(payload).not.toMatch(/[*?]/);
 	});
 
 	test('holds claude until the IDE bridge lockfile appears, in both launch paths', async () => {
@@ -536,6 +595,15 @@ describe('writeOverrideConfig terminal mode', () => {
 		expect(script.indexOf('.codebay-injections-done')).toBeLessThan(script.indexOf('claude'));
 		// No code-server extension host to race, so no IDE-bridge wait.
 		expect(script).not.toContain('.claude/ide/');
+	});
+
+	test('gives the sentinel the same generous bound and guards claude, in both branches', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const script = readLaunch();
+		expect(sentinelWaitSeconds(script)).toBeGreaterThanOrEqual(300);
+		expect(script).toContain('setup did not finish in time');
+		// Both the tmux session command and the bare-shell fallback launch claude.
+		expectGuardedClaude(script);
 	});
 
 	test('sources the injected env files before launching claude', async () => {

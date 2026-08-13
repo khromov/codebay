@@ -47,7 +47,7 @@ import {
 	writeOverrideConfig
 } from './devcontainer.server.ts';
 import { writeContainerFile } from './container-files.server.ts';
-import { execInContainer } from './exec.server.ts';
+import { execInContainer, type ExecTarget } from './exec.server.ts';
 import { clearAttention, getAttention } from './bridge.server.ts';
 import { proxyPathFor } from './proxy.server.ts';
 import { resolveInjectionStages } from './injections.server.ts';
@@ -96,6 +96,27 @@ interface LiveState {
 
 const globalForReg = globalThis as unknown as { __codebayRegistry?: Map<string, LiveState> };
 const registry: Map<string, LiveState> = (globalForReg.__codebayRegistry ??= new Map());
+
+/**
+ * The ids `provision()` is currently building. A `creating` row is only left alone while its boot
+ * is actually in flight — otherwise a server restart mid-boot would strand it there forever, since
+ * reconcile skips `creating` and `rebuildInstance` refuses to touch it.
+ */
+const globalForBoots = globalThis as unknown as { __codebayProvisioning?: Set<string> };
+const inFlight: Set<string> = (globalForBoots.__codebayProvisioning ??= new Set());
+
+/**
+ * Whether reconcile may re-derive a row's status from Docker. A live boot owns its own row until it
+ * opens the instance itself; an orphaned `creating` row (the manager restarted mid-boot) must not
+ * be left there, since nothing else would ever move it and Rebuild refuses to touch a booting row.
+ */
+export function reconcilesFromDocker(
+	row: Pick<InstanceRow, 'id' | 'status'>,
+	building: ReadonlySet<string>
+): boolean {
+	if (row.status === 'error') return false;
+	return row.status !== 'creating' || !building.has(row.id);
+}
 
 function live(id: string): LiveState {
 	let state = registry.get(id);
@@ -333,6 +354,9 @@ function failInstance(id: string, err: unknown): void {
 }
 
 async function boot(row: InstanceRow, opts: { branch?: string } = {}): Promise<void> {
+	// Claims the row for the copy/clone phase, which runs ahead of the build; provision() re-claims
+	// it and owns the release from there.
+	inFlight.add(row.id);
 	try {
 		const sourceStart = Date.now();
 		if (isRepoUrl(row.source_path)) {
@@ -349,6 +373,7 @@ async function boot(row: InstanceRow, opts: { branch?: string } = {}): Promise<v
 		}
 		await seedDeclaredPorts(row);
 	} catch (err) {
+		inFlight.delete(row.id);
 		failInstance(row.id, err);
 		return;
 	}
@@ -396,6 +421,9 @@ async function rescueHijackedPort(row: InstanceRow): Promise<void> {
 
 /** Never re-copies the workspace, so in-container edits survive a rebuild. */
 async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Promise<void> {
+	// Held so the `catch` can release the container-side launcher's wait on a boot that dies.
+	let containerId: string | null = null;
+	inFlight.add(row.id);
 	try {
 		// On a rebuild `devcontainer up --remove-existing-container` discards the old container's
 		// ~/.claude, so drain it first; a first boot has no container_id and skips straight past.
@@ -437,11 +465,13 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			);
 		}
 
+		containerId = result.containerId;
+		// The row deliberately stays `creating` until the injections below finish: `running` is what
+		// opens the IDE/terminal to the user, and a container whose setup is still landing isn't ready.
 		updateInstance(row.id, {
 			container_id: result.containerId,
 			remote_workspace_folder: result.remoteWorkspaceFolder ?? null,
 			remote_user: result.remoteUser ?? null,
-			status: 'running',
 			error: null
 		});
 
@@ -450,11 +480,6 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		row.container_id = result.containerId;
 		row.remote_workspace_folder = result.remoteWorkspaceFolder ?? null;
 		row.remote_user = result.remoteUser ?? null;
-		row.status = 'running';
-
-		// Start the health monitor now so the IDE mounts as soon as code-server answers,
-		// instead of after every injection plus a full reconcile/health poll cycle.
-		triggerReconcile();
 
 		const target = {
 			containerId: result.containerId,
@@ -478,20 +503,41 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		appendLog(row.id, `⏱ injections: ${elapsed(injectionsStart)}\n`);
 
 		// Unblocks the terminal launcher's wait; written even after ⚠s — its timeout is the fallback.
-		await writeContainerFile(target, { dir: '$HOME', name: INJECTIONS_DONE_FILE }, 'done\n').catch(
-			() => undefined
-		);
+		await writeInjectionsDone(row.id, target);
 
 		// postStartCommand ran before the injections above, and its launcher bails when the binary
 		// is missing — so a container whose build-time ttyd install failed got it too late to be
 		// started. No-ops (one accessibility probe) whenever postStart already brought the port up.
 		await relaunchSurface(row);
 
+		// Everything the instance needs is in place, so open it to the user: this is what lights up
+		// Open IDE/terminal, the proxy, and the health and log-capture monitors.
+		updateInstance(row.id, { status: 'running' });
+		row.status = 'running';
+
 		appendLog(row.id, `\n✓ Instance running — open it via the proxy at ${proxyPathFor(row.id)}\n`);
 		triggerReconcile();
 	} catch (err) {
+		// The launcher waits minutes for the sentinel, so a boot that will never write it must say so.
+		if (containerId)
+			await writeInjectionsDone(row.id, { containerId, remoteUser: row.remote_user });
 		failInstance(row.id, err);
+	} finally {
+		inFlight.delete(row.id);
 	}
+}
+
+/**
+ * `writeContainerFile` reports failure by return value rather than throwing, and a sentinel that
+ * never lands leaves the launcher waiting out its whole bound — so surface it in the boot log.
+ */
+async function writeInjectionsDone(id: string, target: ExecTarget): Promise<void> {
+	const res = await writeContainerFile(
+		target,
+		{ dir: '$HOME', name: INJECTIONS_DONE_FILE },
+		'done\n'
+	).catch((err: Error) => ({ ok: false, error: err.message }));
+	if (!res.ok) appendLog(id, `⚠ Could not mark setup complete in the container: ${res.error}\n`);
 }
 
 /** The first instance keeps the bare name; later collisions get a `#2`, `#3`, … suffix. */
@@ -563,10 +609,19 @@ export async function listInstances(): Promise<Instance[]> {
 	const branches = new Map<string, string | null>();
 	await Promise.all(
 		rows.map(async (row) => {
-			if (!row.container_id || row.status === 'creating' || row.status === 'error') return;
+			if (!row.container_id || !reconcilesFromDocker(row, inFlight)) return;
 			const running = await isRunning(row.container_id);
 			const next: InstanceStatus = running ? 'running' : 'stopped';
 			if (next !== row.status) {
+				// Only reachable for a `creating` row whose boot died with the manager, and its
+				// injections will never finish — so stop the container-side launcher waiting on them.
+				if (row.status === 'creating') {
+					appendLog(row.id, `\n⚠ Setup was interrupted — Rebuild to run it again\n`);
+					void writeInjectionsDone(row.id, {
+						containerId: row.container_id,
+						remoteUser: row.remote_user
+					});
+				}
 				updateInstance(row.id, { status: next });
 				row.status = next;
 			}
@@ -672,7 +727,10 @@ export function removeForwardedPort(id: string, containerPort: number): Instance
 export function rebuildInstance(id: string, opts: { noCache?: boolean } = {}): InstanceRow {
 	const row = getInstance(id);
 	if (!row) throw new Error('Instance not found');
-	if (row.status === 'creating') return row; // a build is already in flight
+	if (inFlight.has(id)) return row; // a build is already in flight
+	// Claimed before the broadcast below, which reconciles synchronously: an unclaimed `creating`
+	// row reads as orphaned, and reconcile would flip it straight back off `creating`.
+	inFlight.add(id);
 	updateInstance(id, { status: 'creating', error: null });
 	triggerReconcile();
 	const fresh = getInstance(id)!;
