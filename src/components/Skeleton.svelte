@@ -14,10 +14,12 @@
 	.skel {
 		display: inline-block;
 		height: 0.95em;
+		/* The centre stop has to out-lighten --rule-soft for the sweep to read as a
+		   highlight, which --bg-card does not do in dark. */
 		background: linear-gradient(
 			90deg,
 			var(--rule-soft) 25%,
-			var(--bg-card) 50%,
+			var(--skel-sheen) 50%,
 			var(--rule-soft) 75%
 		);
 		background-size: 200% 100%;

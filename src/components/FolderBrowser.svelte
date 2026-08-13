@@ -295,7 +295,7 @@
 	.overlay {
 		position: fixed;
 		inset: 0;
-		background: color-mix(in srgb, var(--ink) 50%, transparent);
+		background: var(--scrim);
 		display: grid;
 		place-items: center;
 		padding: 24px;
@@ -673,8 +673,8 @@
 	.warn code {
 		font-family: var(--font-mono);
 		font-size: 0.9em;
-		/* Intentional white glint to lift the code chip off the amber warn bg — not a palette token. */
-		background: rgba(255, 255, 255, 0.35);
+		/* A white glint lifts the chip off the amber warn bg; the dark band needs far less of it. */
+		background: var(--warn-chip);
 		border: 1px solid var(--warn-line);
 		padding: 0 5px;
 	}

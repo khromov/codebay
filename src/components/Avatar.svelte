@@ -199,8 +199,8 @@
 			),
 			radial-gradient(
 				circle at var(--bx) var(--by),
-				rgba(13, 14, 10, 0.85) 0%,
-				rgba(13, 14, 10, 0.4) 18%,
+				color-mix(in srgb, var(--screen-bg) 85%, transparent) 0%,
+				color-mix(in srgb, var(--screen-bg) 40%, transparent) 18%,
 				transparent 45%
 			);
 		/* Mask the rainbow conic into a ring around the press point. */

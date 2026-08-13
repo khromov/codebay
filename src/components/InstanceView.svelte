@@ -582,6 +582,8 @@
 			repeating-linear-gradient(0deg, var(--screen-line) 0 1px, transparent 1px 3px),
 			var(--screen-bg);
 		color: var(--screen-ink);
+		/* Phosphor bloom; --screen-glow is transparent in light, so this paints nothing there. */
+		text-shadow: 0 0 6px var(--screen-glow);
 		padding: 14px;
 		height: calc(100vh - 320px);
 		min-height: 360px;
