@@ -18,6 +18,7 @@
 	import BranchBox from './BranchBox.svelte';
 	import PortsBox from './PortsBox.svelte';
 	import StatusBadge from './StatusBadge.svelte';
+	import InstanceCard from './InstanceCard.svelte';
 	import ComponentDemo from './ui-showcase/ComponentDemo.svelte';
 	import type { Instance } from '../types.ts';
 
@@ -151,6 +152,36 @@
 
 	let branchName = $state('main');
 
+	// The dashboard's headline surface — it composes Avatar, StatusBadge, PortsBox,
+	// BranchBox and Button, so it's the one place their interplay is reviewable.
+	let cardStatus = $state<Instance['status']>('running');
+	let cardAttention = $state<Instance['attention']>('waiting');
+	let cardPending = $state<'' | 'start' | 'stop' | 'delete' | 'rebuild'>('');
+	let cardMode = $state<Instance['mode']>('ide');
+	let cardBranch = $state(true);
+	let cardEditing = $state(false);
+	let cardEditingName = $state('demo-instance');
+	const cardActions = ['', 'start', 'stop', 'delete', 'rebuild'] as const;
+	const demoInstance = $derived<Instance>({
+		id: 'demo',
+		name: 'demo-instance',
+		source_path: '/home/you/code/demo-instance',
+		workspace_path: '/home/you/.codebay/instances/demo',
+		host_port: 8001,
+		container_id: 'abc123',
+		remote_workspace_folder: '/workspaces/demo-instance',
+		status: cardStatus,
+		error: cardStatus === 'error' ? 'devcontainer up failed: exit code 1' : null,
+		created_at: 0,
+		image_source: 'local',
+		avatar: avatars[0]!.name,
+		mode: cardMode,
+		terminal_split: 0,
+		git_branch: cardBranch ? branchName : null,
+		attention: cardAttention,
+		forwarded_ports: demoPorts
+	});
+
 	const statuses: Instance['status'][] = ['creating', 'running', 'stopped', 'error'];
 	let badgeStatus = $state<Instance['status']>('error');
 </script>
@@ -202,6 +233,64 @@
 				{/each}
 			</div>
 		</details>
+
+		<ComponentDemo title="InstanceCard">
+			<!-- The card renders an <li>, and .card-grid mirrors the dashboard's own
+			     column so its width and hover lift match what ships. -->
+			<ul class="card-grid">
+				<InstanceCard
+					instance={demoInstance}
+					editing={cardEditing}
+					bind:editingName={cardEditingName}
+					pending={cardPending || null}
+					onact={(a) => toast(`${a} (demo)`)}
+					onstartrename={() => (cardEditing = true)}
+					oncommitrename={() => (cardEditing = false)}
+					oncancelrename={() => (cardEditing = false)}
+				/>
+			</ul>
+			{#snippet controls()}
+				<label>
+					<span>status</span>
+					<select bind:value={cardStatus}>
+						{#each statuses as s (s)}
+							<option value={s}>{s}</option>
+						{/each}
+					</select>
+				</label>
+				<label>
+					<span>attention</span>
+					<select bind:value={cardAttention}>
+						<option value={null}>none</option>
+						<option value="done">done</option>
+						<option value="waiting">waiting</option>
+					</select>
+				</label>
+				<label>
+					<span>pending (busy overlay)</span>
+					<select bind:value={cardPending}>
+						{#each cardActions as a (a)}
+							<option value={a}>{a || 'none'}</option>
+						{/each}
+					</select>
+				</label>
+				<label>
+					<span>mode</span>
+					<select bind:value={cardMode}>
+						<option value="ide">ide</option>
+						<option value="terminal">terminal</option>
+					</select>
+				</label>
+				<label class="inline">
+					<input type="checkbox" bind:checked={cardBranch} />
+					<span>git branch</span>
+				</label>
+				<label class="inline">
+					<input type="checkbox" bind:checked={cardEditing} />
+					<span>renaming</span>
+				</label>
+			{/snippet}
+		</ComponentDemo>
 
 		<ComponentDemo title="Avatar">
 			<Avatar name={avatarName} scale={avatarScale} art={avatarArt} />
@@ -476,6 +565,13 @@
 		height: 180px;
 		border: 1px solid var(--rule-soft);
 		overflow: hidden;
+	}
+	/* Matches the dashboard grid's column so the card previews at its real width. */
+	.card-grid {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		width: min(360px, 100%);
 	}
 	.badge-row {
 		display: flex;
