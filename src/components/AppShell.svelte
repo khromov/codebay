@@ -44,6 +44,8 @@
 	let loaded = $state(snapshot.length > 0);
 	const running = $derived(instances.filter((i) => i.status === 'running'));
 
+	// Seeded from the SSR snapshot like `instances` above — the live stream overwrites it.
+	// svelte-ignore state_referenced_locally
 	let attention = $state<Record<string, 'done' | 'waiting' | null>>(
 		Object.fromEntries(snapshot.map((i) => [i.id, i.attention]))
 	);
