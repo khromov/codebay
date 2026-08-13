@@ -303,7 +303,12 @@
 	<div class="panes" class:hidden={!onIde}>
 		{#each running as inst (inst.id)}
 			{#if visited.has(inst.id)}
-				<div class="pane" class:active={inst.id === active}>
+				<div
+					class="pane"
+					class:active={inst.id === active}
+					role="tabpanel"
+					aria-labelledby="tab-{inst.id}"
+				>
 					{#if mountable(inst.id)}
 						{#if inst.mode === 'terminal'}
 							<TerminalSplit
