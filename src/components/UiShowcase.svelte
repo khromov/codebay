@@ -18,57 +18,95 @@
 	import PortsBox from './PortsBox.svelte';
 	import StatusBadge from './StatusBadge.svelte';
 	import ComponentDemo from './ui-showcase/ComponentDemo.svelte';
+	import ThemePicker from './ThemePicker.svelte';
+	import Skeleton from './Skeleton.svelte';
+	import InstanceCard from './InstanceCard.svelte';
+	import IdeBar from './IdeBar.svelte';
+	import FolderBrowser from './FolderBrowser.svelte';
 	import type { Instance } from '../types.ts';
 
-	// The swatch fill reads var(--token) so it auto-syncs with shell.html; `hex` is
-	// only a label and always shows the light-theme value.
-	const palette: { group: string; swatches: { token: string; hex: string; border?: boolean }[] }[] =
-		[
-			{
-				group: 'Surfaces',
-				swatches: [
-					{ token: '--bg', hex: '#d7d8d2', border: true },
-					{ token: '--bg-card', hex: '#e7e8e2', border: true },
-					{ token: '--screen-bg', hex: '#0d0e0a' }
-				]
-			},
-			{
-				group: 'Ink / text',
-				swatches: [
-					{ token: '--ink', hex: '#14150f' },
-					{ token: '--ink-soft', hex: '#45463e' },
-					{ token: '--ink-faint', hex: '#7d7e74' }
-				]
-			},
-			{
-				group: 'Rules',
-				swatches: [
-					{ token: '--rule', hex: '#20211a' },
-					{ token: '--rule-soft', hex: '#b9bab2', border: true }
-				]
-			},
-			{
-				group: 'Semantic',
-				swatches: [
-					{ token: '--warn-bg', hex: '#e4d98f', border: true },
-					{ token: '--warn-line', hex: '#9c8729' },
-					{ token: '--warn-ink', hex: '#463b08' },
-					{ token: '--ok-bg', hex: '#8fbf6e' },
-					{ token: '--ok-line', hex: '#4c7a2e' },
-					{ token: '--ok-ink', hex: '#1c3110' },
-					{ token: '--danger', hex: '#b23a2e' },
-					{ token: '--danger-soft', hex: '#e3c6c1', border: true },
-					{ token: '--info', hex: '#388bfd' }
-				]
-			},
-			{
-				group: 'Attention',
-				swatches: [
-					{ token: '--attn-done', hex: '#22c55e' },
-					{ token: '--attn-waiting', hex: '#f59e0b' }
-				]
+	const palette: { group: string; tokens: string[] }[] = [
+		{ group: 'Surfaces', tokens: ['--bg', '--bg-card', '--slab', '--slab-ink'] },
+		{ group: 'Ink / text', tokens: ['--ink', '--ink-soft', '--ink-faint', '--led-gray'] },
+		{
+			group: 'Structure',
+			tokens: [
+				'--edge',
+				'--shadow',
+				'--rule',
+				'--rule-soft',
+				'--scrim',
+				'--grid-line',
+				'--bloom',
+				'--skel-sheen'
+			]
+		},
+		{
+			group: 'Semantic',
+			tokens: [
+				'--warn-bg',
+				'--warn-line',
+				'--warn-ink',
+				'--warn-chip',
+				'--ok-bg',
+				'--ok-line',
+				'--ok-ink',
+				'--danger',
+				'--danger-soft',
+				'--info'
+			]
+		},
+		{ group: 'Attention', tokens: ['--attn-done', '--attn-waiting', '--switch-on-bg'] },
+		{
+			group: 'Console',
+			tokens: ['--screen-bg', '--screen-ink', '--screen-line', '--screen-glow']
+		}
+	];
+
+	// getPropertyValue hands back the literal `light-dark(a, b)` text, so the only way to
+	// read what a token actually resolves to is to let an element compute it.
+	let probe = $state<HTMLDivElement | null>(null);
+	let resolved = $state<Record<string, string>>({});
+
+	function toHex(rgb: string): string {
+		const n = rgb.match(/[\d.]+/g)?.map(Number);
+		if (!n || n.length < 3) return rgb;
+		if (n.length > 3 && n[3] === 0) return 'transparent';
+		const hex = n
+			.slice(0, 3)
+			.map((c) => Math.round(c).toString(16).padStart(2, '0'))
+			.join('');
+		return n.length > 3 && n[3]! < 1 ? `#${hex} ${Math.round(n[3]! * 100)}%` : `#${hex}`;
+	}
+
+	function readPalette() {
+		if (!probe) return;
+		const next: Record<string, string> = {};
+		for (const { tokens } of palette) {
+			for (const token of tokens) {
+				probe.style.color = `var(${token})`;
+				next[token] = toHex(getComputedStyle(probe).color);
 			}
-		];
+		}
+		probe.style.color = '';
+		resolved = next;
+	}
+
+	$effect(() => {
+		readPalette();
+		// Explicit switches stamp data-theme; auto mode changes only show up via the media query.
+		const observer = new MutationObserver(readPalette);
+		observer.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ['data-theme']
+		});
+		const media = window.matchMedia('(prefers-color-scheme: dark)');
+		media.addEventListener('change', readPalette);
+		return () => {
+			observer.disconnect();
+			media.removeEventListener('change', readPalette);
+		};
+	});
 
 	let avatarScale = $state(8);
 	let avatarName = $state('demo-instance');
@@ -140,6 +178,58 @@
 
 	const statuses: Instance['status'][] = ['creating', 'running', 'stopped', 'error'];
 	let badgeStatus = $state<Instance['status']>('error');
+
+	// Fabricated rows: without a Docker daemon there is no real instance to render, and
+	// the card, the tab strip and the folder picker are unreachable from the dashboard.
+	function demoInstance(over: Partial<Instance> = {}): Instance {
+		return {
+			id: 'demo-1',
+			name: 'demo-instance',
+			source_path: '/home/you/projects/demo',
+			workspace_path: '/data/instances/demo-1',
+			host_port: 8001,
+			container_id: 'c0ffee123456',
+			remote_workspace_folder: '/workspaces/demo',
+			status: 'running',
+			error: null,
+			created_at: 0,
+			image_source: 'local',
+			avatar: avatars[0]!.name,
+			mode: 'ide',
+			terminal_split: 0,
+			git_branch: 'main',
+			attention: null,
+			forwarded_ports: [{ container_port: 3000, host_port: 8001, open: true }],
+			...over
+		};
+	}
+
+	let cardStatus = $state<Instance['status']>('running');
+	let cardAttention = $state<'done' | 'waiting' | null>(null);
+	let cardPending = $state(false);
+	let cardEditing = $state(false);
+	let cardEditingName = $state('demo-instance');
+	const demoCard = $derived(
+		demoInstance({
+			status: cardStatus,
+			attention: cardAttention,
+			error: cardStatus === 'error' ? 'devcontainer up failed: exit 1' : null
+		})
+	);
+
+	let ideActive = $state('demo-1');
+	let ideEditingName = $state('');
+	let ideAttention = $state<Record<string, 'done' | 'waiting' | null>>({
+		'demo-1': null,
+		'demo-2': 'waiting'
+	});
+	const demoTabs = [
+		demoInstance(),
+		demoInstance({ id: 'demo-2', name: 'api-service', avatar: avatars[1]!.name, mode: 'terminal' })
+	];
+
+	let pickerOpen = $state(false);
+	let skelVariant = $state<'text' | 'pill' | 'wide'>('text');
 </script>
 
 <AppToaster />
@@ -167,16 +257,17 @@
 				<span class="palette-hint">Design tokens — tap to expand</span>
 			</summary>
 			<div class="palette">
-				{#each palette as { group, swatches } (group)}
+				<div bind:this={probe} class="probe" aria-hidden="true"></div>
+				{#each palette as { group, tokens } (group)}
 					<div class="swatch-group">
 						<h3>{group}</h3>
 						<div class="swatches">
-							{#each swatches as { token, hex, border } (token)}
+							{#each tokens as token (token)}
 								<figure class="swatch">
-									<div class="chip" class:bordered={border} style="background: var({token});"></div>
+									<div class="chip bordered" style="background: var({token});"></div>
 									<figcaption>
 										<code>{token}</code>
-										<span>{hex}</span>
+										<span>{resolved[token] ?? '…'}</span>
 									</figcaption>
 								</figure>
 							{/each}
@@ -378,6 +469,111 @@
 		<ComponentDemo title="SettingsCog" note="No props — links to /settings.">
 			<SettingsCog />
 		</ComponentDemo>
+
+		<ComponentDemo title="ThemePicker" note="Switches the whole page — the palette above follows.">
+			<ThemePicker />
+		</ComponentDemo>
+
+		<ComponentDemo title="Skeleton" note="The sweep must read as a highlight in both themes.">
+			<div class="skel-stack">
+				<Skeleton variant={skelVariant} />
+				<Skeleton variant={skelVariant} width="60%" />
+			</div>
+			{#snippet controls()}
+				<label>
+					<span>variant</span>
+					<select bind:value={skelVariant}>
+						<option value="text">text</option>
+						<option value="pill">pill</option>
+						<option value="wide">wide</option>
+					</select>
+				</label>
+			{/snippet}
+		</ComponentDemo>
+
+		<ComponentDemo title="Toast" note="Bar and icon colours come from AppToaster.">
+			<div class="badge-row">
+				<Button size="sm" onclick={() => toast.success('Instance created')}>success</Button>
+				<Button size="sm" onclick={() => toast.error('devcontainer up failed')}>error</Button>
+				<Button size="sm" ghost onclick={() => toast('Copied to clipboard')}>blank</Button>
+			</div>
+		</ComponentDemo>
+
+		<ComponentDemo title="InstanceCard" note="Hover to raise the offset shadow.">
+			<ul class="card-host">
+				<InstanceCard
+					instance={demoCard}
+					editing={cardEditing}
+					bind:editingName={cardEditingName}
+					pending={cardPending ? 'rebuild' : null}
+					onact={(a) => toast(`${a} (demo)`)}
+					onstartrename={() => (cardEditing = true)}
+					oncommitrename={() => (cardEditing = false)}
+					oncancelrename={() => (cardEditing = false)}
+				/>
+			</ul>
+			{#snippet controls()}
+				<label>
+					<span>status</span>
+					<select bind:value={cardStatus}>
+						{#each statuses as s (s)}
+							<option value={s}>{s}</option>
+						{/each}
+					</select>
+				</label>
+				<label>
+					<span>attention</span>
+					<select bind:value={cardAttention}>
+						<option value={null}>none</option>
+						<option value="done">done</option>
+						<option value="waiting">waiting</option>
+					</select>
+				</label>
+				<label><input type="checkbox" bind:checked={cardPending} /><span>busy</span></label>
+				<label><input type="checkbox" bind:checked={cardEditing} /><span>renaming</span></label>
+			{/snippet}
+		</ComponentDemo>
+
+		<ComponentDemo title="IdeBar" note="The active tab is a slab; the second tab pulses.">
+			<IdeBar
+				running={demoTabs}
+				active={ideActive}
+				attention={ideAttention}
+				editingId={null}
+				bind:editingName={ideEditingName}
+				onreload={() => toast('reload (demo)')}
+				onselect={(id) => (ideActive = id)}
+				onstartrename={() => {}}
+				oncommitrename={() => {}}
+				oncancelrename={() => {}}
+			/>
+			{#snippet controls()}
+				<label>
+					<span>tab 2</span>
+					<select bind:value={ideAttention['demo-2']}>
+						<option value={null}>none</option>
+						<option value="done">done</option>
+						<option value="waiting">waiting</option>
+					</select>
+				</label>
+			{/snippet}
+		</ComponentDemo>
+
+		<ComponentDemo
+			title="FolderBrowser"
+			note="Modal, scrim, warn strip — unreachable without Docker."
+		>
+			<Button size="sm" onclick={() => (pickerOpen = true)}>Open picker</Button>
+			{#if pickerOpen}
+				<FolderBrowser
+					onpick={(source) => {
+						pickerOpen = false;
+						toast(`picked ${source}`);
+					}}
+					onclose={() => (pickerOpen = false)}
+				/>
+			{/if}
+		</ComponentDemo>
 	</div>
 </main>
 
@@ -548,6 +744,26 @@
 		display: flex;
 		flex-direction: column;
 		gap: 5px;
+	}
+	.skel-stack {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		width: 100%;
+	}
+	/* InstanceCard is an <li>; the dashboard's own grid is not in scope here. */
+	.card-host {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		width: 100%;
+	}
+	/* Exists only to be read by getComputedStyle, never to be seen. */
+	.probe {
+		position: absolute;
+		width: 0;
+		height: 0;
+		visibility: hidden;
 	}
 	.swatch .chip {
 		height: 44px;
