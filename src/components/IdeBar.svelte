@@ -100,23 +100,6 @@
 	$effect(() => {
 		tabEls[active]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 	});
-
-	// Only fires while the shell chrome has focus — a focused code-server iframe
-	// swallows keydown before it ever reaches this document.
-	$effect(() => {
-		function onKeydown(e: KeyboardEvent) {
-			if (!e.altKey || e.ctrlKey || e.metaKey || editingId) return;
-			// `code`, not `key`: Alt+digit emits punctuation on macOS layouts.
-			const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
-			if (!digit) return;
-			const next = nextTabIndex(activeIndex, digit, running.length);
-			if (next === null) return;
-			e.preventDefault();
-			select(next);
-		}
-		window.addEventListener('keydown', onKeydown);
-		return () => window.removeEventListener('keydown', onKeydown);
-	});
 </script>
 
 <AppBar>

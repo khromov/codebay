@@ -457,7 +457,8 @@
 			</div>
 			<p class="demo-hint">
 				Click to select, double-click to rename. Arrow keys / Home / End move between tabs once one
-				has focus; Alt+1–9 jumps directly (9 = last).
+				has focus. The Alt+1–9 jump lives in AppShell rather than here, since it also installs
+				itself into the editor iframes — so it is inert in this demo.
 			</p>
 			{#snippet controls()}
 				<label>
