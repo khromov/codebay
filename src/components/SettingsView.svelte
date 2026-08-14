@@ -4,6 +4,7 @@
 	import Power from '@lucide/svelte/icons/power';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import Volume2 from '@lucide/svelte/icons/volume-2';
+	import Keyboard from '@lucide/svelte/icons/keyboard';
 	import PawPrint from '@lucide/svelte/icons/paw-print';
 	import SunMoon from '@lucide/svelte/icons/sun-moon';
 	import ThemePicker from './ThemePicker.svelte';
@@ -27,7 +28,12 @@
 	import { flushSync } from 'svelte';
 	import { enhance } from 'mochi-framework';
 	import type { MochiEnhanceOptions } from 'mochi-framework';
-	import { soundEnabled, setSoundEnabled } from '../settings.ts';
+	import {
+		soundEnabled,
+		setSoundEnabled,
+		tabShortcutsEnabled,
+		setTabShortcutsEnabled
+	} from '../settings.ts';
 	import { playChime, unlockAudio } from '../sound.ts';
 	import Button from './Button.svelte';
 	import CoinButton from './CoinButton.svelte';
@@ -133,6 +139,7 @@
 
 	// Defaults to on during SSR, where localStorage doesn't exist.
 	let sound = $state(soundEnabled());
+	let tabShortcuts = $state(tabShortcutsEnabled());
 
 	// DB-backed, so it initializes from the prop. Undefined is the off state — the header keeps its box logo.
 	// svelte-ignore state_referenced_locally
@@ -778,6 +785,11 @@
 		// A toggle is a user gesture — unlock audio and preview when enabling.
 		unlockAudio();
 		if (on) playChime('done');
+	}
+
+	function toggleTabShortcuts(on: boolean) {
+		tabShortcuts = on;
+		setTabShortcutsEnabled(on);
 	}
 
 	// State is object-shaped (the chosen sprite), so this can't reuse the boolean `toggleOpts`.
@@ -1974,6 +1986,29 @@
 						type="checkbox"
 						checked={sound}
 						onchange={(e) => toggleSound(e.currentTarget.checked)}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</div>
+		</section>
+
+		<section class="card">
+			<div class="row">
+				<div class="label">
+					<Keyboard size={20} />
+					<div class="text">
+						<div class="name">Tab keyboard shortcuts</div>
+						<div class="desc">
+							Jump between open instance tabs with <code>Alt</code>+<code>1</code>–<code>9</code> (9 is
+							always the last tab). Turn off to leave those keystrokes to the editor.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						checked={tabShortcuts}
+						onchange={(e) => toggleTabShortcuts(e.currentTarget.checked)}
 					/>
 					<span class="track"><span class="thumb"></span></span>
 				</label>
