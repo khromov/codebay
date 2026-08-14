@@ -14,7 +14,7 @@
 			"onAutoForward": "notify"
 		}
 	},
-	"postCreateCommand": "bun install",
+	"postCreateCommand": "bun install && sudo bash .devcontainer/install-chrome.sh",
 	"customizations": {
 		"vscode": {
 			"extensions": ["svelte.svelte-vscode", "dbaeumer.vscode-eslint", "esbenp.prettier-vscode"],
