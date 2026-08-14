@@ -440,6 +440,9 @@
 		height: 100%;
 		border: 0;
 		display: block;
+		/* An embedded document takes its prefers-color-scheme from the embedder, so without this
+		   Codebay's own light theme makes code-server's startup theme resolve light. */
+		color-scheme: dark;
 	}
 	.empty {
 		position: absolute;

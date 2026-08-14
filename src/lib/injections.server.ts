@@ -8,6 +8,7 @@ import { gitIdentity } from '../container-injections/git-identity.ts';
 import { claudeCodeCredentials } from '../container-injections/claude-code-credentials.ts';
 import { claudeCodeCustom } from '../container-injections/claude-code-custom.ts';
 import { claudeCodeIdeExtension } from '../container-injections/claude-code-ide-extension.ts';
+import { codeServerDark } from '../container-injections/code-server-dark.ts';
 import { claudeCodeInstall } from '../container-injections/claude-code-install.ts';
 import { claudeCodeUpdate } from '../container-injections/claude-code-update.ts';
 import { claudeCodeModels } from '../container-injections/claude-code-models.ts';
@@ -69,8 +70,9 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 			claudeEffortLevel
 		],
 		// git-identity needs stage 1's safe.directory; ttyd shares the apt/dpkg lock with tmux and
-		// the /usr/local/bin symlink with claude-code-install, so it trails both.
-		[gitIdentity, attentionHooks, claudeCodeModels, ttyd, claudeCodeUpdate],
+		// the /usr/local/bin symlink with claude-code-install, so it trails both. code-server-dark
+		// drops the extension cache, so it must not run while stage 1 is still installing into it.
+		[gitIdentity, attentionHooks, claudeCodeModels, ttyd, claudeCodeUpdate, codeServerDark],
 		[githubCredentials, claudeStatusline, claudePermissionMode],
 		[claudeModel, claudeAliases],
 		// claude-trust edits ~/.claude.json, which the stage-1 Claude slot also writes.

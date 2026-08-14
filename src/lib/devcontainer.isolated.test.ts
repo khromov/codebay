@@ -257,11 +257,15 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		expect(readSettings()['security.workspace.trust.enabled']).toBe(false);
 	});
 
-	test('pins a dark theme and disables auto color-scheme detection', async () => {
+	// Detection must stay ON: with it off, VS Code Web's pre-extension paint skips the preferred
+	// scheme entirely and falls back to a hardcoded light theme. Both preferred themes being dark
+	// is what makes leaving it on safe.
+	test('pins a dark theme on both preferred branches and leaves detection on', async () => {
 		await writeOverrideConfig(dir, 8001);
 		const settings = readSettings();
-		expect(settings['window.autoDetectColorScheme']).toBe(false);
+		expect(settings['window.autoDetectColorScheme']).toBe(true);
 		expect(settings['window.autoDetectHighContrast']).toBe(false);
+		expect(settings['workbench.colorTheme']).toBe('Default Dark Modern');
 		expect(settings['workbench.preferredDarkColorTheme']).toBe('Default Dark Modern');
 		expect(settings['workbench.preferredLightColorTheme']).toBe('Default Dark Modern');
 	});
