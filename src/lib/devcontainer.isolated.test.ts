@@ -542,18 +542,27 @@ describe('writeOverrideConfig separate config file', () => {
 		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
 		const original = '{\n  // project-owned\n  "image": "ships/own:1",\n}\n';
 		writeFileSync(join(dir, '.devcontainer', 'devcontainer.json'), original);
-		const { configPath } = await writeOverrideConfig(dir, 8001);
+		const { configPath, overrideConfigPath } = await writeOverrideConfig(dir, 8001);
 		expect(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8')).toBe(original);
-		expect(configPath).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
-		const merged = JSON.parse(readFileSync(configPath, 'utf8'));
+		expect(overrideConfigPath).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
+		// Only the project's own config may reach --config; the CLI rejects any other basename.
+		expect(configPath).toBe(join(dir, '.devcontainer', 'devcontainer.json'));
+		const merged = JSON.parse(readFileSync(overrideConfigPath, 'utf8'));
 		expect(merged.image).toBe('ships/own:1');
 		expect(merged.appPort).toEqual(['127.0.0.1:8001:8080']);
 	});
 
 	test('a config-less project gets only the codebay config, never a canonical one', async () => {
-		const { imageSource, configPath } = await writeOverrideConfig(dir, 8001, [], 'my/custom:42');
+		const { imageSource, configPath, overrideConfigPath } = await writeOverrideConfig(
+			dir,
+			8001,
+			[],
+			'my/custom:42'
+		);
 		expect(imageSource).toBe('my/custom:42');
-		expect(configPath).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
+		expect(overrideConfigPath).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
+		// Nothing for --config to point at; the CLI then bases resolution on `.devcontainer/` anyway.
+		expect(configPath).toBeNull();
 		expect(existsSync(join(dir, '.devcontainer', 'devcontainer.json'))).toBe(false);
 		expect(existsSync(join(dir, '.devcontainer.json'))).toBe(false);
 	});
@@ -585,17 +594,46 @@ describe('writeOverrideConfig separate config file', () => {
 		expect(overrideConfigPath(dir)).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
 	});
 
+	test('what goes to --config always has a filename the CLI accepts', async () => {
+		// The CLI tests --config against this exact regex and refuses to boot otherwise — which is
+		// why the Codebay-owned file rides --override-config instead of --config.
+		const accepted = /\/\.?devcontainer\.json$/;
+		const forms = [
+			['.devcontainer', 'devcontainer.json'],
+			['.devcontainer.json'],
+			['.devcontainer', 'app', 'devcontainer.json']
+		];
+		for (const form of forms) {
+			rmSync(dir, { recursive: true, force: true });
+			mkdirSync(join(dir, ...form.slice(0, -1)), { recursive: true });
+			writeFileSync(join(dir, ...form), '{}');
+			const { configPath, overrideConfigPath } = await writeOverrideConfig(dir, 8001);
+			expect(configPath).toMatch(accepted);
+			expect(overrideConfigPath).not.toMatch(accepted);
+		}
+	});
+
+	test('the flat form keeps both configs at the workspace root', async () => {
+		writeFileSync(join(dir, '.devcontainer.json'), JSON.stringify({ image: 'ships/own:1' }));
+		const { configPath, overrideConfigPath } = await writeOverrideConfig(dir, 8001);
+		expect(overrideConfigPath).toBe(join(dir, '.codebay.devcontainer.json'));
+		expect(configPath).toBe(join(dir, '.devcontainer.json'));
+	});
+
 	test('discovers the spec subfolder form and merges beside it', async () => {
 		mkdirSync(join(dir, '.devcontainer', 'app'), { recursive: true });
 		writeFileSync(
 			join(dir, '.devcontainer', 'app', 'devcontainer.json'),
 			JSON.stringify({ image: 'ships/own:1' })
 		);
-		const { imageSource, configPath } = await writeOverrideConfig(dir, 8001);
+		const { imageSource, configPath, overrideConfigPath } = await writeOverrideConfig(dir, 8001);
 		// Booting the default image here would silently override the project's declared one.
 		expect(imageSource).toBe('local');
-		expect(configPath).toBe(join(dir, '.devcontainer', 'app', 'codebay.devcontainer.json'));
-		const merged = JSON.parse(readFileSync(configPath, 'utf8'));
+		expect(overrideConfigPath).toBe(join(dir, '.devcontainer', 'app', 'codebay.devcontainer.json'));
+		// The CLI's own lookup skips the subfolder form, so --config must name it explicitly or the
+		// `./codebay-tmux` paths below would resolve against `.devcontainer/` instead.
+		expect(configPath).toBe(join(dir, '.devcontainer', 'app', 'devcontainer.json'));
+		const merged = JSON.parse(readFileSync(overrideConfigPath, 'utf8'));
 		expect(merged.image).toBe('ships/own:1');
 		// Features stage beside the subfolder config — the CLI only promises `./`-descendant paths.
 		expect(merged.features['./codebay-tmux']).toEqual({});
@@ -995,11 +1033,14 @@ describe('devcontainerUp args and env', () => {
 		expect(devcontainerUpArgs('/ws/dir', {})).not.toContain('--build-no-cache');
 	});
 
-	test('appends --config only when a config path is given', () => {
-		const configPath = '/ws/dir/.devcontainer/codebay.devcontainer.json';
-		const args = devcontainerUpArgs('/ws/dir', { configPath });
+	test('passes each config path under its own flag, and only when given', () => {
+		const configPath = '/ws/dir/.devcontainer/devcontainer.json';
+		const overrideConfigPath = '/ws/dir/.devcontainer/codebay.devcontainer.json';
+		const args = devcontainerUpArgs('/ws/dir', { configPath, overrideConfigPath });
 		expect(args[args.indexOf('--config') + 1]).toBe(configPath);
-		expect(devcontainerUpArgs('/ws/dir', {})).not.toContain('--config');
+		expect(args[args.indexOf('--override-config') + 1]).toBe(overrideConfigPath);
+		expect(devcontainerUpArgs('/ws/dir', { overrideConfigPath })).not.toContain('--config');
+		expect(devcontainerUpArgs('/ws/dir', {})).not.toContain('--override-config');
 	});
 
 	test('enables BuildKit as a default the caller environment can override', () => {

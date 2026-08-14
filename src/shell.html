@@ -57,6 +57,10 @@
 				--screen-ink: light-dark(#d8d9cf, #e8b055);
 				--screen-line: light-dark(rgba(255, 255, 255, 0.04), rgba(232, 176, 85, 0.05));
 				--attn-done: #22c55e;
+				/* The "live" LED on an inverted chip. Green reads as a lit indicator on
+		           light's near-black chip; on dark's amber one it clashes, so there it
+		           drops to the chip's own ink (matches --fill-ink). */
+				--live-dot: light-dark(#22c55e, #17130a);
 				--attn-waiting: light-dark(#f59e0b, #ff7a2f);
 				/* Softened in dark — a saturated blue is the one hue that fights the warm ground. */
 				--info: light-dark(#388bfd, #6c9fd8);

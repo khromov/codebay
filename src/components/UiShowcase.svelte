@@ -45,7 +45,10 @@
 				'--info'
 			]
 		},
-		{ group: 'Attention', tokens: ['--attn-done', '--attn-waiting', '--switch-on-bg'] }
+		{
+			group: 'Attention',
+			tokens: ['--attn-done', '--attn-waiting', '--live-dot', '--switch-on-bg']
+		}
 	];
 
 	const chips: Record<string, HTMLElement> = {};

@@ -456,7 +456,10 @@ export function findDevcontainerConfig(dir: string): string | null {
 const CODEBAY_CONFIG_NESTED = 'codebay.devcontainer.json';
 const CODEBAY_CONFIG_FLAT = '.codebay.devcontainer.json';
 
-/** Sits in the same directory as the project's own config so relative paths resolve identically. */
+/**
+ * Sits in the same directory as the project's own config, which is what `--config` points the CLI at:
+ * relative dockerfile/compose/feature paths resolve against that directory either way.
+ */
 export function overrideConfigPath(
 	workspaceDir: string,
 	canonical: string | null = findDevcontainerConfig(workspaceDir)
@@ -524,7 +527,7 @@ const HOST_GATEWAY_ARG = '--add-host=host.docker.internal:host-gateway';
 
 /**
  * Merges the project's config (read-only) into a Codebay-owned sibling file that `devcontainer up
- * --config` boots from, so the project's own devcontainer.json never shows as modified in git.
+ * --override-config` boots from, so the project's own devcontainer.json never shows as modified in git.
  */
 export async function writeOverrideConfig(
 	workspaceDir: string,
@@ -534,7 +537,7 @@ export async function writeOverrideConfig(
 	mode: InstanceMode = 'ide',
 	permissionMode: ClaudePermissionMode = 'default',
 	envVars: { name: string; value: string }[] = []
-): Promise<{ imageSource: string; configPath: string }> {
+): Promise<{ imageSource: string; configPath: string | null; overrideConfigPath: string }> {
 	const isTerminal = mode === 'terminal';
 	const canonical = findDevcontainerConfig(workspaceDir);
 	const target = overrideConfigPath(workspaceDir, canonical);
@@ -640,7 +643,7 @@ export async function writeOverrideConfig(
 
 	await writeLocalGitExclude(workspaceDir);
 
-	return { imageSource, configPath: target };
+	return { imageSource, configPath: canonical, overrideConfigPath: target };
 }
 
 /** `codebay-tmux` has been injected into every config this manager has ever written. */
@@ -902,10 +905,10 @@ export interface UpResult {
 	description?: string;
 }
 
-export function devcontainerUpArgs(
-	workspaceDir: string,
-	opts: { noCache?: boolean; configPath?: string } = {}
-) {
+/** `configPath` is the project's own config (`--config`), `overrideConfigPath` the Codebay-owned one. */
+type UpOptions = { noCache?: boolean; configPath?: string; overrideConfigPath?: string };
+
+export function devcontainerUpArgs(workspaceDir: string, opts: UpOptions = {}) {
 	const args = [
 		devcontainerBin(),
 		'up',
@@ -913,7 +916,10 @@ export function devcontainerUpArgs(
 		workspaceDir,
 		'--remove-existing-container'
 	];
+	// --config rejects any basename but devcontainer.json/.devcontainer.json, so the Codebay-owned
+	// file rides --override-config; --config only pins which path relative resolution is based on.
 	if (opts.configPath) args.push('--config', opts.configPath);
+	if (opts.overrideConfigPath) args.push('--override-config', opts.overrideConfigPath);
 	// Only takes effect because --remove-existing-container drops the container before the build.
 	if (opts.noCache) args.push('--build-no-cache');
 	return args;
@@ -931,7 +937,7 @@ export function devcontainerUpEnv(): Record<string, string | undefined> {
 export async function devcontainerUp(
 	workspaceDir: string,
 	onLog: (chunk: string) => void,
-	opts: { noCache?: boolean; configPath?: string } = {}
+	opts: UpOptions = {}
 ): Promise<UpResult> {
 	const proc = Bun.spawn(devcontainerUpArgs(workspaceDir, opts), {
 		cwd: workspaceDir,
