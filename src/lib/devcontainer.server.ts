@@ -124,12 +124,17 @@ const MANAGER_GIT_EXCLUDES = [
 const EXCLUDE_MARKER_START = '# >>> codebay (auto-generated) >>>';
 const EXCLUDE_MARKER_END = '# <<< codebay <<<';
 
-const CODE_SERVER_SETTINGS = {
+export const CODE_SERVER_SETTINGS = {
+	// Overwritten at boot by the code-server-dark injection with the id this build actually
+	// ships; the legacy label only has to carry a code-server old enough to still use it.
 	'workbench.colorTheme': 'Default Dark Modern',
-	// Stop VS Code re-resolving the theme from the OS/browser color scheme at runtime —
-	// that re-resolution (fired on focus/tab-switch) is what randomly flips the editor to
-	// light. Pinning both preferred themes to dark keeps either branch dark even if it does.
-	'window.autoDetectColorScheme': false,
+	// Counter-intuitive, and the opposite of what this file used to say: VS Code Web's
+	// pre-extension paint is `getPreferredColorScheme() ?? (isWeb ? LIGHT : DARK)`, and
+	// getPreferredColorScheme returns undefined unless detection is on — so turning detection
+	// OFF is what forced that first paint to light. On is only safe because both preferred
+	// themes below are the same dark theme, making either branch dark.
+	'window.autoDetectColorScheme': true,
+	// Left off so the high-contrast branch (which could resolve hcLight) stays unreachable.
 	'window.autoDetectHighContrast': false,
 	'workbench.preferredDarkColorTheme': 'Default Dark Modern',
 	'workbench.preferredLightColorTheme': 'Default Dark Modern',
@@ -241,10 +246,20 @@ const terminalTask = (permissionMode: ClaudePermissionMode) => ({
 	problemMatcher: []
 });
 
+const CODE_SERVER_USER_DIR = '~/.local/share/code-server/User';
+
+/**
+ * Seeds the file only when it's missing. `relaunchSurface` re-runs this launcher *after* the
+ * injections have rewritten the theme id to the one the installed build uses, so an unconditional
+ * copy would put the stale staged id back and re-arm the very cache mismatch this all exists to
+ * avoid. A rebuild always gets a fresh container, so the staged defaults still land on every build.
+ * `[ -f ]` rather than `cp -n`, which busybox coreutils don't reliably carry.
+ */
 const CODE_SERVER_APPLY_SETTINGS =
-	`mkdir -p ~/.local/share/code-server/User && ` +
+	`mkdir -p ${CODE_SERVER_USER_DIR}; ` +
+	`[ -f ${CODE_SERVER_USER_DIR}/settings.json ] || ` +
 	`cp -f \\"$PWD/.devcontainer/${CODE_SERVER_SETTINGS_FILE}\\" ` +
-	`~/.local/share/code-server/User/settings.json 2>/dev/null;`;
+	`${CODE_SERVER_USER_DIR}/settings.json 2>/dev/null;`;
 
 // Fully detached (redirects + </dev/null + &) because `devcontainer up` waits for postStart's
 // pipes to close — an attached download would keep the whole boot on the Open VSX critical path.
