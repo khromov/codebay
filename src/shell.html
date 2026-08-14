@@ -64,9 +64,9 @@
 				--attn-waiting: light-dark(#f59e0b, #ff7a2f);
 				/* Softened in dark — a saturated blue is the one hue that fights the warm ground. */
 				--info: light-dark(#388bfd, #6c9fd8);
-				/* The pixel matrix. 3.5% white over a near-black ground is invisible, so
+				/* The pixel matrix. 2.5% white over a near-black ground is invisible, so
 	           dark gets amber at double the alpha to read as a grid rather than noise. */
-				--grid-line: light-dark(rgba(0, 0, 0, 0.035), rgba(217, 150, 58, 0.07));
+				--grid-line: light-dark(rgba(0, 0, 0, 0.025), rgba(217, 150, 58, 0.05));
 				/* --attn-done at reduced opacity — reads correctly on both themes' track color. */
 				--switch-on-bg: rgba(34, 197, 94, 0.32);
 				/* The two dim levels, named so they stay consistent. Deliberately not
@@ -120,15 +120,26 @@
 			body {
 				margin: 0;
 				font-family: var(--font-sans);
-				/* Pale LCD panel with a faint pixel-grid matrix overlay. */
-				background:
-					repeating-linear-gradient(0deg, var(--grid-line) 0 1px, transparent 1px 3px),
-					repeating-linear-gradient(90deg, var(--grid-line) 0 1px, transparent 1px 3px), var(--bg);
+				background: var(--bg);
 				color: var(--ink);
 				font-size: 14px;
 				line-height: 1.55;
 				min-height: 100vh;
 				-webkit-font-smoothing: antialiased;
+			}
+			/* The faint pixel-grid matrix overlay lives on a viewport-fixed layer
+			   so it rasters once and is never re-tiled as the page scrolls. The 4px
+			   cell keeps the 1px lines sparse enough to avoid moiré against the
+			   physical pixel grid under fractional display scaling. */
+			body::before {
+				content: '';
+				position: fixed;
+				inset: 0;
+				z-index: -1;
+				pointer-events: none;
+				background:
+					repeating-linear-gradient(0deg, var(--grid-line) 0 1px, transparent 1px 4px),
+					repeating-linear-gradient(90deg, var(--grid-line) 0 1px, transparent 1px 4px);
 			}
 		</style>
 		{{mochi.head}} {{mochi.css}}
