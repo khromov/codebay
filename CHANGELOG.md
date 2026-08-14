@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/khromov/codebay/compare/codebay-v0.11.0...codebay-v0.11.1) (2026-08-14)
+
+
+### Bug Fixes
+
+* boot the Codebay-owned config via --override-config ([#145](https://github.com/khromov/codebay/issues/145)) ([934516e](https://github.com/khromov/codebay/commit/934516e730894d62041c9e1ae0ac9bbcbfe58671))
+
 ## [0.11.0](https://github.com/khromov/codebay/compare/codebay-v0.10.1...codebay-v0.11.0) (2026-08-14)
 
 
