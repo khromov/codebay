@@ -494,7 +494,8 @@
 		background: var(--fill);
 		color: var(--fill-ink);
 	}
-	.recent-pick:hover .recent-path {
+	.recent-pick:hover .recent-path,
+	.recent-pick:hover .icon {
 		color: var(--fill-ink);
 	}
 	.recent-text {

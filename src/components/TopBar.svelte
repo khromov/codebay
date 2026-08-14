@@ -66,7 +66,7 @@
 				{creating ? 'Creating…' : 'New instance'}
 			</Button>
 			<Button
-				variant="primary"
+				variant="default"
 				size="sm"
 				square
 				icon={altMode === 'terminal' ? Terminal : LayoutTemplate}
