@@ -9,6 +9,7 @@
 	import IdeLoader from './IdeLoader.svelte';
 	import TerminalSplit from './TerminalSplit.svelte';
 	import { playChime, unlockAudio } from '../sound.ts';
+	import { tabShortcutsEnabled } from '../settings.ts';
 	import { liveStream } from '../live.ts';
 	import { apiPost } from '../api.ts';
 	import { syncTheme } from '../theme.ts';
@@ -189,7 +190,7 @@
 	// for its own tabs and can't be intercepted, and Ctrl+Alt is AltGr on many European
 	// layouts, so it would collide with typing punctuation.
 	function jumpToTab(e: KeyboardEvent, fromFrame: boolean) {
-		if (!e.altKey || e.ctrlKey || e.metaKey || editingId) return;
+		if (!e.altKey || e.ctrlKey || e.metaKey || editingId || !tabShortcutsEnabled()) return;
 		// `code`, not `key`: Alt+digit emits punctuation on macOS layouts.
 		const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
 		if (!digit) return;
