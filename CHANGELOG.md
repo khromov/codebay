@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/khromov/codebay/compare/codebay-v0.11.1...codebay-v0.12.0) (2026-08-14)
+
+
+### Features
+
+* make tab keyboard shortcuts toggleable in settings ([#149](https://github.com/khromov/codebay/issues/149)) ([f0579f3](https://github.com/khromov/codebay/commit/f0579f36ba524ae4d6880515539cf77c30ffac1e))
+
+
+### Performance Improvements
+
+* render the grid overlay on a fixed layer and cut moiré ([#147](https://github.com/khromov/codebay/issues/147)) ([c0c64b0](https://github.com/khromov/codebay/commit/c0c64b051e02a7d15f21ec038aac78cd37a62647))
+
 ## [0.11.1](https://github.com/khromov/codebay/compare/codebay-v0.11.0...codebay-v0.11.1) (2026-08-14)
 
 
