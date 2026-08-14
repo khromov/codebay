@@ -80,6 +80,13 @@ export function isInstanceFilter(v: unknown): v is InstanceFilter {
 	return v === 'all' || v === 'active' || v === 'stopped';
 }
 
+/** Colour-scheme choice; `'auto'` follows the browser's `prefers-color-scheme`. */
+export type Theme = 'light' | 'dark' | 'auto';
+
+export function isTheme(v: unknown): v is Theme {
+	return v === 'light' || v === 'dark' || v === 'auto';
+}
+
 /** Live only — never persisted, so it always reflects the most recent probe. */
 export interface InstanceHealth {
 	containerRunning: boolean;

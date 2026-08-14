@@ -11,6 +11,7 @@
 	import { enhance } from 'mochi-framework';
 	import type { MochiEnhanceOptions } from 'mochi-framework';
 	import { onBackLinkClick, installPopupBackTrap } from '../lib/popup-nav.ts';
+	import { syncTheme } from '../theme.ts';
 	import { tick } from 'svelte';
 
 	let { id, injectionChecks = 0 }: { id: string; injectionChecks?: number } = $props();
@@ -61,6 +62,8 @@
 			} else if (msg.type === 'health' && msg.data.id === id) {
 				health = msg.data.health;
 				lastFetchedAt = Date.now();
+			} else if (msg.type === 'theme') {
+				syncTheme(msg.data.value);
 			}
 		})
 	);

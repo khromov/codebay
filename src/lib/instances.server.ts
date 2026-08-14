@@ -75,7 +75,8 @@ import {
 	normalizeMode,
 	type Instance,
 	type InstanceFilter,
-	type InstanceHealth
+	type InstanceHealth,
+	type Theme
 } from '../types.ts';
 
 /** The sprite a row shows: its persisted choice, or the id hash for rows created before avatars were stored. */
@@ -191,7 +192,9 @@ export type StreamEvent =
 	// The dashboard run-state filter, so a change in one tab propagates to every open client.
 	| { type: 'filter'; data: { value: InstanceFilter } }
 	// The global default editor surface, so the picker's toggle follows a settings change.
-	| { type: 'default-mode'; data: { mode: InstanceMode } };
+	| { type: 'default-mode'; data: { mode: InstanceMode } }
+	// The colour scheme, so a change in the settings popup repaints the window behind it.
+	| { type: 'theme'; data: { value: Theme } };
 
 interface StreamHub {
 	sockets: Set<ServerWebSocket<unknown>>;
@@ -250,6 +253,14 @@ export function broadcastFilter(value: InstanceFilter): void {
 /** Settings opens in its own popup, so the dashboard behind it needs the new default pushed. */
 export function broadcastDefaultMode(mode: InstanceMode): void {
 	broadcast({ type: 'default-mode', data: { mode } });
+}
+
+/**
+ * Same popup problem for the theme — but it lives in a cookie, not `options`, so there's
+ * nothing to seed a reconnecting client with: its own cookie already drives the SSR paint.
+ */
+export function broadcastTheme(value: Theme): void {
+	broadcast({ type: 'theme', data: { value } });
 }
 
 async function reconcileInstances(force = false): Promise<void> {

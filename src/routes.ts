@@ -35,6 +35,7 @@ import {
 	broadcastDefaultMode,
 	broadcastFilter,
 	broadcastPet,
+	broadcastTheme,
 	createInstance,
 	getDefaultMode,
 	deleteAllInstances,
@@ -68,6 +69,7 @@ import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
 import {
 	isInstanceFilter,
+	isTheme,
 	normalizeMode,
 	normalizePermissionMode,
 	normalizeEffortLevel,
@@ -511,6 +513,16 @@ export const routes: Record<string, MochiRouteValue> = {
 		if (!body || !isInstanceFilter(body.value)) return apiError(400, 'Invalid filter');
 		setOption('instance_filter', body.value);
 		broadcastFilter(body.value);
+		return json({ value: body.value });
+	}),
+
+	// The cookie the picker just wrote is already shared browser-wide; this only tells
+	// the tabs behind the settings popup to repaint without a reload.
+	'/api/settings/theme': Mochi.api(async ({ method, request }) => {
+		if (method !== 'POST') return apiError(405, 'Method Not Allowed');
+		const body = (await request.json().catch(() => null)) as { value?: string } | null;
+		if (!body || !isTheme(body.value)) return apiError(400, 'Invalid theme');
+		broadcastTheme(body.value);
 		return json({ value: body.value });
 	}),
 

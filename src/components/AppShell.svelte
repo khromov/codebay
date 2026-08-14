@@ -11,6 +11,7 @@
 	import { playChime, unlockAudio } from '../sound.ts';
 	import { liveStream } from '../live.ts';
 	import { apiPost } from '../api.ts';
+	import { syncTheme } from '../theme.ts';
 	import toast, { Toaster } from 'svelte-french-toast';
 	import { TOAST_OPTIONS } from '../toast.ts';
 
@@ -267,6 +268,10 @@
 				}
 				if (msg.type === 'default-mode') {
 					livePreflight = { ...livePreflight, defaultMode: msg.data.mode };
+					return;
+				}
+				if (msg.type === 'theme') {
+					syncTheme(msg.data.value);
 					return;
 				}
 				if (msg.type === 'health') {

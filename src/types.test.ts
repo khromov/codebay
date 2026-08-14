@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	claudePermissionFlags,
 	isInstanceFilter,
+	isTheme,
 	normalizeEffortLevel,
 	normalizePermissionMode
 } from './types.ts';
@@ -16,6 +17,20 @@ describe('isInstanceFilter', () => {
 	test('rejects anything else', () => {
 		for (const v of ['', 'ALL', 'running', 'none', null, undefined, 0, {}]) {
 			expect(isInstanceFilter(v)).toBe(false);
+		}
+	});
+});
+
+describe('isTheme', () => {
+	test('accepts the three valid tokens', () => {
+		expect(isTheme('light')).toBe(true);
+		expect(isTheme('dark')).toBe(true);
+		expect(isTheme('auto')).toBe(true);
+	});
+
+	test('rejects anything else', () => {
+		for (const v of ['', 'DARK', 'system', null, undefined, 0, {}]) {
+			expect(isTheme(v)).toBe(false);
 		}
 	});
 });
