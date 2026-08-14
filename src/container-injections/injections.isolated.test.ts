@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { injections, resolveInjections, resolveInjectionStages } from '../lib/injections.server.ts';
@@ -34,10 +34,9 @@ import {
 	VERSION_RE
 } from './claude-code-update.ts';
 import {
-	checkScript,
+	CHECK_SCRIPT as DARK_CHECK_SCRIPT,
 	darkenThemeManifest,
-	FALLBACK_DARK_THEME,
-	pickDarkLabel,
+	pickDarkThemeId,
 	RESOLVE_ROOT_SCRIPT
 } from './code-server-dark.ts';
 
@@ -1321,14 +1320,30 @@ describe('claude-code-credentials LIVE_CREDENTIALS_TEST', () => {
 });
 
 describe('code-server-dark', () => {
-	// The real manifest's shape: a light and a dark entry per family, plus both high-contrast ones.
+	// The real manifest's shape: `id` is the settingsId VS Code matches against, and the label is
+	// an nls placeholder — which is exactly why the theme id must come from `id`, not the label.
 	const manifest = () => ({
 		contributes: {
 			themes: [
-				{ id: 'Light 2026', uiTheme: 'vs', path: './themes/2026-light.json' },
-				{ id: 'Dark 2026', uiTheme: 'vs-dark', path: './themes/2026-dark.json' },
-				{ id: 'Light Modern', uiTheme: 'vs', path: './themes/light_modern.json' },
-				{ id: 'Dark Modern', uiTheme: 'vs-dark', path: './themes/dark_modern.json' },
+				{ id: 'Light 2026', label: '%light2026%', uiTheme: 'vs', path: './themes/2026-light.json' },
+				{
+					id: 'Dark 2026',
+					label: '%dark2026%',
+					uiTheme: 'vs-dark',
+					path: './themes/2026-dark.json'
+				},
+				{
+					id: 'Light Modern',
+					label: '%lightModern%',
+					uiTheme: 'vs',
+					path: './themes/light_modern.json'
+				},
+				{
+					id: 'Dark Modern',
+					label: '%darkModern%',
+					uiTheme: 'vs-dark',
+					path: './themes/dark_modern.json'
+				},
 				{ id: 'Default High Contrast', uiTheme: 'hc-black', path: './themes/hc_black.json' },
 				{ id: 'Default High Contrast Light', uiTheme: 'hc-light', path: './themes/hc_light.json' }
 			]
@@ -1371,63 +1386,79 @@ describe('code-server-dark', () => {
 		expect(darkenThemeManifest({ contributes: { themes: 'nope' } }).changed).toBe(0);
 	});
 
-	test('prefers the newest dark label the build ships, then falls back', () => {
-		expect(
-			pickDarkLabel({ dark2026ThemeLabel: 'Dark 2026', darkModernThemeLabel: 'Dark Modern' })
-		).toBe('Dark 2026');
-		expect(pickDarkLabel({ darkModernThemeLabel: 'Dark Modern' })).toBe('Dark Modern');
-		expect(pickDarkLabel(null)).toBe(FALLBACK_DARK_THEME);
-		expect(pickDarkLabel({ dark2026ThemeLabel: '   ' })).toBe(FALLBACK_DARK_THEME);
+	// VS Code resolves settingsId as `theme.id || label`, so pinning the nls label would break on
+	// any build where the two differ — which is precisely the `Default Dark Modern` era.
+	test('pins the manifest id, preferring the build default, never the label', () => {
+		expect(pickDarkThemeId(manifest())).toBe('Dark 2026');
+		const older = {
+			contributes: {
+				themes: [
+					{ id: 'Dark Modern', label: 'Default Dark Modern', uiTheme: 'vs-dark', path: './d.json' }
+				]
+			}
+		};
+		expect(pickDarkThemeId(older)).toBe('Dark Modern');
 	});
 
-	// Run the resolver against a real temp tree, exactly as it would run in a container.
-	// The stub must be executable or `command -v` skips it — and on a box that has a real
-	// code-server (this repo dogfoods itself) it would then resolve that one instead.
-	function resolveIn(root: string): string {
+	test('falls back to whatever dark theme the build ships, and to null when there is none', () => {
+		const exotic = {
+			contributes: { themes: [{ id: 'Monokai', uiTheme: 'vs-dark', path: './m.json' }] }
+		};
+		expect(pickDarkThemeId(exotic)).toBe('Monokai');
+		// Writing a made-up id would be worse than leaving the staged settings alone.
+		expect(
+			pickDarkThemeId({ contributes: { themes: [{ id: 'L', uiTheme: 'vs', path: './l.json' }] } })
+		).toBe(null);
+		expect(pickDarkThemeId({})).toBe(null);
+	});
+
+	// Run the scripts against a real temp tree, exactly as they would run in a container. The stub
+	// must be executable or `command -v` skips it — and on a box that has a real code-server (this
+	// repo dogfoods itself) it would then resolve that one instead.
+	function stubbedRun(root: string, script: string): string {
 		const bin = join(root, 'bin');
 		mkdirSync(bin, { recursive: true });
 		writeFileSync(join(bin, 'code-server'), '#!/bin/sh\n', { mode: 0o755 });
-		const res = Bun.spawnSync(['bash', '-c', `PATH="${bin}:$PATH"; ${RESOLVE_ROOT_SCRIPT}`]);
+		const res = Bun.spawnSync(['bash', '-c', `PATH="${bin}:$PATH"; ${script}`]);
 		return res.stdout.toString().trimEnd().split('\n').pop()?.trim() ?? '';
 	}
 
 	test('finds the bundled VS Code in both install layouts', () => {
-		const tmp = mkdtempSync(join(tmpdir(), 'cs-dark-'));
+		// realpath: macOS resolves /var -> /private/var, which `readlink -f` in the script follows.
+		const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'cs-dark-')));
 		try {
 			// Standalone: bin/ sits directly under the root that holds lib/vscode.
 			const standalone = join(tmp, 'standalone');
 			mkdirSync(join(standalone, 'lib', 'vscode', 'extensions', 'theme-defaults'), {
 				recursive: true
 			});
-			expect(resolveIn(standalone)).toBe(join(standalone, 'lib', 'vscode'));
+			expect(stubbedRun(standalone, RESOLVE_ROOT_SCRIPT)).toBe(join(standalone, 'lib', 'vscode'));
 
 			// Flat: the bundled tree is the root itself.
 			const flat = join(tmp, 'flat');
 			mkdirSync(join(flat, 'extensions', 'theme-defaults'), { recursive: true });
-			expect(resolveIn(flat)).toBe(flat);
+			expect(stubbedRun(flat, RESOLVE_ROOT_SCRIPT)).toBe(flat);
 		} finally {
 			rmSync(tmp, { recursive: true, force: true });
 		}
 	});
 
 	test('resolves nothing when no bundled VS Code is present', () => {
-		const tmp = mkdtempSync(join(tmpdir(), 'cs-dark-none-'));
+		const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'cs-dark-none-')));
 		try {
-			expect(resolveIn(join(tmp, 'bare'))).toBe('');
+			expect(stubbedRun(join(tmp, 'bare'), RESOLVE_ROOT_SCRIPT)).toBe('');
 		} finally {
 			rmSync(tmp, { recursive: true, force: true });
 		}
 	});
 
-	test('check script rejects a manifest that still carries a light entry', () => {
-		const tmp = mkdtempSync(join(tmpdir(), 'cs-dark-check-'));
+	// One exec, because this runs on every health tick alongside the iframe-gating probe.
+	test('check script resolves and probes in a single pass', () => {
+		const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'cs-dark-check-')));
 		try {
-			const dir = join(tmp, 'extensions', 'theme-defaults');
+			const dir = join(tmp, 'lib', 'vscode', 'extensions', 'theme-defaults');
 			mkdirSync(dir, { recursive: true });
-			const run = () =>
-				Bun.spawnSync(['bash', '-c', checkScript(tmp)])
-					.stdout.toString()
-					.trim();
+			const run = () => stubbedRun(tmp, DARK_CHECK_SCRIPT);
 
 			writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest(), null, 2));
 			expect(run()).toBe('0');
@@ -1442,6 +1473,15 @@ describe('code-server-dark', () => {
 				JSON.stringify(darkenThemeManifest(manifest()).next, null, 2)
 			);
 			expect(run()).toBe('1');
+		} finally {
+			rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+
+	test('check script reports 0 when there is no code-server at all', () => {
+		const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'cs-dark-nocs-')));
+		try {
+			expect(stubbedRun(join(tmp, 'bare'), DARK_CHECK_SCRIPT)).toBe('0');
 		} finally {
 			rmSync(tmp, { recursive: true, force: true });
 		}

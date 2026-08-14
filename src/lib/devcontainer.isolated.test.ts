@@ -68,6 +68,14 @@ describe('launchCommandFor', () => {
 		expect(postStart()).toContain(launchCommandFor('ide'));
 	});
 
+	// relaunchSurface re-runs this launcher after the injections have corrected the theme id for
+	// the installed build; an unconditional copy would put the stale staged id back.
+	test('ide launcher seeds code-server settings only when the file is missing', () => {
+		const launch = launchCommandFor('ide');
+		expect(launch).toContain('[ -f ~/.local/share/code-server/User/settings.json ] ||');
+		expect(launch).not.toMatch(/&&\s*cp -f/);
+	});
+
 	test('guards the code-server launch by port, not by a self-matching cmdline pattern', async () => {
 		await writeOverrideConfig(dir, 8001, [], undefined, 'ide');
 		// Any `pgrep -f` pattern matching a code-server daemon also matches this launcher's own

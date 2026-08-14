@@ -1,6 +1,12 @@
-import { execInContainer, type ExecTarget } from '../lib/exec.server.ts';
+import { checkPresence, execInContainer, type ExecTarget } from '../lib/exec.server.ts';
 import { editJsonFile, readJsonFile } from '../lib/container-files.server.ts';
+import { CODE_SERVER_SETTINGS } from '../lib/devcontainer.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
+
+/** Locates the bundled VS Code from the binary; shared prelude for the resolve and the check. */
+const WALK_TO_BUNDLE =
+	`p=$(command -v code-server) || exit 1; p=$(readlink -f "$p"); ` +
+	`while [ "$p" != "/" ]; do for c in "$p" "$p/lib/vscode"; do `;
 
 /**
  * Walks up from the resolved binary rather than assuming /usr/lib/code-server: the feature and the
@@ -9,25 +15,47 @@ import type { Injection } from '../lib/injections.server.ts';
  * scripts whose stdout comes first, so callers must read the last line, never the whole capture.
  */
 export const RESOLVE_ROOT_SCRIPT =
-	`p=$(command -v code-server) || exit 1; p=$(readlink -f "$p"); ` +
-	`while [ "$p" != "/" ]; do ` +
-	`for c in "$p" "$p/lib/vscode"; do ` +
+	WALK_TO_BUNDLE +
 	`[ -d "$c/extensions/theme-defaults" ] && { printf '\\n%s\\n' "$c"; exit 0; }; done; ` +
 	`p=$(dirname "$p"); done; exit 1`;
 
-/** The exec user's own code-server state; the theme cache below must be dropped from it. */
-const CACHED_EXTENSIONS = '~/.local/share/code-server/CachedExtensions';
+/**
+ * Whitespace-tolerant because the shipped manifest is minified (`"uiTheme":"vs"`) while our own
+ * rewrite pretty-prints it — a fixed-spacing pattern would miss the unpatched file and report green.
+ * The closing quote is what keeps `"vs"` from also matching `"vs-dark"`.
+ */
+const LIGHT_UI_THEME_RE = '"uiTheme"[[:space:]]*:[[:space:]]*"(vs|hc-light)"';
+
+/**
+ * Resolve and probe in one exec: `check()` runs on every health tick, in the same `Promise.all` as
+ * the `codeServerAccessible` probe that gates mounting the IDE iframe, so a second round trip here
+ * would slow the boot-time fast cadence for no gain — the root can't move for a container's life.
+ */
+export const CHECK_SCRIPT =
+	WALK_TO_BUNDLE +
+	`m="$c/extensions/theme-defaults/package.json"; ` +
+	`[ -f "$m" ] && { grep -qE '${LIGHT_UI_THEME_RE}' "$m" && echo 0 || echo 1; exit 0; }; done; ` +
+	`p=$(dirname "$p"); done; echo 0`;
+
+/**
+ * The builtin-extension scan is cached against the mtime of the `extensions/` **directory**, which
+ * rewriting a manifest inside it does not touch — so without invalidating both the cache file and
+ * that mtime, the running server and the next window keep serving the pre-rewrite themes.
+ */
+const CLEAR_BUILTIN_CACHE =
+	`rm -f ~/.local/share/code-server/CachedProfilesData/*/extensions.builtin.cache 2>/dev/null; ` +
+	`exit 0`;
 
 const SETTINGS_DIR = '$h/.local/share/code-server/User';
 
 /**
- * The settings value VS Code compares against is the theme's *label*, so it moves with the build:
- * 1.131 ships `Dark 2026`, older ones `Dark Modern`, older still the `Default …` spelling. Matching
- * it exactly is what stops the workbench discarding its own persisted theme on every boot.
+ * VS Code matches `workbench.colorTheme` against a theme's *settingsId*, which is its manifest `id`
+ * (the label is only a fallback for entries without one) — so this reads ids, never the nls labels.
+ * The order tracks the build default (`ThemeSettingDefaults.COLOR_THEME_DARK`) across versions,
+ * because pinning exactly that id is what lets the workbench paint its real dark colors before any
+ * extension loads. Anything unrecognised falls back to whatever dark theme the build does ship.
  */
-const DARK_LABEL_KEYS = ['dark2026ThemeLabel', 'darkModernThemeLabel'];
-
-export const FALLBACK_DARK_THEME = 'Default Dark Modern';
+const PREFERRED_DARK_IDS = ['Dark 2026', 'Default Dark Modern', 'Dark Modern', 'Dark+'];
 
 const THEME_KEYS = [
 	'workbench.colorTheme',
@@ -43,17 +71,26 @@ function lastLine(stdout: string): string {
 	return stdout.trimEnd().split('\n').pop()?.trim() ?? '';
 }
 
-export function pickDarkLabel(nls: Record<string, unknown> | null): string {
-	for (const key of DARK_LABEL_KEYS) {
-		const value = nls?.[key];
-		if (typeof value === 'string' && value.trim()) return value.trim();
-	}
-	return FALLBACK_DARK_THEME;
-}
-
 interface ThemeContribution {
+	id?: string;
 	uiTheme?: string;
 	path?: string;
+}
+
+function themesOf(manifest: Record<string, unknown>): ThemeContribution[] | null {
+	const contributes = manifest.contributes;
+	if (typeof contributes !== 'object' || contributes === null) return null;
+	const themes = (contributes as Record<string, unknown>).themes;
+	return Array.isArray(themes) ? (themes as ThemeContribution[]) : null;
+}
+
+/** Null when the build ships no identifiable dark theme — better to leave the staged settings alone than pin an id nothing resolves. */
+export function pickDarkThemeId(manifest: Record<string, unknown>): string | null {
+	const ids = (themesOf(manifest) ?? [])
+		.filter((t) => t?.uiTheme === 'vs-dark' && typeof t.id === 'string' && t.id.trim())
+		.map((t) => t.id!.trim());
+	if (!ids.length) return null;
+	return PREFERRED_DARK_IDS.find((id) => ids.includes(id)) ?? ids[0]!;
 }
 
 /**
@@ -65,21 +102,16 @@ export function darkenThemeManifest(manifest: Record<string, unknown>): {
 	next: Record<string, unknown>;
 	changed: number;
 } {
-	const contributes = manifest.contributes;
-	if (typeof contributes !== 'object' || contributes === null)
-		return { next: manifest, changed: 0 };
-	const themes = (contributes as Record<string, unknown>).themes;
-	if (!Array.isArray(themes)) return { next: manifest, changed: 0 };
+	const themes = themesOf(manifest);
+	if (!themes) return { next: manifest, changed: 0 };
 
-	const darkPath = themes.find(
-		(t: ThemeContribution) => t?.uiTheme === 'vs-dark' && typeof t.path === 'string'
-	)?.path as string | undefined;
-	const hcDarkPath = themes.find(
-		(t: ThemeContribution) => t?.uiTheme === 'hc-black' && typeof t.path === 'string'
-	)?.path as string | undefined;
+	const pathFor = (ui: string) =>
+		themes.find((t) => t?.uiTheme === ui && typeof t.path === 'string')?.path;
+	const darkPath = pathFor('vs-dark');
+	const hcDarkPath = pathFor('hc-black');
 
 	let changed = 0;
-	const nextThemes = themes.map((theme: ThemeContribution) => {
+	const nextThemes = themes.map((theme) => {
 		if (theme?.uiTheme === 'vs' && darkPath) {
 			changed++;
 			return { ...theme, uiTheme: 'vs-dark', path: darkPath };
@@ -91,31 +123,18 @@ export function darkenThemeManifest(manifest: Record<string, unknown>): {
 		return theme;
 	});
 
+	const contributes = manifest.contributes as Record<string, unknown>;
 	return {
 		next: { ...manifest, contributes: { ...contributes, themes: nextThemes } },
 		changed
 	};
 }
 
-/**
- * Whitespace-tolerant because the shipped manifest is minified (`"uiTheme":"vs"`) while our own
- * rewrite pretty-prints it — a fixed-spacing pattern would miss the unpatched file and report green.
- * The closing quote is what keeps `"vs"` from also matching `"vs-dark"`.
- */
-const LIGHT_UI_THEME_RE = '"uiTheme"[[:space:]]*:[[:space:]]*"(vs|hc-light)"';
-
-export const checkScript = (root: string): string =>
-	`m="${root}/extensions/theme-defaults/package.json"; ` +
-	`[ -f "$m" ] && ! grep -qE '${LIGHT_UI_THEME_RE}' "$m" && echo 1 || echo 0`;
-
-/** Root, since the bundled VS Code tree isn't owned by the remote user. */
+/** Only the writes need root; resolution runs as the remote user, whose PATH also carries a per-user standalone install. */
 const rootTarget = (target: ExecTarget): ExecTarget => ({ containerId: target.containerId });
 
 async function resolveRoot(target: ExecTarget): Promise<string | null> {
-	const res = await execInContainer(rootTarget(target), {
-		script: RESOLVE_ROOT_SCRIPT,
-		capture: true
-	});
+	const res = await execInContainer(target, { script: RESOLVE_ROOT_SCRIPT, capture: true });
 	if (!res.ok) return null;
 	const root = lastLine(res.stdout);
 	return SAFE_PATH.test(root) ? root : null;
@@ -124,8 +143,8 @@ async function resolveRoot(target: ExecTarget): Promise<string | null> {
 /**
  * VS Code Web's pre-extension paint falls back to `isWeb ? LIGHT : DARK` whenever it has no usable
  * cached theme, so pinning the theme in settings alone can never keep the first frame dark. This
- * closes both halves: it writes the theme id *this* build uses (so the cache survives), and rewrites
- * the bundled manifest so the light themes render dark even if one is somehow selected.
+ * closes both halves: it pins the theme id *this* build uses (so the workbench stops discarding its
+ * own cache), and rewrites the bundled manifest so the light themes render dark if one is selected.
  */
 export const codeServerDark: Injection = {
 	id: 'code-server-dark',
@@ -142,44 +161,56 @@ export const codeServerDark: Injection = {
 		}
 
 		const themeDir = `${root}/extensions/theme-defaults`;
-		const nls = await readJsonFile(rootTarget(target), {
-			dir: themeDir,
-			name: 'package.nls.json'
-		});
-		const darkTheme = pickDarkLabel(nls);
+		const manifest = await readJsonFile(target, { dir: themeDir, name: 'package.json' });
+		if (!manifest) {
+			log('⚠ Could not read the bundled theme manifest — dark theme left to the staged settings\n');
+			return;
+		}
 
-		const settings = await editJsonFile(
-			target,
-			{ dir: SETTINGS_DIR, name: 'settings.json' },
-			(current) => ({ ...current, ...Object.fromEntries(THEME_KEYS.map((k) => [k, darkTheme])) })
-		);
-		log(
-			settings.ok
-				? `✓ Pinned code-server theme to "${darkTheme}"\n`
-				: `⚠ Could not pin the code-server theme: ${settings.error}\n`
-		);
+		const darkTheme = pickDarkThemeId(manifest);
+		if (!darkTheme) {
+			log('⚠ No dark theme found in the bundled manifest — staged settings left as they are\n');
+		} else {
+			// Seeded from the staged defaults so this still writes a complete file on the path where
+			// the launcher's own copy silently failed, rather than a settings.json of three keys.
+			const settings = await editJsonFile(
+				target,
+				{ dir: SETTINGS_DIR, name: 'settings.json' },
+				(current) => ({
+					...CODE_SERVER_SETTINGS,
+					...current,
+					...Object.fromEntries(THEME_KEYS.map((k) => [k, darkTheme]))
+				})
+			);
+			log(
+				settings.ok
+					? `✓ Pinned code-server theme to "${darkTheme}"\n`
+					: `⚠ Could not pin the code-server theme: ${settings.error}\n`
+			);
+		}
 
-		const manifest = await editJsonFile(
+		if (darkenThemeManifest(manifest).changed === 0) {
+			log('· No light themes to darken in this build\n');
+			return;
+		}
+		const written = await editJsonFile(
 			rootTarget(target),
 			{ dir: themeDir, name: 'package.json' },
 			(current) => darkenThemeManifest(current).next
 		);
-		if (!manifest.ok) {
-			log(`⚠ Could not darken the built-in light themes: ${manifest.error}\n`);
+		if (!written.ok) {
+			log(`⚠ Could not darken the built-in light themes: ${written.error}\n`);
 			return;
 		}
-		// The manifest is cached per install, so the rewrite is invisible until the cache is dropped.
-		await execInContainer(target, { script: `rm -rf ${CACHED_EXTENSIONS} 2>/dev/null || true` });
+		await execInContainer(target, { script: CLEAR_BUILTIN_CACHE });
+		// Bumping the scan's cache key; root because the bundled tree isn't the remote user's.
+		await execInContainer(rootTarget(target), {
+			script: `touch "${root}/extensions" 2>/dev/null; exit 0`
+		});
 		log('✓ Built-in light themes now render dark\n');
 	},
 
-	async check(target) {
-		const root = await resolveRoot(target);
-		if (!root) return false;
-		const res = await execInContainer(rootTarget(target), {
-			script: checkScript(root),
-			capture: true
-		});
-		return res.ok && lastLine(res.stdout) === '1';
+	check(target) {
+		return checkPresence(target, CHECK_SCRIPT);
 	}
 };
