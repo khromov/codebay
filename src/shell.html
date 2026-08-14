@@ -120,15 +120,24 @@
 			body {
 				margin: 0;
 				font-family: var(--font-sans);
-				/* Pale LCD panel with a faint pixel-grid matrix overlay. */
-				background:
-					repeating-linear-gradient(0deg, var(--grid-line) 0 1px, transparent 1px 3px),
-					repeating-linear-gradient(90deg, var(--grid-line) 0 1px, transparent 1px 3px), var(--bg);
+				background: var(--bg);
 				color: var(--ink);
 				font-size: 14px;
 				line-height: 1.55;
 				min-height: 100vh;
 				-webkit-font-smoothing: antialiased;
+			}
+			/* The faint pixel-grid matrix overlay lives on a viewport-fixed layer
+			   so it rasters once and is never re-tiled as the page scrolls. */
+			body::before {
+				content: '';
+				position: fixed;
+				inset: 0;
+				z-index: -1;
+				pointer-events: none;
+				background:
+					repeating-linear-gradient(0deg, var(--grid-line) 0 1px, transparent 1px 3px),
+					repeating-linear-gradient(90deg, var(--grid-line) 0 1px, transparent 1px 3px);
 			}
 		</style>
 		{{mochi.head}} {{mochi.css}}
