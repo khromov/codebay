@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/khromov/codebay/compare/codebay-v0.10.1...codebay-v0.11.0) (2026-08-14)
+
+
+### Features
+
+* redesign the IDE instance tabs ([#141](https://github.com/khromov/codebay/issues/141)) ([becb743](https://github.com/khromov/codebay/commit/becb74328152fd2f5a61c4970c82bfa0e986cd29))
+* warm amber CRT dark mode ([#142](https://github.com/khromov/codebay/issues/142)) ([9032f8b](https://github.com/khromov/codebay/commit/9032f8b16b83b88fce76183bb4760912731a50d7))
+
+
+### Bug Fixes
+
+* keep the project's devcontainer.json pristine in instance copies ([#137](https://github.com/khromov/codebay/issues/137)) ([ea6b931](https://github.com/khromov/codebay/commit/ea6b9317bb705a54ed904a3f4de86e6b52057894))
+
 ## [0.10.1](https://github.com/khromov/codebay/compare/codebay-v0.10.0...codebay-v0.10.1) (2026-08-13)
 
 
