@@ -574,7 +574,7 @@
 		width: 6px;
 		height: 6px;
 		border-radius: 50%;
-		background: var(--attn-done);
+		background: var(--live-dot);
 	}
 	.copy:disabled {
 		opacity: var(--dim-panel);

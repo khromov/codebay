@@ -467,7 +467,7 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		}));
 		appendLog(row.id, `Injecting ${surfaceLabel(row.mode)} (host port ${row.host_port})\n`);
 		const defaultImage = getOption('default_image') ?? DEFAULT_IMAGE;
-		const { imageSource, configPath } = await writeOverrideConfig(
+		const { imageSource, configPath, overrideConfigPath } = await writeOverrideConfig(
 			row.workspace_path,
 			row.host_port,
 			forwards,
@@ -481,8 +481,9 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		const noCache = opts.noCache || getOption('disable_build_cache') === '1';
 		if (noCache) appendLog(row.id, `Building without cache (--build-no-cache)\n`);
 
-		// The CLI's --remove-existing-container matches by the devcontainer.config_file label, which
-		// no longer matches containers built from the pre-separate-config path — drop them ourselves.
+		// The CLI's --remove-existing-container matches by the devcontainer.config_file label, and
+		// deliberately ignores a workspace match whose label differs — so a container left by a build
+		// that labelled itself differently would survive and keep the host port. Drop it ourselves.
 		if (row.container_id && !(await removeContainerOnly(row.container_id))) {
 			appendLog(
 				row.id,
@@ -494,7 +495,8 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		const upStart = Date.now();
 		const result = await devcontainerUp(row.workspace_path, (chunk) => appendLog(row.id, chunk), {
 			noCache,
-			configPath
+			configPath: configPath ?? undefined,
+			overrideConfigPath
 		});
 		appendLog(row.id, `⏱ devcontainer up: ${elapsed(upStart)}\n`);
 
