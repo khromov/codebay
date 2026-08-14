@@ -1,5 +1,5 @@
-import { chmod, cp, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { existsSync, statSync } from 'node:fs';
+import { chmod, cp, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT as TMUX_INSTALL_SCRIPT } from '../container-injections/tmux.ts';
@@ -18,6 +18,7 @@ import {
 	dockerEnv
 } from './config.server.ts';
 import { spawnCapture } from './spawn.server.ts';
+import { isTrackedFile, restoreTrackedFile } from './git.server.ts';
 import { getOption, type InstanceMode } from './db.server.ts';
 import { claudePermissionFlags, type ClaudePermissionMode, type PortForward } from '../types.ts';
 
@@ -100,8 +101,18 @@ const CLAUDE_FEATURE_INSTALL =
 
 /** Manager-dropped files the project's own .gitignore won't cover, kept out of git status. */
 const MANAGER_GIT_EXCLUDES = [
+	'/.devcontainer/codebay.devcontainer.json',
+	'/.codebay.devcontainer.json',
 	'/.devcontainer/code-server-settings.json',
 	'/.devcontainer/devcontainer-lock.json',
+	'/.devcontainer-lock.json',
+	// The subfolder config form places the merged config, lock, and staged features one level deeper.
+	'/.devcontainer/*/codebay.devcontainer.json',
+	'/.devcontainer/*/devcontainer-lock.json',
+	'/.devcontainer/*/codebay-tmux/',
+	'/.devcontainer/*/codebay-ttyd/',
+	'/.devcontainer/*/codebay-claude/',
+	'*.codebay-backup',
 	'/.devcontainer/codebay-tmux/',
 	'/.devcontainer/codebay-ttyd/',
 	'/.devcontainer/codebay-claude/',
@@ -416,20 +427,44 @@ function stripJsonc(input: string): string {
 	return out;
 }
 
-/** Follows the CLI's precedence: `.devcontainer/devcontainer.json`, then `.devcontainer.json`. */
+/**
+ * Follows the spec's precedence: `.devcontainer/devcontainer.json`, `.devcontainer.json`, then
+ * the one-level-deep `.devcontainer/<folder>/devcontainer.json` form (first folder alphabetically).
+ */
 export function findDevcontainerConfig(dir: string): string | null {
 	const nested = join(dir, '.devcontainer', 'devcontainer.json');
 	if (existsSync(nested)) return nested;
 	const flat = join(dir, '.devcontainer.json');
 	if (existsSync(flat)) return flat;
+	const root = join(dir, '.devcontainer');
+	let entries;
+	try {
+		entries = readdirSync(root, { withFileTypes: true });
+	} catch {
+		return null;
+	}
+	for (const name of entries
+		.filter((e) => e.isDirectory())
+		.map((e) => e.name)
+		.sort()) {
+		const candidate = join(root, name, 'devcontainer.json');
+		if (existsSync(candidate)) return candidate;
+	}
 	return null;
 }
 
-function configPath(workspaceDir: string): string {
-	// Falls back to the nested path because that's where we'd create one.
-	return (
-		findDevcontainerConfig(workspaceDir) ?? join(workspaceDir, '.devcontainer', 'devcontainer.json')
-	);
+const CODEBAY_CONFIG_NESTED = 'codebay.devcontainer.json';
+const CODEBAY_CONFIG_FLAT = '.codebay.devcontainer.json';
+
+/** Sits in the same directory as the project's own config so relative paths resolve identically. */
+export function overrideConfigPath(
+	workspaceDir: string,
+	canonical: string | null = findDevcontainerConfig(workspaceDir)
+): string {
+	if (!canonical) return join(workspaceDir, '.devcontainer', CODEBAY_CONFIG_NESTED);
+	return basename(canonical) === '.devcontainer.json'
+		? join(workspaceDir, CODEBAY_CONFIG_FLAT)
+		: join(dirname(canonical), CODEBAY_CONFIG_NESTED);
 }
 
 type DevcontainerConfig = {
@@ -450,10 +485,10 @@ function containerPortOf(entry: number | string): number {
 	return Number.parseInt(last, 10);
 }
 
-/** Only meaningful on a pristine, pre-injection config; code-server's own port is excluded. */
+/** Reads the project's own config (never Codebay's merged one); reserved ports are excluded. */
 export async function readDeclaredContainerPorts(workspaceDir: string): Promise<number[]> {
-	const target = configPath(workspaceDir);
-	if (!existsSync(target)) return [];
+	const target = findDevcontainerConfig(workspaceDir);
+	if (!target) return [];
 	let config: DevcontainerConfig;
 	try {
 		config = JSON.parse(stripJsonc(await readFile(target, 'utf8'))) as DevcontainerConfig;
@@ -487,7 +522,10 @@ export async function readDeclaredContainerPorts(workspaceDir: string): Promise<
 /** Maps `host.docker.internal` to the host so the in-container attention bridge resolves. */
 const HOST_GATEWAY_ARG = '--add-host=host.docker.internal:host-gateway';
 
-/** Operates on the copy, never the user's original, so rewriting and normalizing is safe. */
+/**
+ * Merges the project's config (read-only) into a Codebay-owned sibling file that `devcontainer up
+ * --config` boots from, so the project's own devcontainer.json never shows as modified in git.
+ */
 export async function writeOverrideConfig(
 	workspaceDir: string,
 	hostPort: number,
@@ -496,31 +534,37 @@ export async function writeOverrideConfig(
 	mode: InstanceMode = 'ide',
 	permissionMode: ClaudePermissionMode = 'default',
 	envVars: { name: string; value: string }[] = []
-): Promise<{ imageSource: string }> {
+): Promise<{ imageSource: string; configPath: string }> {
 	const isTerminal = mode === 'terminal';
-	const target = configPath(workspaceDir);
+	const canonical = findDevcontainerConfig(workspaceDir);
+	const target = overrideConfigPath(workspaceDir, canonical);
 	let config: DevcontainerConfig = {};
 
-	const hadConfig = existsSync(target);
+	const hadConfig = canonical !== null;
 	const imageSource = hadConfig ? 'local' : defaultImage;
 
-	if (hadConfig) {
-		const raw = await readFile(target, 'utf8');
+	if (canonical) {
+		const raw = await readFile(canonical, 'utf8');
 		try {
 			config = JSON.parse(stripJsonc(raw)) as DevcontainerConfig;
 		} catch (err) {
 			throw new Error(
-				`Could not parse existing devcontainer.json at ${target}: ${(err as Error).message}`,
+				`Could not parse existing devcontainer.json at ${canonical}: ${(err as Error).message}`,
 				{ cause: err }
 			);
 		}
+		// A config restoreCanonicalConfig couldn't clean (injection committed, or no .git to restore
+		// from) must not feed its baked-in injections back into the merge.
+		if (raw.includes(OVERRIDE_FINGERPRINT)) stripLegacyInjections(config);
 	} else {
 		config.image = defaultImage;
 	}
 
-	// A local feature is addressed relative to the config, which sits at one of two depths.
-	const featureKey = (dir: string) =>
-		`./${relative(dirname(target), join(workspaceDir, '.devcontainer', dir))}`;
+	// Local features are staged next to a subfolder-form config (the CLI only promises to resolve
+	// `./`-descendant feature paths), and under `.devcontainer/` for the two classic forms.
+	const featureRoot =
+		dirname(target) === workspaceDir ? join(workspaceDir, '.devcontainer') : dirname(target);
+	const featureKey = (dir: string) => `./${relative(dirname(target), join(featureRoot, dir))}`;
 	const tmuxFeatureKey = featureKey(TMUX_FEATURE_DIR);
 	const ttydFeatureKey = featureKey(TTYD_FEATURE_DIR);
 	const claudeFeatureKey = featureKey(CLAUDE_FEATURE_DIR);
@@ -577,7 +621,7 @@ export async function writeOverrideConfig(
 	await writeFile(target, JSON.stringify(config, null, 2) + '\n', 'utf8');
 
 	if (isTerminal) {
-		await writeTtydFeature(workspaceDir);
+		await writeTtydFeature(featureRoot);
 		await writeTerminalLaunchScript(workspaceDir, permissionMode);
 	} else {
 		// Staged next to the config; codeServerLaunch copies it into the user-data dir on first start.
@@ -590,13 +634,113 @@ export async function writeOverrideConfig(
 		await writeTerminalTask(workspaceDir, permissionMode);
 	}
 
-	await writeTmuxFeature(workspaceDir);
+	await writeTmuxFeature(featureRoot);
 
-	if (isTerminal && hadConfig) await writeClaudeFeature(workspaceDir);
+	if (isTerminal && hadConfig) await writeClaudeFeature(featureRoot);
 
 	await writeLocalGitExclude(workspaceDir);
 
-	return { imageSource };
+	return { imageSource, configPath: target };
+}
+
+/** `codebay-tmux` has been injected into every config this manager has ever written. */
+const OVERRIDE_FINGERPRINT = TMUX_FEATURE_DIR;
+
+/** Where a destructive restore stashes the pre-restore file, in case it held user edits. */
+const LEGACY_BACKUP_SUFFIX = '.codebay-backup';
+
+/**
+ * Removes what the legacy in-place scheme baked into a config that git couldn't restore — left as
+ * merge input, the stale features would resurrect and the launcher would chain onto itself.
+ */
+function stripLegacyInjections(config: DevcontainerConfig): void {
+	if (config.features) {
+		for (const key of Object.keys(config.features)) {
+			if (
+				key === CODE_SERVER_FEATURE ||
+				key.includes(TMUX_FEATURE_DIR) ||
+				key.includes(TTYD_FEATURE_DIR) ||
+				key.includes(CLAUDE_FEATURE_DIR)
+			) {
+				delete config.features[key];
+			}
+		}
+	}
+	if (typeof config.postStartCommand === 'string') {
+		const cmd = config.postStartCommand;
+		// The legacy launcher was always appended last, as a `bash -c "…nohup code-server/ttyd…"` tail.
+		const start = cmd.lastIndexOf('bash -c "');
+		if (start !== -1 && /nohup (?:code-server|ttyd) /.test(cmd.slice(start))) {
+			const head = cmd
+				.slice(0, start)
+				.replace(/\s*&&\s*$/, '')
+				.trim();
+			if (head) config.postStartCommand = head;
+			else delete config.postStartCommand;
+		}
+	}
+}
+
+/**
+ * Undoes the legacy scheme that overwrote the project's own devcontainer.json in place: restores
+ * the tracked file (or deletes the one Codebay created) so the instance's git status comes clean.
+ * `'unknown'` means git itself failed to answer, so the caller should retry on the next rebuild.
+ */
+export async function restoreCanonicalConfig(
+	workspaceDir: string
+): Promise<'restored' | 'deleted' | 'none' | 'unknown'> {
+	const canonical = findDevcontainerConfig(workspaceDir);
+	if (!canonical) return 'none';
+
+	let content: string;
+	try {
+		content = await readFile(canonical, 'utf8');
+	} catch {
+		return 'none';
+	}
+	if (!content.includes(OVERRIDE_FINGERPRINT)) return 'none';
+
+	// Only a real .git directory can vouch for the file's provenance (same check as the excludes).
+	const gitDir = join(workspaceDir, '.git');
+	if (!existsSync(gitDir) || !statSync(gitDir).isDirectory()) return 'none';
+
+	const relPath = relative(workspaceDir, canonical);
+	const tracked = await isTrackedFile(workspaceDir, relPath);
+	if (tracked === null) return 'unknown'; // never destroy a config on a guess
+
+	// The file may hold user edits on top of the injection — stash it before anything destructive.
+	const backup = canonical + LEGACY_BACKUP_SUFFIX;
+	const dropBackup = () => unlink(backup).catch(() => {});
+	try {
+		await writeFile(backup, content, 'utf8');
+	} catch {
+		// Best-effort: a failed backup shouldn't block the migration itself.
+	}
+
+	if (tracked) {
+		if (!(await restoreTrackedFile(workspaceDir, relPath))) {
+			await dropBackup();
+			return 'unknown';
+		}
+		const after = await readFile(canonical, 'utf8').catch(() => null);
+		if (after === content) {
+			// The injection was committed inside the instance, so git has nothing cleaner to offer;
+			// stripLegacyInjections keeps it out of the merge instead.
+			await dropBackup();
+			return 'none';
+		}
+		return 'restored';
+	}
+
+	// Fingerprinted but untracked: Codebay created it for a config-less project — remove it so the
+	// next merge falls back to the default image again.
+	try {
+		await unlink(canonical);
+	} catch {
+		await dropBackup();
+		return 'unknown';
+	}
+	return 'deleted';
 }
 
 /**
@@ -669,8 +813,8 @@ async function writeLocalGitExclude(workspaceDir: string): Promise<void> {
 	await writeFile(excludePath, existing ? `${existing}\n\n${block}` : block, 'utf8');
 }
 
-async function writeTmuxFeature(workspaceDir: string): Promise<void> {
-	const dir = join(workspaceDir, '.devcontainer', TMUX_FEATURE_DIR);
+async function writeTmuxFeature(featureRoot: string): Promise<void> {
+	const dir = join(featureRoot, TMUX_FEATURE_DIR);
 	await mkdir(dir, { recursive: true }).catch(() => {});
 	await writeFile(
 		join(dir, 'devcontainer-feature.json'),
@@ -683,8 +827,8 @@ async function writeTmuxFeature(workspaceDir: string): Promise<void> {
 	await chmod(installPath, 0o755);
 }
 
-async function writeClaudeFeature(workspaceDir: string): Promise<void> {
-	const dir = join(workspaceDir, '.devcontainer', CLAUDE_FEATURE_DIR);
+async function writeClaudeFeature(featureRoot: string): Promise<void> {
+	const dir = join(featureRoot, CLAUDE_FEATURE_DIR);
 	await mkdir(dir, { recursive: true }).catch(() => {});
 	await writeFile(
 		join(dir, 'devcontainer-feature.json'),
@@ -696,8 +840,8 @@ async function writeClaudeFeature(workspaceDir: string): Promise<void> {
 	await chmod(installPath, 0o755);
 }
 
-async function writeTtydFeature(workspaceDir: string): Promise<void> {
-	const dir = join(workspaceDir, '.devcontainer', TTYD_FEATURE_DIR);
+async function writeTtydFeature(featureRoot: string): Promise<void> {
+	const dir = join(featureRoot, TTYD_FEATURE_DIR);
 	await mkdir(dir, { recursive: true }).catch(() => {});
 	await writeFile(
 		join(dir, 'devcontainer-feature.json'),
@@ -758,7 +902,10 @@ export interface UpResult {
 	description?: string;
 }
 
-export function devcontainerUpArgs(workspaceDir: string, opts: { noCache?: boolean } = {}) {
+export function devcontainerUpArgs(
+	workspaceDir: string,
+	opts: { noCache?: boolean; configPath?: string } = {}
+) {
 	const args = [
 		devcontainerBin(),
 		'up',
@@ -766,6 +913,7 @@ export function devcontainerUpArgs(workspaceDir: string, opts: { noCache?: boole
 		workspaceDir,
 		'--remove-existing-container'
 	];
+	if (opts.configPath) args.push('--config', opts.configPath);
 	// Only takes effect because --remove-existing-container drops the container before the build.
 	if (opts.noCache) args.push('--build-no-cache');
 	return args;
@@ -783,7 +931,7 @@ export function devcontainerUpEnv(): Record<string, string | undefined> {
 export async function devcontainerUp(
 	workspaceDir: string,
 	onLog: (chunk: string) => void,
-	opts: { noCache?: boolean } = {}
+	opts: { noCache?: boolean; configPath?: string } = {}
 ): Promise<UpResult> {
 	const proc = Bun.spawn(devcontainerUpArgs(workspaceDir, opts), {
 		cwd: workspaceDir,

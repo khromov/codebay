@@ -33,6 +33,7 @@ import {
 	hostPortsInUse,
 	isRunning,
 	removeContainer,
+	removeContainerOnly,
 	startContainer,
 	stopContainer
 } from './docker.server.ts';
@@ -43,6 +44,7 @@ import {
 	INJECTIONS_DONE_FILE,
 	launchCommandFor,
 	readDeclaredContainerPorts,
+	restoreCanonicalConfig,
 	TERMINAL_LAUNCHED_MARKER,
 	writeOverrideConfig
 } from './devcontainer.server.ts';
@@ -73,7 +75,8 @@ import {
 	normalizeMode,
 	type Instance,
 	type InstanceFilter,
-	type InstanceHealth
+	type InstanceHealth,
+	type Theme
 } from '../types.ts';
 
 /** The sprite a row shows: its persisted choice, or the id hash for rows created before avatars were stored. */
@@ -189,7 +192,9 @@ export type StreamEvent =
 	// The dashboard run-state filter, so a change in one tab propagates to every open client.
 	| { type: 'filter'; data: { value: InstanceFilter } }
 	// The global default editor surface, so the picker's toggle follows a settings change.
-	| { type: 'default-mode'; data: { mode: InstanceMode } };
+	| { type: 'default-mode'; data: { mode: InstanceMode } }
+	// The colour scheme, so a change in the settings popup repaints the window behind it.
+	| { type: 'theme'; data: { value: Theme } };
 
 interface StreamHub {
 	sockets: Set<ServerWebSocket<unknown>>;
@@ -248,6 +253,14 @@ export function broadcastFilter(value: InstanceFilter): void {
 /** Settings opens in its own popup, so the dashboard behind it needs the new default pushed. */
 export function broadcastDefaultMode(mode: InstanceMode): void {
 	broadcast({ type: 'default-mode', data: { mode } });
+}
+
+/**
+ * Same popup problem for the theme — but it lives in a cookie, not `options`, so there's
+ * nothing to seed a reconnecting client with: its own cookie already drives the SSR paint.
+ */
+export function broadcastTheme(value: Theme): void {
+	broadcast({ type: 'theme', data: { value } });
 }
 
 async function reconcileInstances(force = false): Promise<void> {
@@ -380,7 +393,7 @@ async function boot(row: InstanceRow, opts: { branch?: string } = {}): Promise<v
 	await provision(row);
 }
 
-/** Must run before config injection, while the copied `devcontainer.json` is still pristine. */
+/** Reads the project's own `devcontainer.json`, which the config injection never touches. */
 async function seedDeclaredPorts(row: InstanceRow): Promise<void> {
 	const existing = new Set(listForwards(row.id).map((f) => f.container_port));
 	for (const containerPort of await readDeclaredContainerPorts(row.workspace_path)) {
@@ -425,6 +438,22 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 	let containerId: string | null = null;
 	inFlight.add(row.id);
 	try {
+		// Migrates instances created before the merged config moved to its own file — one-shot per
+		// instance, so a later rebuild can never claw back a config the user has since edited.
+		if (!row.config_migrated) {
+			const migrated = await restoreCanonicalConfig(row.workspace_path);
+			if (migrated === 'restored' || migrated === 'deleted') {
+				appendLog(
+					row.id,
+					'Restored the project devcontainer config (Codebay now keeps its merged config in a separate file)\n'
+				);
+			}
+			// 'unknown' means git itself failed to answer; leave the flag unset so the next rebuild retries.
+			if (migrated !== 'unknown') {
+				updateInstance(row.id, { config_migrated: 1 });
+				row.config_migrated = 1;
+			}
+		}
 		// On a rebuild `devcontainer up --remove-existing-container` discards the old container's
 		// ~/.claude, so drain it first; a first boot has no container_id and skips straight past.
 		if (row.container_id) {
@@ -438,7 +467,7 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		}));
 		appendLog(row.id, `Injecting ${surfaceLabel(row.mode)} (host port ${row.host_port})\n`);
 		const defaultImage = getOption('default_image') ?? DEFAULT_IMAGE;
-		const { imageSource } = await writeOverrideConfig(
+		const { imageSource, configPath } = await writeOverrideConfig(
 			row.workspace_path,
 			row.host_port,
 			forwards,
@@ -452,10 +481,20 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		const noCache = opts.noCache || getOption('disable_build_cache') === '1';
 		if (noCache) appendLog(row.id, `Building without cache (--build-no-cache)\n`);
 
+		// The CLI's --remove-existing-container matches by the devcontainer.config_file label, which
+		// no longer matches containers built from the pre-separate-config path — drop them ourselves.
+		if (row.container_id && !(await removeContainerOnly(row.container_id))) {
+			appendLog(
+				row.id,
+				`⚠ Could not remove the previous container (${row.container_id.slice(0, 12)}) — if the boot fails on a busy port, remove it manually\n`
+			);
+		}
+
 		appendLog(row.id, `Starting devcontainer…\n`);
 		const upStart = Date.now();
 		const result = await devcontainerUp(row.workspace_path, (chunk) => appendLog(row.id, chunk), {
-			noCache
+			noCache,
+			configPath
 		});
 		appendLog(row.id, `⏱ devcontainer up: ${elapsed(upStart)}\n`);
 
@@ -592,7 +631,9 @@ export async function createInstance(
 		// Kept synchronous through insertInstance so two concurrent creations can't claim the same free sprite.
 		avatar: pickUniqueAvatar(id, allInstances().map(effectiveAvatarName)).name,
 		mode: opts.mode ?? getDefaultMode(),
-		terminal_split: 0
+		terminal_split: 0,
+		// Born under the separate-config scheme, so there is never a legacy injection to undo.
+		config_migrated: 1
 	};
 	insertInstance(row);
 	// Strip the de-dup `#2` suffix so the recent-folders list keeps the base name.

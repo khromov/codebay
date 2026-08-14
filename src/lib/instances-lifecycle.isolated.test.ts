@@ -76,6 +76,7 @@ function seed(overrides: Partial<InstanceRow> = {}): InstanceRow {
 		avatar: null,
 		mode: 'terminal',
 		terminal_split: 0,
+		config_migrated: 1,
 		...overrides
 	};
 	insertInstance(row);

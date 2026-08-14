@@ -106,6 +106,16 @@ export async function stopContainer(containerId: string): Promise<boolean> {
 	}
 }
 
+/** Rebuild-safe removal: volumes survive — the CLI's `--remove-existing-container` is a plain `docker rm -f`, no `-v`. */
+export async function removeContainerOnly(containerId: string): Promise<boolean> {
+	try {
+		await (await getDocker()).getContainer(containerId).remove({ force: true });
+		return true;
+	} catch (err) {
+		return statusOf(err) === 404; // already absent counts as success
+	}
+}
+
 /** Named volumes must be listed before removal and dropped by hand — the engine never reaps them. */
 export async function removeContainer(containerId: string): Promise<boolean> {
 	const docker = await getDocker();

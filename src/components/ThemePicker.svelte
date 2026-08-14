@@ -3,6 +3,7 @@
 	import Moon from '@lucide/svelte/icons/moon';
 	import Monitor from '@lucide/svelte/icons/monitor';
 	import { getTheme, setTheme, applyTheme, type Theme } from '../theme.ts';
+	import { apiPost } from '../api.ts';
 
 	let theme: Theme = $state(getTheme());
 	/** Which half of the CRT power-cycle is playing; null when idle. */
@@ -24,6 +25,8 @@
 		if (value === theme || phase) return;
 		// Persist first: an interrupted transition still lands the choice.
 		setTheme(value);
+		// Settings is a popup, so the tabs behind it only repaint if the stream tells them to.
+		void apiPost('/api/settings/theme', { value }).catch(() => {});
 
 		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
 			theme = value;
