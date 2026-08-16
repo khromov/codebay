@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/khromov/codebay/compare/codebay-v0.12.0...codebay-v0.12.1) (2026-08-16)
+
+
+### Bug Fixes
+
+* retrigger release for hand-drawn avatar redraws ([1b76c44](https://github.com/khromov/codebay/commit/1b76c44624fe44bbc303d4fa377c893d868ef563))
+
 ## [0.12.0](https://github.com/khromov/codebay/compare/codebay-v0.11.1...codebay-v0.12.0) (2026-08-14)
 
 
