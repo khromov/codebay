@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/khromov/codebay/compare/codebay-v0.12.1...codebay-v0.13.0) (2026-08-21)
+
+
+### Features
+
+* add Claude output style setting ([#199](https://github.com/khromov/codebay/issues/199)) ([f3637d0](https://github.com/khromov/codebay/commit/f3637d0895906e2519999d2294f4612703b4fb72))
+
+
+### Bug Fixes
+
+* install Claude Code as the remote user so the native binary lands in their HOME ([#197](https://github.com/khromov/codebay/issues/197)) ([3500905](https://github.com/khromov/codebay/commit/3500905c25016da5be60181946da98014c7657b5))
+
 ## [0.12.1](https://github.com/khromov/codebay/compare/codebay-v0.12.0...codebay-v0.12.1) (2026-08-16)
 
 
