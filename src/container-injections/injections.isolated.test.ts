@@ -14,6 +14,7 @@ import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './h
 import { customEnvVarsConfig, customEnvVarValues, parseCustomEnvVars } from './custom-env-vars.ts';
 import { expandTilde, extractScriptPath } from './claude-statusline.ts';
 import { hostClaudeModel } from './claude-model.ts';
+import { getClaudeOutputStyle, resolveEffectiveOutputStyle } from './claude-output-style.ts';
 import { NO_COAUTHOR_SETTINGS } from './claude-no-coauthor.ts';
 import { claudeTrustConfig, CLAUDE_TRUST_SETTINGS } from './claude-trust.ts';
 import { homedir } from 'node:os';
@@ -123,6 +124,14 @@ describe('injection registry', () => {
 		expect(typeof effort!.check).toBe('function');
 	});
 
+	test('claude-output-style is registered with a health check and no auth chip', () => {
+		const outputStyle = injections.find((i) => i.id === 'claude-output-style');
+		expect(outputStyle).toBeDefined();
+		// Inherits the host default (or the app option); none is a valid outcome, so no chip.
+		expect(outputStyle!.auth).toBeUndefined();
+		expect(typeof outputStyle!.check).toBe('function');
+	});
+
 	test('host-env-vars is registered with a health check and no auth chip', () => {
 		const hostEnvVars = injections.find((i) => i.id === 'host-env-vars');
 		expect(hostEnvVars).toBeDefined();
@@ -204,6 +213,7 @@ describe('resolveInjectionStages — clobber safety', () => {
 		'claude-trust': ['claude-json', 'settings-json'],
 		'claude-aliases': ['rc'],
 		'claude-no-coauthor': ['settings-json'],
+		'claude-output-style': ['settings-json', 'output-styles-dir'],
 		'host-env-vars': ['host-env-file', 'rc'],
 		// Writes nothing to the container — values ride containerEnv, so it can share any stage.
 		'custom-env-vars': []
@@ -251,6 +261,7 @@ describe('resolveInjectionStages — clobber safety', () => {
 		expect(at.get('claude-statusline')!).toBeLessThan(at.get('claude-model')!);
 		expect(at.get('claude-model')!).toBeLessThan(at.get('claude-trust')!);
 		expect(at.get('claude-trust')!).toBeLessThan(at.get('claude-no-coauthor')!);
+		expect(at.get('claude-no-coauthor')!).toBeLessThan(at.get('claude-output-style')!);
 		// rc-file append chain.
 		expect(at.get('claude-code-models')!).toBeLessThan(at.get('claude-permission-mode')!);
 		expect(at.get('claude-permission-mode')!).toBeLessThan(at.get('claude-aliases')!);
@@ -908,6 +919,30 @@ describe('hostClaudeModel', () => {
 	test('is null when LiteLLM owns the model', async () => {
 		setOption('custom_endpoint_enabled', '1');
 		expect(await hostClaudeModel()).toBeNull();
+	});
+});
+
+describe('claude output style', () => {
+	afterEach(() => setOption('claude_output_style', 'default'));
+
+	test('getClaudeOutputStyle normalizes unknown values to inherit-from-host', () => {
+		setOption('claude_output_style', 'bogus');
+		expect(getClaudeOutputStyle()).toBe('default');
+	});
+
+	test('getClaudeOutputStyle returns the stored enum value', () => {
+		setOption('claude_output_style', 'Concise');
+		expect(getClaudeOutputStyle()).toBe('Concise');
+	});
+
+	test('none forces the style off (no value applied)', async () => {
+		setOption('claude_output_style', 'none');
+		expect(await resolveEffectiveOutputStyle()).toBeNull();
+	});
+
+	test('an explicit style is applied verbatim, without reading the host', async () => {
+		setOption('claude_output_style', 'Concise');
+		expect(await resolveEffectiveOutputStyle()).toBe('Concise');
 	});
 });
 
