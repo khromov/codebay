@@ -17,7 +17,8 @@ import type { Injection } from '../lib/injections.server.ts';
 export const INSTALL_SCRIPT =
 	'if command -v claude >/dev/null 2>&1; then exit 0; fi\n' +
 	'u="${1:-${_REMOTE_USER:-root}}"\n' +
-	'h="$(getent passwd "$u" 2>/dev/null | cut -d: -f6)"; [ -n "$h" ] || h="$HOME"\n' +
+	// Fall back to a home the remote user owns, never root's, so `su -m` can't strand the binary in /root.
+	'h="$(getent passwd "$u" 2>/dev/null | cut -d: -f6)"; [ -n "$h" ] || { [ "$u" = root ] && h=/root || h="/home/$u"; }\n' +
 	'run_as() { if [ "$(id -un)" = "$u" ]; then HOME="$h" sh -c "$1"; else HOME="$h" su -m "$u" -c "$1"; fi; }\n' +
 	"if command -v npm >/dev/null 2>&1 && run_as 'npm install -g @anthropic-ai/claude-code@latest >/dev/null 2>&1'; then\n" +
 	'  p="$(run_as \'npm prefix -g 2>/dev/null\')"\n' +

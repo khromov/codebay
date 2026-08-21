@@ -519,6 +519,13 @@ describe('claude-code-update script', () => {
 		expect(out).not.toContain('updated');
 	});
 
+	test('renders a placeholder, not a doubled space, when the pre-update version is unparseable', () => {
+		// claude present but its --version yields no semver (stranded/odd build): `installed` is empty,
+		// so the message must read `updated none -> …`, never `updated  -> …`.
+		const { out } = runUpdate('unknown', '2.1.222');
+		expect(out).toContain('updated none -> 2.1.222');
+	});
+
 	// Same shim harness, but the latest version arrives as `$0` instead of via `npm view`.
 	function runPinned(
 		rawClaude: string | null,

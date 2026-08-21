@@ -18,9 +18,23 @@ import type { Injection } from '../lib/injections.server.ts';
  */
 const RUN_AS_PRELUDE =
 	'u="${1:-root}"; ' +
-	'h="$(getent passwd "$u" 2>/dev/null | cut -d: -f6)"; [ -n "$h" ] || h="$HOME"; ' +
+	// Fall back to a home the remote user actually owns, never root's — otherwise `su -m` below
+	// would strand the native binary in /root, the exact failure this exists to prevent.
+	'h="$(getent passwd "$u" 2>/dev/null | cut -d: -f6)"; [ -n "$h" ] || { [ "$u" = root ] && h=/root || h="/home/$u"; }; ' +
 	'run_as() { if [ "$(id -un)" = "$u" ]; then HOME="$h" sh -c "$1"; else HOME="$h" su -m "$u" -c "$1"; fi; }; ' +
 	"ver() { run_as 'claude --version 2>/dev/null' | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+' | head -n1; }; ";
+
+const NPM_INSTALL_CMD = 'npm install -g @anthropic-ai/claude-code@latest >/dev/null 2>&1';
+
+/**
+ * Prefer the remote user — correct HOME and ownership on the common image whose global prefix is
+ * chowned to that user. Fall back to a root install with HOME pointed at the user's home when the
+ * user can't write a root-owned global prefix (`su` would EACCES there). Success is decided by the
+ * post-install `ver()`, so neither branch's exit status matters.
+ */
+const REINSTALL =
+	`if run_as '${NPM_INSTALL_CMD}'; then :; ` +
+	`elif [ "$(id -un)" != "$u" ]; then HOME="$h" ${NPM_INSTALL_CMD} || true; fi; `;
 
 export const UPDATE_SCRIPT =
 	'command -v claude >/dev/null 2>&1 || exit 0; ' +
@@ -30,9 +44,9 @@ export const UPDATE_SCRIPT =
 	'latest=$(npm view @anthropic-ai/claude-code version 2>/dev/null); ' +
 	'if [ -z "$latest" ]; then exit 0; fi; ' +
 	'if [ "$installed" = "$latest" ]; then echo "current $latest"; exit 0; fi; ' +
-	"run_as 'npm install -g @anthropic-ai/claude-code@latest >/dev/null 2>&1' || true; " +
+	REINSTALL +
 	'now="$(ver)"; ' +
-	'if [ "$now" = "$latest" ]; then echo "updated $installed -> $now"; exit 0; fi; ' +
+	'if [ "$now" = "$latest" ]; then echo "updated ${installed:-none} -> $now"; exit 0; fi; ' +
 	'exit 1';
 
 /**
@@ -47,9 +61,9 @@ export const PINNED_UPDATE_SCRIPT =
 	RUN_AS_PRELUDE +
 	'installed="$(ver)"; ' +
 	'if [ "$installed" = "$latest" ]; then echo "current $latest"; exit 0; fi; ' +
-	"run_as 'npm install -g @anthropic-ai/claude-code@latest >/dev/null 2>&1' || true; " +
+	REINSTALL +
 	'now="$(ver)"; ' +
-	'if [ "$now" = "$latest" ]; then echo "updated $installed -> $now"; exit 0; fi; ' +
+	'if [ "$now" = "$latest" ]; then echo "updated ${installed:-none} -> $now"; exit 0; fi; ' +
 	'exit 1';
 
 /** Anything looser could smuggle shell metacharacters out of a corrupted DB row into a container. */
