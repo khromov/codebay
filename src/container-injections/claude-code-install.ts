@@ -8,20 +8,25 @@ import type { Injection } from '../lib/injections.server.ts';
  * Node, else the standalone installer, which needs no Node at all.
  *
  * `$1` is the remote user (the injection passes it; the build-time feature falls back to the
- * devcontainer CLI's `$_REMOTE_USER`) — the standalone installer puts the binary under that
- * user's `$HOME`, so running it as root would strand it in `/root`.
+ * devcontainer CLI's `$_REMOTE_USER`). Claude Code 2.x's native binary — installed by npm's
+ * postinstall as much as by the standalone installer — lands under that user's `$HOME`, so both
+ * branches run as that user via `run_as`; running as root would strand the binary in `/root`.
+ * Success is judged by `claude --version` (as the user), not `command -v claude`, so a stranded
+ * binary the wrapper still resolves falls through to the standalone installer instead of passing.
  */
 export const INSTALL_SCRIPT =
 	'if command -v claude >/dev/null 2>&1; then exit 0; fi\n' +
-	'if command -v npm >/dev/null 2>&1 && npm install -g @anthropic-ai/claude-code@latest >/dev/null 2>&1; then\n' +
-	'  p="$(npm prefix -g 2>/dev/null)"\n' +
+	'u="${1:-${_REMOTE_USER:-root}}"\n' +
+	// Fall back to a home the remote user owns, never root's, so `su -m` can't strand the binary in /root.
+	'h="$(getent passwd "$u" 2>/dev/null | cut -d: -f6)"; [ -n "$h" ] || { [ "$u" = root ] && h=/root || h="/home/$u"; }\n' +
+	'run_as() { if [ "$(id -un)" = "$u" ]; then HOME="$h" sh -c "$1"; else HOME="$h" su -m "$u" -c "$1"; fi; }\n' +
+	"if command -v npm >/dev/null 2>&1 && run_as 'npm install -g @anthropic-ai/claude-code@latest >/dev/null 2>&1'; then\n" +
+	'  p="$(run_as \'npm prefix -g 2>/dev/null\')"\n' +
 	// npm's global bin is off PATH whenever the image sets its own NPM_CONFIG_PREFIX, so a bare
 	// `command -v` would miss an install that just succeeded — and so would the terminal launcher.
 	'  [ -n "$p" ] && [ -x "$p/bin/claude" ] && ln -sf "$p/bin/claude" /usr/local/bin/claude 2>/dev/null\n' +
-	'  if command -v claude >/dev/null 2>&1 || [ -x "$p/bin/claude" ]; then exit 0; fi\n' +
+	"  if run_as 'claude --version >/dev/null 2>&1'; then exit 0; fi\n" +
 	'fi\n' +
-	'u="${1:-${_REMOTE_USER:-root}}"\n' +
-	'h="$(getent passwd "$u" 2>/dev/null | cut -d: -f6)"; [ -n "$h" ] || h="$HOME"\n' +
 	'f="$(mktemp)"\n' +
 	'if command -v curl >/dev/null 2>&1; then curl -fsSL https://claude.ai/install.sh -o "$f"\n' +
 	'elif command -v wget >/dev/null 2>&1; then wget -qO "$f" https://claude.ai/install.sh\n' +

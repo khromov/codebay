@@ -458,22 +458,31 @@ describe('claude-code-update script', () => {
 	];
 	const NPM_VIEW_FIXTURE = '2.1.222';
 
+	// The scripts run the reinstall (and both `claude --version` probes) as `$1`, the remote user;
+	// derive it via `id -un` so the `run_as` same-user fast path runs on the host without `su`.
+	const CURRENT_USER = Bun.spawnSync(['id', '-un']).stdout.toString().trim();
+
 	// Run the script with fake `claude`/`npm` shims on PATH that print the raw fixtures verbatim,
 	// exactly as it runs in a container. The script silences npm output, so `npm install` records
-	// itself via a marker file instead.
-	function runUpdate(rawClaude: string, rawNpmView: string): { out: string; installed: boolean } {
+	// itself via a marker file — and, since success is now judged by a post-install `claude --version`,
+	// the shim rewrites the `claude` shim to report `afterInstall` (a real upgrade by default; pass the
+	// old version to simulate a reinstall that left a stranded/broken native binary).
+	function runUpdate(
+		rawClaude: string,
+		rawNpmView: string,
+		afterInstall: string = rawNpmView
+	): { out: string; installed: boolean } {
 		const bin = mkdtempSync(join(tmpdir(), 'codebay-update-'));
 		const marker = join(bin, 'install-called');
+		const claude = join(bin, 'claude');
 		try {
-			writeFileSync(join(bin, 'claude'), `#!/bin/sh\ncat <<'FIXTURE'\n${rawClaude}\nFIXTURE\n`, {
-				mode: 0o755
-			});
+			writeFileSync(claude, `#!/bin/sh\ncat <<'FIXTURE'\n${rawClaude}\nFIXTURE\n`, { mode: 0o755 });
 			writeFileSync(
 				join(bin, 'npm'),
-				`#!/bin/sh\nif [ "$1" = view ]; then cat <<'FIXTURE'\n${rawNpmView}\nFIXTURE\nelse touch "${marker}"; fi\n`,
+				`#!/bin/sh\nif [ "$1" = view ]; then cat <<'FIXTURE'\n${rawNpmView}\nFIXTURE\nelse touch "${marker}"; printf '%s\\n' '#!/bin/sh' 'echo "${afterInstall}"' > "${claude}"; chmod 0755 "${claude}"; fi\n`,
 				{ mode: 0o755 }
 			);
-			const res = Bun.spawnSync(['bash', '-c', UPDATE_SCRIPT], {
+			const res = Bun.spawnSync(['bash', '-c', UPDATE_SCRIPT, 'claude-update', CURRENT_USER], {
 				env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }
 			});
 			return { out: res.stdout.toString().trim(), installed: existsSync(marker) };
@@ -502,23 +511,44 @@ describe('claude-code-update script', () => {
 		expect(out).toBe('');
 	});
 
+	test('reports no `updated` when the reinstall leaves claude on the old version (stranded binary)', () => {
+		// npm "succeeds" but `claude --version` still reports the old version — the native-binary-in-root
+		// failure. Verification must catch it and fail (exit 1) instead of printing a false `updated`.
+		const { out, installed } = runUpdate('2.1.220 (Claude Code)', '2.1.222', '2.1.220');
+		expect(installed).toBe(true);
+		expect(out).not.toContain('updated');
+	});
+
+	test('renders a placeholder, not a doubled space, when the pre-update version is unparseable', () => {
+		// claude present but its --version yields no semver (stranded/odd build): `installed` is empty,
+		// so the message must read `updated none -> …`, never `updated  -> …`.
+		const { out } = runUpdate('unknown', '2.1.222');
+		expect(out).toContain('updated none -> 2.1.222');
+	});
+
 	// Same shim harness, but the latest version arrives as `$0` instead of via `npm view`.
 	function runPinned(
 		rawClaude: string | null,
-		latest: string
+		latest: string,
+		afterInstall: string = latest
 	): { out: string; installed: boolean } {
 		const bin = mkdtempSync(join(tmpdir(), 'codebay-pinned-'));
 		const marker = join(bin, 'install-called');
+		const claude = join(bin, 'claude');
 		try {
 			if (rawClaude !== null) {
-				writeFileSync(join(bin, 'claude'), `#!/bin/sh\ncat <<'FIXTURE'\n${rawClaude}\nFIXTURE\n`, {
+				writeFileSync(claude, `#!/bin/sh\ncat <<'FIXTURE'\n${rawClaude}\nFIXTURE\n`, {
 					mode: 0o755
 				});
 			}
-			writeFileSync(join(bin, 'npm'), `#!/bin/sh\ntouch "${marker}"\n`, { mode: 0o755 });
+			writeFileSync(
+				join(bin, 'npm'),
+				`#!/bin/sh\ntouch "${marker}"; printf '%s\\n' '#!/bin/sh' 'echo "${afterInstall}"' > "${claude}"; chmod 0755 "${claude}"\n`,
+				{ mode: 0o755 }
+			);
 			// PATH is pinned (not prepended) so a claude installed on the host can't leak into
 			// the "claude missing" case.
-			const res = Bun.spawnSync(['bash', '-c', PINNED_UPDATE_SCRIPT, latest], {
+			const res = Bun.spawnSync(['bash', '-c', PINNED_UPDATE_SCRIPT, latest, CURRENT_USER], {
 				env: { ...process.env, PATH: `${bin}:/usr/bin:/bin` }
 			});
 			return { out: res.stdout.toString().trim(), installed: existsSync(marker) };
