@@ -27,6 +27,7 @@ import {
 } from './container-injections/claude-code-update.ts';
 import { getClaudePermissionMode } from './container-injections/claude-permission-mode.ts';
 import { getClaudeEffortLevel } from './container-injections/claude-effort-level.ts';
+import { getClaudeOutputStyle } from './container-injections/claude-output-style.ts';
 import { browse } from './lib/picker.server.ts';
 import { pickNamePrompt } from './avatars/name-prompts.ts';
 import { avatars, findAvatar } from './avatars/index.ts';
@@ -73,6 +74,7 @@ import {
 	normalizeMode,
 	normalizePermissionMode,
 	normalizeEffortLevel,
+	normalizeOutputStyle,
 	type InstanceFilter
 } from './types.ts';
 
@@ -205,6 +207,7 @@ export const routes: Record<string, MochiRouteValue> = {
 				defaultMode: getDefaultMode(),
 				claudePermissionMode: getClaudePermissionMode(),
 				claudeEffortLevel: getClaudeEffortLevel(),
+				claudeOutputStyle: getClaudeOutputStyle(),
 				defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
 				builtinImage: DEFAULT_IMAGE,
 				disableBuildCache: getOption('disable_build_cache') === '1',
@@ -275,6 +278,13 @@ export const routes: Record<string, MochiRouteValue> = {
 				const level = normalizeEffortLevel(str(formData, 'level'));
 				setOption('claude_effort_level', level);
 				return success({ level });
+			},
+
+			// Injected into ~/.claude/settings.json at provision time, so it lands on create/rebuild.
+			claudeOutputStyle: ({ formData }) => {
+				const style = normalizeOutputStyle(str(formData, 'style'));
+				setOption('claude_output_style', style);
+				return success({ style });
 			},
 
 			// Persist the default container image used when a source folder ships no devcontainer.json.

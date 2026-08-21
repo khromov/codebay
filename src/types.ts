@@ -73,6 +73,22 @@ export function normalizeEffortLevel(value: unknown): ClaudeEffortLevel {
 		: 'high';
 }
 
+/**
+ * Claude Code's output style for new sessions, written to `settings.json` as `outputStyle`.
+ * `'default'` inherits whatever the host has; `'none'` forces it off; anything else is a literal
+ * Claude output-style name — append future built-ins (`'Explanatory'`, `'Learning'`, …) here.
+ */
+export type ClaudeOutputStyle = 'default' | 'none' | 'Concise';
+
+export const CLAUDE_OUTPUT_STYLES: ClaudeOutputStyle[] = ['default', 'none', 'Concise'];
+
+/** Anything unrecognised falls back to inheriting the host's output style. */
+export function normalizeOutputStyle(value: unknown): ClaudeOutputStyle {
+	return CLAUDE_OUTPUT_STYLES.includes(value as ClaudeOutputStyle)
+		? (value as ClaudeOutputStyle)
+		: 'default';
+}
+
 /** Dashboard run-state view filter: All | Active (running/creating) | Stopped (stopped/error). */
 export type InstanceFilter = 'all' | 'active' | 'stopped';
 

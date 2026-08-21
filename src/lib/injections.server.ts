@@ -17,6 +17,7 @@ import { attentionHooks } from '../container-injections/attention-hooks.ts';
 import { claudeStatusline } from '../container-injections/claude-statusline.ts';
 import { claudeModel } from '../container-injections/claude-model.ts';
 import { claudeEffortLevel } from '../container-injections/claude-effort-level.ts';
+import { claudeOutputStyle } from '../container-injections/claude-output-style.ts';
 import { claudePermissionMode } from '../container-injections/claude-permission-mode.ts';
 import { claudeTrust } from '../container-injections/claude-trust.ts';
 import { claudeAliases } from '../container-injections/claude-aliases.ts';
@@ -78,7 +79,10 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 		// claude-trust edits ~/.claude.json, which the stage-1 Claude slot also writes.
 		// custom-env-vars writes nothing (values ride containerEnv) — it only verifies + health-checks.
 		[claudeTrust, hostEnvVars, customEnvVars],
-		[claudeNoCoauthor]
+		[claudeNoCoauthor],
+		// A settings.json writer of its own: every other stage already has one, and same-stage
+		// settings.json writers race — so output style merges last, on its own.
+		[claudeOutputStyle]
 	];
 }
 

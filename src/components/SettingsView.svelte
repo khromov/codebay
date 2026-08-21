@@ -42,14 +42,17 @@
 	import {
 		CLAUDE_PERMISSION_MODES,
 		CLAUDE_EFFORT_LEVELS,
+		CLAUDE_OUTPUT_STYLES,
 		type ClaudePermissionMode,
 		type ClaudeEffortLevel,
+		type ClaudeOutputStyle,
 		type InstanceMode
 	} from '../types.ts';
 	import Terminal from '@lucide/svelte/icons/terminal';
 	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import Gauge from '@lucide/svelte/icons/gauge';
+	import MessageSquare from '@lucide/svelte/icons/message-square';
 	import { installPopupBackTrap } from '../lib/popup-nav.ts';
 
 	/** Every settings form action fails with the same `{ error }` shape. */
@@ -60,6 +63,7 @@
 		defaultMode,
 		claudePermissionMode,
 		claudeEffortLevel,
+		claudeOutputStyle,
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
@@ -100,6 +104,7 @@
 		defaultMode: InstanceMode;
 		claudePermissionMode: ClaudePermissionMode;
 		claudeEffortLevel: ClaudeEffortLevel;
+		claudeOutputStyle: ClaudeOutputStyle;
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
@@ -290,6 +295,33 @@
 		if (next === effortChoice) return;
 		flushSync(() => (effortChoice = next));
 		effortFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let outputStyleChoice = $state<ClaudeOutputStyle>(claudeOutputStyle);
+	let savingOutputStyle = $state(false);
+	let outputStyleError = $state<string | null>(null);
+	let outputStyleFormEl: HTMLFormElement | undefined;
+
+	const outputStyleOpts = saveOpts<{ style: ClaudeOutputStyle }>({
+		setSaving: (v) => (savingOutputStyle = v),
+		setError: (v) => (outputStyleError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.style) outputStyleChoice = data.style;
+		}
+	});
+
+	const OUTPUT_STYLE_LABELS: Record<ClaudeOutputStyle, string> = {
+		default: 'Default',
+		none: 'None',
+		Concise: 'Concise'
+	};
+
+	function chooseOutputStyle(next: ClaudeOutputStyle) {
+		if (next === outputStyleChoice) return;
+		flushSync(() => (outputStyleChoice = next));
+		outputStyleFormEl?.requestSubmit();
 	}
 
 	// svelte-ignore state_referenced_locally
@@ -970,6 +1002,48 @@
 			</form>
 			{#if effortError}
 				<div class="sub"><div class="msg error">{effortError}</div></div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/claudeOutputStyle"
+				bind:this={outputStyleFormEl}
+				{@attach enhance(outputStyleOpts)}
+			>
+				<div class="label">
+					<MessageSquare size={20} />
+					<div class="text">
+						<div class="name">Claude output style</div>
+						<div class="desc">
+							The output style Claude Code starts new sessions in, written to
+							<code>~/.claude/settings.json</code>. <strong>Default</strong> inherits your host
+							<code>~/.claude/settings.json</code> (including any custom styles);
+							<strong>None</strong>
+							forces it off. Applies on create and rebuild, not to already-running instances.
+						</div>
+					</div>
+				</div>
+				<input type="hidden" name="style" value={outputStyleChoice} />
+				<div class="mode-toggle" role="group" aria-label="Claude output style">
+					{#each CLAUDE_OUTPUT_STYLES as option (option)}
+						<button
+							type="button"
+							class="mode-btn"
+							class:active={outputStyleChoice === option}
+							aria-pressed={outputStyleChoice === option}
+							disabled={savingOutputStyle}
+							onclick={() => chooseOutputStyle(option)}
+						>
+							{OUTPUT_STYLE_LABELS[option]}
+						</button>
+					{/each}
+				</div>
+			</form>
+			{#if outputStyleError}
+				<div class="sub"><div class="msg error">{outputStyleError}</div></div>
 			{/if}
 		</section>
 
