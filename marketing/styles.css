@@ -415,12 +415,14 @@ h1.headline {
 	background: #0d0e0a center / cover no-repeat url('./assets/demo-poster.svg');
 	overflow: hidden;
 }
-.demo-screen video {
+.demo-screen video,
+.demo-screen iframe {
 	position: absolute;
 	inset: 0;
 	width: 100%;
 	height: 100%;
 	object-fit: cover;
+	border: 0;
 }
 
 .cta-row {
