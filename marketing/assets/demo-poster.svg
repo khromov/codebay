@@ -29,6 +29,5 @@
 	<circle cx="640" cy="384" r="52" fill="none" stroke="#d8d9cf" stroke-width="2" opacity="0.75" />
 	<path d="M624 361 L668 384 L624 407 Z" fill="#d8d9cf" opacity="0.75" />
 
-	<text x="640" y="470" text-anchor="middle" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="16" letter-spacing="1" fill="#d8d9cf">LOOPING DEMO GOES HERE</text>
-	<text x="640" y="498" text-anchor="middle" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="13" letter-spacing="1" fill="#7d7e74">drop your clip at marketing/assets/demo.mp4 (16:9)</text>
+	<text x="640" y="474" text-anchor="middle" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="16" letter-spacing="1" fill="#d8d9cf">LOADING…</text>
 </svg>
