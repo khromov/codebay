@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { hostClaudeFile } from '../lib/host-claude.server.ts';
 import { CLAUDE_CODE_TOKEN, CLAUDE_KEYCHAIN_SERVICE } from '../lib/config.server.ts';
 import { getOption } from '../lib/db.server.ts';
 import { checkPresence } from '../lib/exec.server.ts';
@@ -84,7 +83,7 @@ async function locateClaudeCredentials(): Promise<{ creds: string; source: strin
 		}
 	}
 
-	const file = join(homedir(), '.claude', '.credentials.json');
+	const file = hostClaudeFile('.credentials.json');
 	if (existsSync(file)) {
 		const raw = (await readFile(file, 'utf8')).trim();
 		if (isValid(raw)) return { creds: raw, source: '~/.claude/.credentials.json' };

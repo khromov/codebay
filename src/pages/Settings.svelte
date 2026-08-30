@@ -21,6 +21,7 @@
 		disableBuildCache,
 		copyIgnorePatterns,
 		builtinCopyIgnore,
+		claudeConfigDir,
 		gitIdentityEnabled,
 		gitIdentityName,
 		gitIdentityEmail,
@@ -62,6 +63,7 @@
 		disableBuildCache: boolean;
 		copyIgnorePatterns: string;
 		builtinCopyIgnore: string;
+		claudeConfigDir: string;
 		gitIdentityEnabled: boolean;
 		gitIdentityName: string;
 		gitIdentityEmail: string;
@@ -106,6 +108,7 @@
 	{disableBuildCache}
 	{copyIgnorePatterns}
 	{builtinCopyIgnore}
+	{claudeConfigDir}
 	{gitIdentityEnabled}
 	{gitIdentityName}
 	{gitIdentityEmail}

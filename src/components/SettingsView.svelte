@@ -10,6 +10,7 @@
 	import ThemePicker from './ThemePicker.svelte';
 	import Layers from '@lucide/svelte/icons/layers';
 	import FolderMinus from '@lucide/svelte/icons/folder-minus';
+	import FolderCog from '@lucide/svelte/icons/folder-cog';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Hammer from '@lucide/svelte/icons/hammer';
 	import KeyRound from '@lucide/svelte/icons/key-round';
@@ -69,6 +70,7 @@
 		disableBuildCache,
 		copyIgnorePatterns,
 		builtinCopyIgnore,
+		claudeConfigDir,
 		gitIdentityEnabled,
 		gitIdentityName,
 		gitIdentityEmail,
@@ -110,6 +112,7 @@
 		disableBuildCache: boolean;
 		copyIgnorePatterns: string;
 		builtinCopyIgnore: string;
+		claudeConfigDir: string;
 		gitIdentityEnabled: boolean;
 		gitIdentityName: string;
 		gitIdentityEmail: string;
@@ -370,6 +373,29 @@
 	function resetCopyIgnore() {
 		flushSync(() => (copyIgnore = builtinCopyIgnore));
 		copyIgnoreFormEl?.requestSubmit();
+	}
+
+	// Blank means "use ~/.claude" — the host dir the Claude config injections read from.
+	// svelte-ignore state_referenced_locally
+	let claudeDir = $state(claudeConfigDir);
+	let savingClaudeDir = $state(false);
+	let claudeDirError = $state<string | null>(null);
+	let claudeDirSaved = $state(false);
+	let claudeDirFormEl: HTMLFormElement | undefined;
+
+	const claudeDirOpts = saveOpts<{ dir: string }>({
+		setSaving: (v) => (savingClaudeDir = v),
+		setError: (v) => (claudeDirError = v),
+		setMsg: (v) => (claudeDirSaved = !!v),
+		onSuccess: (data) => {
+			claudeDir = data?.dir ?? claudeDir;
+			claudeDirSaved = true;
+		}
+	});
+
+	function resetClaudeDir() {
+		flushSync(() => (claudeDir = ''));
+		claudeDirFormEl?.requestSubmit();
 	}
 
 	// svelte-ignore state_referenced_locally
@@ -1151,6 +1177,54 @@
 				{#if copyIgnoreError}
 					<div class="msg error">{copyIgnoreError}</div>
 				{:else if copyIgnoreSaved}
+					<div class="msg ok">Saved.</div>
+				{/if}
+			</form>
+		</section>
+
+		<section class="card">
+			<form
+				class="row image-row"
+				method="POST"
+				action="?/claudeConfigDir"
+				bind:this={claudeDirFormEl}
+				{@attach enhance(claudeDirOpts)}
+			>
+				<div class="label">
+					<FolderCog size={20} />
+					<div class="text">
+						<div class="name">Claude config directory</div>
+						<div class="desc">
+							Host directory the Claude Code injections read from — credentials, statusLine, output
+							styles, and global skills / <code>CLAUDE.md</code>. Leave blank to use
+							<code>~/.claude</code>. Takes effect for instances created from now on.
+						</div>
+					</div>
+				</div>
+				<div class="image-controls">
+					<input
+						type="text"
+						name="dir"
+						class="image-input"
+						bind:value={claudeDir}
+						spellcheck="false"
+						autocapitalize="off"
+						autocorrect="off"
+						placeholder="~/.claude"
+					/>
+					<Button type="submit" disabled={savingClaudeDir}>Save</Button>
+					<Button
+						type="button"
+						icon={RotateCcw}
+						disabled={savingClaudeDir}
+						onclick={resetClaudeDir}
+						title="Reset to default (~/.claude)"
+						aria-label="Reset to default Claude config directory"
+					/>
+				</div>
+				{#if claudeDirError}
+					<div class="msg error">{claudeDirError}</div>
+				{:else if claudeDirSaved}
 					<div class="msg ok">Saved.</div>
 				{/if}
 			</form>

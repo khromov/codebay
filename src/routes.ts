@@ -214,6 +214,8 @@ export const routes: Record<string, MochiRouteValue> = {
 				// An explicit empty string (as opposed to unset) means "copy everything".
 				copyIgnorePatterns: getOption('copy_ignore_patterns') ?? DEFAULT_COPY_IGNORE,
 				builtinCopyIgnore: DEFAULT_COPY_IGNORE,
+				// Blank means "use ~/.claude"; the host dir credentials/skills/statusLine read from.
+				claudeConfigDir: getOption('claude_config_dir') ?? '',
 				// Not secrets, so the actual values (not just a "set" flag) go to the client.
 				// Blank means "no override" — fall back to the host's git config.
 				gitIdentityEnabled: gitIdentityEnabled(),
@@ -332,6 +334,13 @@ export const routes: Record<string, MochiRouteValue> = {
 				const patterns = str(formData, 'patterns');
 				setOption('copy_ignore_patterns', patterns);
 				return success({ patterns });
+			},
+
+			// The host directory Claude config injections read from; blank falls back to ~/.claude.
+			claudeConfigDir: ({ formData }) => {
+				const dir = str(formData, 'dir').trim();
+				setOption('claude_config_dir', dir);
+				return success({ dir });
 			},
 
 			gitIdentityToggle: ({ formData }) => {

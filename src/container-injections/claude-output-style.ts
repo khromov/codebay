@@ -1,5 +1,4 @@
 import { readdir, readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { getOption } from '../lib/db.server.ts';
 import { writeContainerFile } from '../lib/container-files.server.ts';
@@ -8,7 +7,7 @@ import {
 	mergeClaudeSettings,
 	readClaudeSettings
 } from '../lib/claude-settings.server.ts';
-import { readHostClaudeSettings } from './claude-statusline.ts';
+import { hostClaudeFile, readHostClaudeSettings } from '../lib/host-claude.server.ts';
 import { normalizeOutputStyle } from '../types.ts';
 import type { ClaudeOutputStyle } from '../types.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
@@ -29,7 +28,7 @@ export async function resolveEffectiveOutputStyle(): Promise<string | null> {
 
 /** The host's custom output-style definitions, so a non-built-in name resolves inside the container. */
 export async function readHostOutputStyleFiles(): Promise<{ name: string; content: string }[]> {
-	const dir = join(homedir(), '.claude', 'output-styles');
+	const dir = hostClaudeFile('output-styles');
 	let names: string[];
 	try {
 		names = (await readdir(dir)).filter((n) => n.endsWith('.md'));

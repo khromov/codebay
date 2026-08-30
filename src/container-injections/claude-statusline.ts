@@ -1,14 +1,16 @@
-import { existsSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { writeContainerFile } from '../lib/container-files.server.ts';
 import {
 	claudeConfigFile,
 	mergeClaudeSettings,
 	readClaudeSettings
 } from '../lib/claude-settings.server.ts';
+import { expandTilde, readHostClaudeSettings } from '../lib/host-claude.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
+
+// Re-exported so the modules and tests that historically imported these from here keep working.
+export { expandTilde, readHostClaudeSettings };
 
 /** Left unexpanded — Claude Code invokes this long after the injection has finished. */
 const CONTAINER_SCRIPT_PATH = '${CLAUDE_CONFIG_DIR:-$HOME/.claude}/statusline.sh';
@@ -18,19 +20,6 @@ interface StatusLineConfig {
 	/** Only set when `command` references a script file. */
 	script?: string;
 }
-
-export async function readHostClaudeSettings(): Promise<Record<string, unknown> | null> {
-	const file = join(homedir(), '.claude', 'settings.json');
-	if (!existsSync(file)) return null;
-	try {
-		return JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
-	} catch {
-		return null;
-	}
-}
-
-export const expandTilde = (p: string): string =>
-	p.startsWith('~/') ? join(homedir(), p.slice(2)) : p;
 
 /** Only a real file counts — else jq's `//` operator and a bare `/` resolve to the root dir. */
 const isExistingFile = (p: string): boolean => {

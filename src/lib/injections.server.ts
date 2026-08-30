@@ -7,6 +7,7 @@ import { ttyd } from '../container-injections/ttyd.ts';
 import { gitIdentity } from '../container-injections/git-identity.ts';
 import { claudeCodeCredentials } from '../container-injections/claude-code-credentials.ts';
 import { claudeCodeCustom } from '../container-injections/claude-code-custom.ts';
+import { claudeCodeSkills } from '../container-injections/claude-code-skills.ts';
 import { claudeCodeIdeExtension } from '../container-injections/claude-code-ide-extension.ts';
 import { codeServerDark } from '../container-injections/code-server-dark.ts';
 import { claudeCodeInstall } from '../container-injections/claude-code-install.ts';
@@ -67,6 +68,7 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 			tmux,
 			claudeCodeInstall,
 			claudeInjection,
+			claudeCodeSkills,
 			claudeCodeIdeExtension,
 			claudeEffortLevel
 		],

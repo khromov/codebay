@@ -54,6 +54,15 @@ export function writeFileScript(file: ContainerFile): string {
 	);
 }
 
+/** Like `writeFileScript`, but the stdin payload is base64 so binary bytes survive the env-var carrier. */
+export function writeBase64FileScript(file: ContainerFile): string {
+	const mode = file.mode ?? '644';
+	return (
+		`set -e; ${HOME_PRELUDE}f="${filePath(file)}"; mkdir -p "$(dirname "$f")"; ` +
+		`printf '%s' "$CODEBAY_STDIN" | base64 -d > "$f"; chmod ${mode} "$f"`
+	);
+}
+
 /** Single-quotes a value for a sourced shell file so whatever it contains stays literal. */
 export const shellSingleQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
@@ -95,6 +104,19 @@ export async function writeContainerFile(
 	content: string
 ): Promise<{ ok: boolean; error?: string }> {
 	const res = await execInContainer(target, { script: writeFileScript(file), stdin: content });
+	return res.ok ? { ok: true } : { ok: false, error: res.error };
+}
+
+/** Writes raw `bytes` to a container file, ferrying them as base64 so binary content stays intact. */
+export async function writeContainerFileBytes(
+	target: ExecTarget,
+	file: ContainerFile,
+	bytes: Buffer
+): Promise<{ ok: boolean; error?: string }> {
+	const res = await execInContainer(target, {
+		script: writeBase64FileScript(file),
+		stdin: bytes.toString('base64')
+	});
 	return res.ok ? { ok: true } : { ok: false, error: res.error };
 }
 
