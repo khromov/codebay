@@ -108,6 +108,13 @@ describe('injection registry', () => {
 		expect(typeof statusline!.check).toBe('function');
 	});
 
+	test('claude-code-skills is registered with an auth chip and a health check', () => {
+		const skills = injections.find((i) => i.id === 'claude-code-skills');
+		expect(skills).toBeDefined();
+		expect(skills!.auth).toBeDefined();
+		expect(typeof skills!.check).toBe('function');
+	});
+
 	test('claude-model is registered with a health check and no auth chip', () => {
 		const model = injections.find((i) => i.id === 'claude-model');
 		expect(model).toBeDefined();
@@ -200,6 +207,7 @@ describe('resolveInjectionStages — clobber safety', () => {
 		'claude-code-update': ['npm-global'],
 		'claude-code-credentials': ['claude-credentials', 'claude-json'],
 		'claude-code-custom': ['claude-env-file', 'rc', 'claude-json'],
+		'claude-code-skills': ['claude-md', 'skills-dir'],
 		'claude-code-ide-extension': ['extensions-dir'],
 		'code-server-dark': ['code-server-install', 'code-server-user-settings'],
 		'git-identity': ['gitconfig'],
