@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/khromov/codebay/compare/codebay-v0.13.0...codebay-v0.14.0) (2026-09-03)
+
+
+### Features
+
+* add Codebay logo as favicon on the control panel ([#201](https://github.com/khromov/codebay/issues/201)) ([70c7bb3](https://github.com/khromov/codebay/commit/70c7bb395783c38e2de59b4228f426661c1d96d2))
+* inject global Claude skills & CLAUDE.md, add configurable Claude dir ([#204](https://github.com/khromov/codebay/issues/204)) ([e176ae4](https://github.com/khromov/codebay/commit/e176ae4f0940ae8a170108e469efeacce3d0f452))
+
+
+### Bug Fixes
+
+* **marketing:** sync avatar carousel with current sprites ([#205](https://github.com/khromov/codebay/issues/205)) ([fe34e8b](https://github.com/khromov/codebay/commit/fe34e8b43ce418c43bc6938d57ceeca959898740))
+
 ## [0.13.0](https://github.com/khromov/codebay/compare/codebay-v0.12.1...codebay-v0.13.0) (2026-08-21)
 
 
