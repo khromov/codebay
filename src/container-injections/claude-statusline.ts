@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { isAbsolute } from 'node:path';
 import { writeContainerFile } from '../lib/container-files.server.ts';
 import {
 	claudeConfigFile,
@@ -34,7 +35,9 @@ const isExistingFile = (p: string): boolean => {
 export function extractScriptPath(command: string): string | null {
 	const token = command
 		.split(/\s+/)
-		.find((t) => (t.startsWith('/') || t.startsWith('~/')) && isExistingFile(expandTilde(t)));
+		// isAbsolute rather than a leading slash, so a Windows `C:…` command is recognised too;
+		// on POSIX the two are equivalent. The file check still rejects a bare root either way.
+		.find((t) => (isAbsolute(t) || t.startsWith('~/')) && isExistingFile(expandTilde(t)));
 	return token ?? null;
 }
 

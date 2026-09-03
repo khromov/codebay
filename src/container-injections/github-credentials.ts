@@ -51,8 +51,19 @@ export function ghHostBlock(raw: string, host: string): string | null {
 	return rest.slice(0, end === -1 ? rest.length : end).join('\n');
 }
 
+/** Mirrors `gh`'s own resolution order, which is not XDG on Windows. */
+function ghConfigDir(): string {
+	const explicit = process.env.GH_CONFIG_DIR?.trim();
+	if (explicit) return explicit;
+	if (process.platform === 'win32') {
+		return join(process.env.AppData || join(homedir(), 'AppData', 'Roaming'), 'GitHub CLI');
+	}
+	const xdg = process.env.XDG_CONFIG_HOME?.trim();
+	return xdg ? join(xdg, 'gh') : join(homedir(), '.config', 'gh');
+}
+
 async function readGhHostsFile(): Promise<string | null> {
-	const file = join(homedir(), '.config', 'gh', 'hosts.yml');
+	const file = join(ghConfigDir(), 'hosts.yml');
 	if (!existsSync(file)) return null;
 	try {
 		return await readFile(file, 'utf8');

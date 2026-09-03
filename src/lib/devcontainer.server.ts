@@ -1,6 +1,6 @@
 import { chmod, cp, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
-import { existsSync, readdirSync, statSync } from 'node:fs';
-import { basename, dirname, join, relative } from 'node:path';
+import { existsSync, lstatSync, readdirSync, statSync } from 'node:fs';
+import { basename, dirname, join, relative, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT as TMUX_INSTALL_SCRIPT } from '../container-injections/tmux.ts';
 import { INSTALL_SCRIPT as TTYD_INSTALL_SCRIPT } from '../container-injections/ttyd.ts';
@@ -354,21 +354,49 @@ export function launchCommandFor(mode: InstanceMode): string {
 		: codeServerLaunch(getOption('advanced_blocking_ext_install') === '1');
 }
 
+/**
+ * Latched so the 5s preflight tick can't spam the console while the setup banner is up, but
+ * still re-arms on recovery. Without this, a spawn that fails for a *platform* reason (Windows
+ * can't exec an extensionless shim) is indistinguishable from the CLI simply not being installed.
+ */
+let cliProbeWarned = false;
+
 export async function devcontainerCliAvailable(): Promise<boolean> {
-	return (await spawnCapture([devcontainerBin(), '--version'])) !== null;
+	const argv = devcontainerBin();
+	const available = (await spawnCapture([...argv, '--version'])) !== null;
+	if (!available && !cliProbeWarned) {
+		console.warn(`⚠ devcontainer CLI probe failed — could not run: ${argv.join(' ')}`);
+	}
+	cliProbeWarned = !available;
+	return available;
 }
 
+/**
+ * Windows needs Developer Mode to *create* a symlink, and one EPERM rejects the whole `cp` — so
+ * there we follow them instead, which needs no privilege. Git for Windows does the same by default
+ * (`core.symlinks=false`). The count rides back out so the caller can say so in the boot log.
+ */
 export async function copyWorkspace(
 	source: string,
 	dest: string,
-	ignore: Set<string>
-): Promise<void> {
+	ignore: Set<string>,
+	dereference: boolean = process.platform === 'win32'
+): Promise<{ dereferencedSymlinks: number }> {
+	let dereferencedSymlinks = 0;
 	await mkdir(dest, { recursive: true });
 	await cp(source, dest, {
 		recursive: true,
-		dereference: false,
-		filter: (src) => !ignore.has(basename(src))
+		dereference,
+		filter: (src) => {
+			if (ignore.has(basename(src))) return false;
+			// Counted in the filter because cp offers no per-entry hook once the walk is underway.
+			if (dereference && lstatSync(src, { throwIfNoEntry: false })?.isSymbolicLink()) {
+				dereferencedSymlinks++;
+			}
+			return true;
+		}
 	});
+	return { dereferencedSymlinks };
 }
 
 /** Strip // and /* *\/ comments and trailing commas from JSONC, respecting string literals. */
@@ -582,7 +610,10 @@ export async function writeOverrideConfig(
 	// `./`-descendant feature paths), and under `.devcontainer/` for the two classic forms.
 	const featureRoot =
 		dirname(target) === workspaceDir ? join(workspaceDir, '.devcontainer') : dirname(target);
-	const featureKey = (dir: string) => `./${relative(dirname(target), join(featureRoot, dir))}`;
+	// A feature key is a config path the CLI resolves, not a host path: it must stay POSIX, or the
+	// flat-config form (whose relative path spans a directory) emits a backslash Windows-only key.
+	const featureKey = (dir: string) =>
+		`./${relative(dirname(target), join(featureRoot, dir)).replaceAll(sep, '/')}`;
 	const tmuxFeatureKey = featureKey(TMUX_FEATURE_DIR);
 	const ttydFeatureKey = featureKey(TTYD_FEATURE_DIR);
 	const claudeFeatureKey = featureKey(CLAUDE_FEATURE_DIR);
@@ -925,7 +956,7 @@ type UpOptions = { noCache?: boolean; configPath?: string; overrideConfigPath?: 
 
 export function devcontainerUpArgs(workspaceDir: string, opts: UpOptions = {}) {
 	const args = [
-		devcontainerBin(),
+		...devcontainerBin(),
 		'up',
 		'--workspace-folder',
 		workspaceDir,
