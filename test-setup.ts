@@ -16,6 +16,9 @@
 import { rmSync } from 'node:fs';
 
 if (!process.env.DATA_DIR) {
-	rmSync('./.test-data', { recursive: true, force: true });
+	// Retries because Windows refuses to unlink a still-open app.sqlite: an interrupted run leaves
+	// one locked, and a silently skipped wipe surfaces much later as UNIQUE-constraint failures in
+	// whichever test file inserts next.
+	rmSync('./.test-data', { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 	process.env.DATA_DIR = './.test-data';
 }

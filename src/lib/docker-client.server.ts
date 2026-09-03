@@ -1,5 +1,6 @@
 import Docker from 'dockerode';
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { DOCKER_HOST, dockerEnv } from './config.server.ts';
 import { spawnCapture } from './spawn.server.ts';
@@ -16,9 +17,13 @@ export function resetDocker(): void {
 	g.__codebayDocker = undefined;
 }
 
+/** Docker Desktop for Windows exposes no Unix socket; its daemon listens on a named pipe. */
+const DEFAULT_DOCKER_SOCKET =
+	process.platform === 'win32' ? '//./pipe/docker_engine' : '/var/run/docker.sock';
+
 async function resolveDocker(): Promise<Docker> {
 	const host = DOCKER_HOST || (await dockerContextHost()) || '';
-	return new Docker(host ? parseDockerHost(host) : { socketPath: '/var/run/docker.sock' });
+	return new Docker(host ? parseDockerHost(host) : { socketPath: DEFAULT_DOCKER_SOCKET });
 }
 
 /** dockerode ignores `docker context`, but the devcontainer CLI honors it — so read it here. */
@@ -33,7 +38,8 @@ async function dockerContextHost(): Promise<string> {
 
 /** Missing files yield undefined so the connection fails with a clear TLS error, not here. */
 function tlsMaterials(): { ca?: Buffer; cert?: Buffer; key?: Buffer } {
-	const dir = process.env.DOCKER_CERT_PATH?.trim() || join(process.env.HOME ?? '', '.docker');
+	// homedir(), not $HOME, which Windows leaves unset — that would make this cwd-relative.
+	const dir = process.env.DOCKER_CERT_PATH?.trim() || join(homedir(), '.docker');
 	const read = (name: string): Buffer | undefined => {
 		try {
 			return readFileSync(join(dir, name));
@@ -44,10 +50,10 @@ function tlsMaterials(): { ca?: Buffer; cert?: Buffer; key?: Buffer } {
 	return { ca: read('ca.pem'), cert: read('cert.pem'), key: read('key.pem') };
 }
 
-/** Windows `npipe://` is unsupported — this app runs on macOS/Linux. */
+/** dockerode takes a Windows named pipe as a `socketPath`, exactly like a Unix socket. */
 function parseDockerHost(host: string): Docker.DockerOptions {
-	if (host.startsWith('unix://')) {
-		return { socketPath: host.slice('unix://'.length) };
+	for (const scheme of ['unix://', 'npipe://']) {
+		if (host.startsWith(scheme)) return { socketPath: host.slice(scheme.length) };
 	}
 	const tls = (process.env.DOCKER_TLS_VERIFY ?? '') !== '';
 	const url = new URL(host.includes('://') ? host : `tcp://${host}`);
