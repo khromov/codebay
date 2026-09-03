@@ -761,6 +761,10 @@ section {
 	height: 36px;
 	fill: var(--ink);
 }
+/* Half-lit (`+`) LED cells read as a fainter ink, matching the in-app sprite. */
+.avatar-tile .sprite .gray {
+	fill-opacity: 0.42;
+}
 .avatar-tile figcaption {
 	font-size: 10px;
 	text-transform: uppercase;
