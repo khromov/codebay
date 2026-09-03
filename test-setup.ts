@@ -14,11 +14,20 @@
 // or an instance id would then collide on the next run. Doing this in preload (before
 // any connection is open) avoids the "don't rmSync a live DATA_DIR mid-run" hazard.
 import { rmSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const DIR = './.test-data';
 
 if (!process.env.DATA_DIR) {
-	// Retries because Windows refuses to unlink a still-open app.sqlite: an interrupted run leaves
-	// one locked, and a silently skipped wipe surfaces much later as UNIQUE-constraint failures in
-	// whichever test file inserts next.
-	rmSync('./.test-data', { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-	process.env.DATA_DIR = './.test-data';
+	// Absolute, because Bun on Windows fails a `./`-prefixed rmSync with ENOENT — which `force`
+	// then swallows, silently skipping the wipe and surfacing much later as UNIQUE-constraint
+	// failures in whichever test file inserts next. Retries cover a still-open app.sqlite, which
+	// Windows refuses to unlink outright.
+	rmSync(resolve(process.cwd(), DIR), {
+		recursive: true,
+		force: true,
+		maxRetries: 5,
+		retryDelay: 100
+	});
+	process.env.DATA_DIR = DIR;
 }
