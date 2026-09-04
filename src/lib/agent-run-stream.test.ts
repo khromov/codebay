@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { emptyRunState, readRunChunk, readRunFile } from './agent-run-stream.ts';
+import { emptyRunState, parseRunTimeline, readRunChunk, readRunFile } from './agent-run-stream.ts';
 
 const line = (o: unknown) => JSON.stringify(o) + '\n';
 
@@ -106,5 +106,61 @@ describe('readRunChunk', () => {
 		const activity = readRunFile(long).lastActivity!;
 		expect(activity.length).toBeLessThanOrEqual(140);
 		expect(activity).toContain('…');
+	});
+});
+
+describe('parseRunTimeline', () => {
+	test('keeps every step, where readRunChunk keeps only the latest', () => {
+		const text =
+			init +
+			toolUse +
+			line({
+				type: 'assistant',
+				message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/a.ts' } }] }
+			}) +
+			result;
+		const rows = parseRunTimeline(text);
+		expect(rows.map((r) => `${r.kind}:${r.name ?? ''}`)).toEqual([
+			'tool:Bash',
+			'tool:Read',
+			'result:'
+		]);
+		// The poller keeps only the last *action* in last_activity; the closing text is `result`.
+		const state = readRunFile(text);
+		expect(state.lastActivity).toBe('Read(/a.ts)');
+		expect(state.result).toBe('Added the badge.');
+	});
+
+	test('marks subagent steps rather than dropping them', () => {
+		const rows = parseRunTimeline(
+			line({
+				type: 'assistant',
+				parent_tool_use_id: 'toolu_1',
+				message: { content: [{ type: 'tool_use', name: 'Grep', input: { pattern: 'x' } }] }
+			})
+		);
+		expect(rows).toEqual([{ kind: 'tool', name: 'Grep', text: 'x', subagent: true }]);
+	});
+
+	test('flags a failed result so the panel can show a cross', () => {
+		const rows = parseRunTimeline(line({ type: 'result', subtype: 'error_max_turns' }));
+		expect(rows[0]).toMatchObject({ kind: 'result', isError: true });
+	});
+
+	test('splits a multi-block message into one row per block', () => {
+		const rows = parseRunTimeline(
+			line({
+				type: 'assistant',
+				message: {
+					content: [
+						{ type: 'text', text: 'Let me look.' },
+						{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }
+					]
+				}
+			})
+		);
+		expect(rows).toHaveLength(2);
+		expect(rows[0]).toMatchObject({ kind: 'text', text: 'Let me look.' });
+		expect(rows[1]).toMatchObject({ kind: 'tool', name: 'Bash', text: 'ls' });
 	});
 });

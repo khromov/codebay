@@ -161,6 +161,14 @@ const TMUX_SHELL_SESSION = 'codebay-shell';
 export const INJECTIONS_DONE_FILE = '.codebay-injections-done';
 
 /**
+ * Present in `$HOME` for exactly as long as an MCP-driven `claude -p` run is executing. The
+ * surface launchers read it so opening the IDE mid-run doesn't start a second Claude beside the
+ * agent's — the two would share `~/.claude.json` and one project session dir, which is the same
+ * read-modify-write race documented on `terminalTask` below.
+ */
+export const AGENT_RUN_MARKER = '.codebay-agent-active';
+
+/**
  * IDE mode's folderOpen task touches this to stay run-once across workspace reloads, but it
  * outlives a container restart — so a relaunch must clear it or the terminal never reopens.
  */
@@ -193,10 +201,17 @@ export const WAIT_FOR_INJECTIONS =
  * skipped once the sentinel exists, since no injection can be mid-reinstall by then and a missing
  * binary is permanent. No single quotes: this is spliced into the single-quoted tmux commands below.
  */
-const launchClaude = (permissionMode: ClaudePermissionMode): string =>
+export const launchClaude = (permissionMode: ClaudePermissionMode): string =>
+	// An agent run already owns this container's Claude state, so drop to a plain shell instead of
+	// racing it. No single quotes: this whole string is spliced into the single-quoted tmux commands.
+	`if [ -e "$HOME/${AGENT_RUN_MARKER}" ]; then ` +
+	`echo "codebay: an agent run is driving Claude in this container — opening a shell instead."; ` +
+	`echo "codebay: run claude yourself once it finishes, or watch it in the Agent log."; ` +
+	`else ` +
 	`if [ ! -e "$HOME/${INJECTIONS_DONE_FILE}" ]; then i=0; until command -v claude >/dev/null 2>&1 || [ "$i" -ge ${CLAUDE_BINARY_WAIT_SECONDS} ]; do sleep 1; i=$((i + 1)); done; fi; ` +
 	`if command -v claude >/dev/null 2>&1; then claude ${claudePermissionFlags(permissionMode)}; ` +
-	`else echo "codebay: claude is not installed in this container — check the boot log, then Rebuild"; fi; `;
+	`else echo "codebay: claude is not installed in this container — check the boot log, then Rebuild"; fi; ` +
+	`fi; `;
 
 /**
  * claude scans `~/.claude/ide/*.lock` once at startup and never retries, so it must not race

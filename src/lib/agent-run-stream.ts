@@ -36,9 +36,12 @@ export function emptyRunState(): RunStreamState {
 /** Long enough to identify the step, short enough to sit on one line of a caller's poll output. */
 const ACTIVITY_MAX = 120;
 
-function truncate(text: string): string {
+/** The timeline has a whole panel to render into, so it keeps more of each line than the poller. */
+const TIMELINE_MAX = 400;
+
+function truncate(text: string, max = ACTIVITY_MAX): string {
 	const oneLine = text.replace(/\s+/g, ' ').trim();
-	return oneLine.length > ACTIVITY_MAX ? oneLine.slice(0, ACTIVITY_MAX - 1) + '…' : oneLine;
+	return oneLine.length > max ? oneLine.slice(0, max - 1) + '…' : oneLine;
 }
 
 /** The field that best identifies a call, per tool; anything unlisted falls back to the first string. */
@@ -157,4 +160,73 @@ export function readRunChunk(
 /** Replays a whole mirror file — how a run's state is rebuilt after the manager restarts. */
 export function readRunFile(text: string): RunStreamState {
 	return readRunChunk(emptyRunState(), '', text).state;
+}
+
+/** One rendered row of the Agent log panel. */
+export interface RunTimelineEntry {
+	kind: 'tool' | 'text' | 'retry' | 'result';
+	/** Tool name, when `kind` is `'tool'`. */
+	name?: string;
+	text: string;
+	/** True for a subagent's message, which the panel indents rather than hides. */
+	subagent?: boolean;
+	isError?: boolean;
+}
+
+function timelineFromEvent(event: StreamEvent): RunTimelineEntry[] {
+	if (event.type === 'system' && event.subtype === 'api_retry') {
+		return [
+			{
+				kind: 'retry',
+				text: `Retrying (${event.error ?? 'error'}), attempt ${event.attempt ?? 1}…`
+			}
+		];
+	}
+	if (event.type === 'assistant' && Array.isArray(event.message?.content)) {
+		const subagent = event.parent_tool_use_id != null;
+		const out: RunTimelineEntry[] = [];
+		for (const block of event.message.content) {
+			if (block.type === 'tool_use' && typeof block.name === 'string') {
+				const arg = summarizeToolInput(block.input);
+				out.push({
+					kind: 'tool',
+					name: block.name,
+					text: truncate(arg, TIMELINE_MAX),
+					subagent
+				});
+			} else if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
+				out.push({ kind: 'text', text: truncate(block.text, TIMELINE_MAX), subagent });
+			}
+		}
+		return out;
+	}
+	if (event.type === 'result') {
+		const isError = event.is_error === true || event.subtype !== 'success';
+		return [
+			{
+				kind: 'result',
+				text: truncate(event.result ?? event.subtype ?? 'finished', TIMELINE_MAX),
+				isError
+			}
+		];
+	}
+	return [];
+}
+
+/**
+ * Flattens a whole mirrored run into the rows the Agent log renders. Separate from `readRunChunk`
+ * because that one only keeps the *latest* of each field — a timeline needs every step.
+ */
+export function parseRunTimeline(text: string): RunTimelineEntry[] {
+	const out: RunTimelineEntry[] = [];
+	for (const line of text.split('\n')) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		try {
+			out.push(...timelineFromEvent(JSON.parse(trimmed) as StreamEvent));
+		} catch {
+			// A torn trailing line; it reappears whole once more bytes land.
+		}
+	}
+	return out;
 }

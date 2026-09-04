@@ -15,6 +15,7 @@ import { execInContainer, type ExecTarget } from './exec.server.ts';
 import { writeContainerFile } from './container-files.server.ts';
 import { FETCH_MARKER, parseFetchBlocks, tailBlockScript } from './log-capture.server.ts';
 import {
+	AGENT_RUN_MARKER,
 	CLAUDE_BINARY_WAIT_SECONDS,
 	SOURCE_INJECTED_ENV,
 	WAIT_FOR_INJECTIONS
@@ -24,7 +25,13 @@ import {
 	type AgentRunSummary,
 	type ClaudePermissionMode
 } from '../types.ts';
-import { emptyRunState, readRunChunk, type RunStreamState } from './agent-run-stream.ts';
+import {
+	emptyRunState,
+	parseRunTimeline,
+	readRunChunk,
+	type RunStreamState,
+	type RunTimelineEntry
+} from './agent-run-stream.ts';
 
 /** Fast enough that a caller polling `get_run` sees movement, cheap enough to leave always-on. */
 const POLL_MS = 3000;
@@ -101,6 +108,10 @@ function runScript(runId: string, row: InstanceRow, opts: StartRunOptions): stri
 		`die(){ printf 'codebay: %s\\n' "$2" >> "$d/stderr.log"; w exit "$1"; exit "$1"; }\n` +
 		// setsid made this the session leader, so $$ is also the PGID stopRun signals.
 		`w pgid "$$"\n` +
+		// Tells the IDE/terminal launchers not to start a second Claude beside this one. The trap
+		// covers stopRun's INT/TERM; only an unblockable KILL can leave it behind, and the poller
+		// clears it on the pass that sees the exit file.
+		`m="$HOME/${AGENT_RUN_MARKER}"; : > "$m"; trap 'rm -f "$m"' EXIT INT TERM\n` +
 		// Claude Code refuses --dangerously-skip-permissions under uid 0, which is exactly what an
 		// instance with no resolved remote_user execs as.
 		`[ "$(id -u)" = 0 ] && export IS_SANDBOX=1\n` +
@@ -148,6 +159,8 @@ function pollScript(runId: string, offset: number): string {
 		`alive=0; if [ -n "$pg" ]; then c=$(tr '\\0' ' ' < "/proc/$pg/cmdline" 2>/dev/null); ` +
 		`case "$c" in *${runId}*) alive=1 ;; esac; fi; ` +
 		`printf '${STATE_MARKER}%s\\t%s\\n' "$ex" "$alive"; ` +
+		// run.sh's own trap normally does this; this covers a run that was hard-killed.
+		`if [ -n "$ex" ]; then rm -f "$HOME/${AGENT_RUN_MARKER}"; fi; ` +
 		// Only worth a read once the run is over; tailing it every pass is pure waste.
 		`if [ -n "$ex" ] && [ -s "$d/stderr.log" ]; then printf '${ERR_MARKER}%s\\n' "$(tail -c 2000 "$d/stderr.log" | tr '\\n' ' ')"; fi; ` +
 		`printf '%s\\n' '${FETCH_MARKER}'; ` +
@@ -551,6 +564,18 @@ export async function stopRun(
 		duration_ms: row.started_at ? Date.now() - row.started_at : null
 	});
 	return getRun(runId)!;
+}
+
+/**
+ * The run's steps, rendered by the instance page's Agent log. Read from the host mirror rather than
+ * the container, so it still works after the sandbox is gone.
+ */
+export function runTimeline(runId: string, limit = 500): RunTimelineEntry[] {
+	try {
+		return parseRunTimeline(readFileSync(runMirrorPath(runId), 'utf8')).slice(-limit);
+	} catch {
+		return [];
+	}
 }
 
 /** The trailing lines of a run's mirrored transcript, for `get_logs`. */

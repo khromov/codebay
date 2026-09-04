@@ -25,6 +25,7 @@
 		mcpEnabled,
 		mcpToken,
 		mcpUrl,
+		mcpPrAttribution,
 		gitIdentityEnabled,
 		gitIdentityName,
 		gitIdentityEmail,
@@ -70,6 +71,7 @@
 		mcpEnabled: boolean;
 		mcpToken: string;
 		mcpUrl: string;
+		mcpPrAttribution: boolean;
 		gitIdentityEnabled: boolean;
 		gitIdentityName: string;
 		gitIdentityEmail: string;
@@ -118,6 +120,7 @@
 	{mcpEnabled}
 	{mcpToken}
 	{mcpUrl}
+	{mcpPrAttribution}
 	{gitIdentityEnabled}
 	{gitIdentityName}
 	{gitIdentityEmail}

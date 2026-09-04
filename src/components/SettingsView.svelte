@@ -75,6 +75,7 @@
 		mcpEnabled,
 		mcpToken,
 		mcpUrl,
+		mcpPrAttribution,
 		gitIdentityEnabled,
 		gitIdentityName,
 		gitIdentityEmail,
@@ -120,6 +121,7 @@
 		mcpEnabled: boolean;
 		mcpToken: string;
 		mcpUrl: string;
+		mcpPrAttribution: boolean;
 		gitIdentityEnabled: boolean;
 		gitIdentityName: string;
 		gitIdentityEmail: string;
@@ -429,6 +431,17 @@
 		onSuccess: (data) => (mcpTokenValue = data?.token ?? ''),
 		confirmMessage:
 			'Regenerate the MCP token? Any agent already configured with the current token will stop working.'
+	});
+
+	// svelte-ignore state_referenced_locally
+	let mcpAttribution = $state(mcpPrAttribution);
+	let savingMcpAttribution = $state(false);
+	let mcpAttributionError = $state<string | null>(null);
+
+	const mcpAttributionOpts = toggleOpts({
+		set: (v) => (mcpAttribution = v),
+		setSaving: (v) => (savingMcpAttribution = v),
+		setError: (v) => (mcpAttributionError = v)
 	});
 
 	const mcpCommand = $derived(
@@ -1350,6 +1363,40 @@
 						{/if}
 					</div>
 				</div>
+
+				<form
+					class="row divided"
+					method="POST"
+					action="?/mcpPrAttributionToggle"
+					{@attach enhance(mcpAttributionOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Credit Codebay on pull requests</div>
+							<div class="desc">
+								Append a one-line footer to the body of every pull request an agent opens through
+								<code>create_pr</code>. Off by default — an attribution line on your PRs is yours to
+								opt into.
+							</div>
+						</div>
+					</div>
+					<label class="switch">
+						<input
+							type="checkbox"
+							name="enabled"
+							checked={mcpAttribution}
+							disabled={savingMcpAttribution}
+							onchange={(e) => {
+								mcpAttribution = e.currentTarget.checked;
+								e.currentTarget.form?.requestSubmit();
+							}}
+						/>
+						<span class="track"><span class="thumb"></span></span>
+					</label>
+				</form>
+				{#if mcpAttributionError}
+					<div class="sub"><div class="msg error">{mcpAttributionError}</div></div>
+				{/if}
 			{/if}
 		</section>
 

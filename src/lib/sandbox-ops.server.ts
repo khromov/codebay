@@ -1,6 +1,6 @@
 import { execInContainer, type ExecTarget } from './exec.server.ts';
 import { SOURCE_INJECTED_ENV } from './devcontainer.server.ts';
-import type { InstanceRow } from './db.server.ts';
+import { getOption, type InstanceRow } from './db.server.ts';
 
 /** Enough for a big diff or a test run's output, small enough not to blow a caller's context. */
 export const OUTPUT_CAP = 200_000;
@@ -230,6 +230,23 @@ export async function gitPush(
 		300
 	);
 	return { branch, committed, output: output.trim() };
+}
+
+export const PR_ATTRIBUTION_KEY = 'mcp_pr_attribution';
+
+/** The footer appended to an MCP-opened PR body when the setting is on. */
+export const PR_ATTRIBUTION =
+	'🤖 Written by Claude Code in a [Codebay](https://github.com/khromov/codebay) sandbox, driven over MCP.';
+
+/** Off unless explicitly enabled — an attribution line on someone's PR is theirs to opt into. */
+export function prAttributionEnabled(): boolean {
+	return getOption(PR_ATTRIBUTION_KEY) === '1';
+}
+
+/** Appends the footer, unless the body already carries it (a caller may have written its own). */
+export function withAttribution(body: string): string {
+	if (!prAttributionEnabled() || body.includes(PR_ATTRIBUTION)) return body;
+	return `${body.trimEnd()}\n\n---\n${PR_ATTRIBUTION}\n`;
 }
 
 export async function createPr(

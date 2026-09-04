@@ -60,6 +60,8 @@ import {
 	deleteFolderHistory,
 	getInstance,
 	getOption,
+	listRuns,
+	type AgentRunRow,
 	listFolderHistory,
 	setOption
 } from './lib/db.server.ts';
@@ -80,6 +82,8 @@ import {
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
+import { runTimeline } from './lib/agent-runs.server.ts';
+import { PR_ATTRIBUTION_KEY, prAttributionEnabled } from './lib/sandbox-ops.server.ts';
 import { mcpRoutes } from './mcp/routes.server.ts';
 import {
 	isInstanceFilter,
@@ -123,6 +127,25 @@ function currentPet() {
 function currentFilter(): InstanceFilter {
 	const v = getOption('instance_filter');
 	return isInstanceFilter(v) ? v : 'all';
+}
+
+/** The prompt and result are the two fields the Agent log panel actually renders in full. */
+function agentRunPayload(run: AgentRunRow) {
+	return {
+		id: run.id,
+		status: run.status,
+		prompt: run.prompt,
+		result: run.result,
+		error: run.error,
+		is_error: run.is_error === 1,
+		last_activity: run.last_activity,
+		num_turns: run.num_turns,
+		cost_usd: run.cost_usd,
+		duration_ms: run.duration_ms,
+		created_at: run.created_at,
+		started_at: run.started_at,
+		finished_at: run.finished_at
+	};
 }
 
 /** Lets a route handler just `throw` for both validation and business-logic failures. */
@@ -236,6 +259,7 @@ export const routes: Record<string, MochiRouteValue> = {
 				// the whole point of it existing.
 				mcpToken: mcpEnabled() ? getMcpToken() : '',
 				mcpUrl: `${PUBLIC_ORIGIN}${MCP_PATH}`,
+				mcpPrAttribution: prAttributionEnabled(),
 				gitIdentityEnabled: gitIdentityEnabled(),
 				gitIdentityName: getOption('git_identity_name') ?? '',
 				gitIdentityEmail: getOption('git_identity_email') ?? '',
@@ -368,6 +392,12 @@ export const routes: Record<string, MochiRouteValue> = {
 			},
 			// Rotating breaks every client already configured with the old token, so the UI confirms.
 			mcpRegenerateToken: () => success({ token: regenerateMcpToken() }),
+
+			mcpPrAttributionToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption(PR_ATTRIBUTION_KEY, enabled ? '1' : '0');
+				return success({ enabled });
+			},
 
 			gitIdentityToggle: ({ formData }) => {
 				const enabled = onChecked(formData, 'enabled');
@@ -663,6 +693,20 @@ export const routes: Record<string, MochiRouteValue> = {
 	'/api/instances/:id/delete': mutationRoute('POST', async ({ params }) => {
 		await deleteInstance(params.id!);
 		return { ok: true };
+	}),
+
+	// GET-only, so the CSRF header guard doesn't apply; the Basic Auth gate still does.
+	'/api/instances/:id/agent-log': Mochi.api(({ method, params, url }) => {
+		if (method !== 'GET') return apiError(405, 'Method Not Allowed');
+		if (!getInstance(params.id!)) return apiError(404, 'Instance not found');
+		const runs = listRuns(params.id!, 20);
+		// Default to the newest run, which is what the panel opens on.
+		const runId = url.searchParams.get('run_id') ?? runs[0]?.id ?? null;
+		return json({
+			runs: runs.map(agentRunPayload),
+			run_id: runId,
+			timeline: runId ? runTimeline(runId) : []
+		});
 	}),
 
 	'/api/instances/:id/attention/clear': mutationRoute('POST', ({ params }) => {
