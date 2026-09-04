@@ -3,6 +3,8 @@ import { routes } from './routes.ts';
 import { basicAuth } from './lib/auth.server.ts';
 import { themeHandle } from './lib/theme.server.ts';
 import { PROXY_PREFIX } from './lib/proxy.server.ts';
+import { MCP_PATH } from './lib/mcp-auth.server.ts';
+import { resumeRuns } from './lib/agent-runs.server.ts';
 import {
 	APP_VERSION,
 	BASIC_AUTH_PASSWORD,
@@ -25,6 +27,9 @@ if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !BASIC_AUTH_PASSWORD) {
 // Must precede Mochi.serve(), which is where MOCHI_KEY is read.
 ensureMochiKey();
 
+// Agent runs outlive the process that started them, so re-attach pollers to anything still in flight.
+resumeRuns();
+
 await Mochi.serve({
 	port: PORT,
 	hostname: HOST,
@@ -44,7 +49,7 @@ await Mochi.serve({
 		// Containers curl the bridge with no Origin header, which the check would 403;
 		// safe because the route authenticates by token, not ambient browser credentials.
 		'csrf:check': (decision, { url }) =>
-			url.pathname.startsWith('/api/bridge/') ? null : decision,
+			url.pathname.startsWith('/api/bridge/') || url.pathname === MCP_PATH ? null : decision,
 		'consoleLogger:line': (line, ctx) => {
 			const kept = silenceInternalRoutes(line, ctx);
 			if (kept == null) {
@@ -55,6 +60,10 @@ await Mochi.serve({
 			}
 			// These fire on every Claude hook event and carry the bridge token.
 			if (ctx.path.startsWith('/api/bridge/')) {
+				return null;
+			}
+			// One line per JSON-RPC frame is pure noise, and the frames carry the MCP token.
+			if (ctx.path === MCP_PATH) {
 				return null;
 			}
 			return kept;

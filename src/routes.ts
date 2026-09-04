@@ -63,11 +63,24 @@ import {
 	listFolderHistory,
 	setOption
 } from './lib/db.server.ts';
-import { APP_VERSION, DEFAULT_COPY_IGNORE, DEFAULT_IMAGE } from './lib/config.server.ts';
+import {
+	APP_VERSION,
+	DEFAULT_COPY_IGNORE,
+	DEFAULT_IMAGE,
+	PUBLIC_ORIGIN
+} from './lib/config.server.ts';
 import { wsUpgradeAllowed } from './lib/auth.server.ts';
+import {
+	MCP_PATH,
+	getMcpToken,
+	mcpEnabled,
+	regenerateMcpToken,
+	setMcpEnabled
+} from './lib/mcp-auth.server.ts';
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
+import { mcpRoutes } from './mcp/routes.server.ts';
 import {
 	isInstanceFilter,
 	isTheme,
@@ -218,6 +231,11 @@ export const routes: Record<string, MochiRouteValue> = {
 				claudeConfigDir: getOption('claude_config_dir') ?? '',
 				// Not secrets, so the actual values (not just a "set" flag) go to the client.
 				// Blank means "no override" — fall back to the host's git config.
+				mcpEnabled: mcpEnabled(),
+				// The one secret here that IS sent to the client: copying it into an MCP client is
+				// the whole point of it existing.
+				mcpToken: mcpEnabled() ? getMcpToken() : '',
+				mcpUrl: `${PUBLIC_ORIGIN}${MCP_PATH}`,
 				gitIdentityEnabled: gitIdentityEnabled(),
 				gitIdentityName: getOption('git_identity_name') ?? '',
 				gitIdentityEmail: getOption('git_identity_email') ?? '',
@@ -342,6 +360,14 @@ export const routes: Record<string, MochiRouteValue> = {
 				setOption('claude_config_dir', dir);
 				return success({ dir });
 			},
+
+			mcpToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setMcpEnabled(enabled);
+				return success({ enabled, token: enabled ? getMcpToken() : '' });
+			},
+			// Rotating breaks every client already configured with the old token, so the UI confirms.
+			mcpRegenerateToken: () => success({ token: regenerateMcpToken() }),
 
 			gitIdentityToggle: ({ formData }) => {
 				const enabled = onChecked(formData, 'enabled');
@@ -694,6 +720,8 @@ export const routes: Record<string, MochiRouteValue> = {
 	}),
 
 	...proxyRoutes,
+
+	...mcpRoutes,
 
 	...(process.env.MODE === 'development'
 		? {

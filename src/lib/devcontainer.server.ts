@@ -174,14 +174,14 @@ export const TERMINAL_LAUNCHED_MARKER = '.codebay-terminal-launched';
 const INJECTIONS_WAIT_SECONDS = 600;
 
 /** Long enough to ride out an in-flight `npm install -g` of Claude Code. */
-const CLAUDE_BINARY_WAIT_SECONDS = 60;
+export const CLAUDE_BINARY_WAIT_SECONDS = 60;
 
 /**
  * An auto-launched `claude` that starts mid-injection reads `~/.claude.json` before the trust
  * keys land and clobbers them on its next rewrite, so hold it until the sentinel appears.
  * Bounded so a failed boot (sentinel never written) still yields a usable terminal.
  */
-const WAIT_FOR_INJECTIONS =
+export const WAIT_FOR_INJECTIONS =
 	`[ -e "$HOME/${INJECTIONS_DONE_FILE}" ] || echo "Waiting for codebay setup to finish…"; ` +
 	`i=0; until [ -e "$HOME/${INJECTIONS_DONE_FILE}" ] || [ "$i" -ge ${INJECTIONS_WAIT_SECONDS} ]; do sleep 1; i=$((i + 1)); done; ` +
 	`[ -e "$HOME/${INJECTIONS_DONE_FILE}" ] || echo "codebay: setup did not finish in time — starting anyway"; `;
@@ -215,7 +215,7 @@ const WAIT_FOR_IDE_BRIDGE = `i=0; until ls "$HOME/.claude/ide/" 2>/dev/null | gr
  * An explicit list, never a glob: tmux runs this under the user's shell, and zsh would print
  * "no matches found" when a file is absent.
  */
-const SOURCE_INJECTED_ENV = `for f in ${[CUSTOM_ENV_FILE, MODELS_ENV_FILE, HOST_ENV_FILE]
+export const SOURCE_INJECTED_ENV = `for f in ${[CUSTOM_ENV_FILE, MODELS_ENV_FILE, HOST_ENV_FILE]
 	.map((name) => `"$HOME/${name}"`)
 	.join(' ')}; do [ -r "$f" ] && . "$f"; done; `;
 

@@ -275,6 +275,17 @@
 					syncTheme(msg.data.value);
 					return;
 				}
+				if (msg.type === 'run') {
+					// Its own frame because run progress ticks far faster than the instance list
+					// reconciles, so patch the one instance rather than waiting for a whole list.
+					const summary = msg.data;
+					instances = instances.map((i) =>
+						i.id === summary.instance_id
+							? { ...i, active_run: summary.finished_at ? null : summary }
+							: i
+					);
+					return;
+				}
 				if (msg.type === 'health') {
 					// A tick in flight when a rebuild starts probes the *old* container and
 					// reports it accessible, which would mount the iframe against the replacement too early.

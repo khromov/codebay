@@ -22,6 +22,9 @@
 		copyIgnorePatterns,
 		builtinCopyIgnore,
 		claudeConfigDir,
+		mcpEnabled,
+		mcpToken,
+		mcpUrl,
 		gitIdentityEnabled,
 		gitIdentityName,
 		gitIdentityEmail,
@@ -64,6 +67,9 @@
 		copyIgnorePatterns: string;
 		builtinCopyIgnore: string;
 		claudeConfigDir: string;
+		mcpEnabled: boolean;
+		mcpToken: string;
+		mcpUrl: string;
 		gitIdentityEnabled: boolean;
 		gitIdentityName: string;
 		gitIdentityEmail: string;
@@ -109,6 +115,9 @@
 	{copyIgnorePatterns}
 	{builtinCopyIgnore}
 	{claudeConfigDir}
+	{mcpEnabled}
+	{mcpToken}
+	{mcpUrl}
 	{gitIdentityEnabled}
 	{gitIdentityName}
 	{gitIdentityEmail}

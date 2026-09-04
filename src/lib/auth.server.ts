@@ -1,6 +1,7 @@
 import type { Handle } from 'mochi-framework';
 import { BASIC_AUTH_PASSWORD, BASIC_AUTH_USERNAME } from './config.server.ts';
 import { timingSafeEqualStr } from './crypto.server.ts';
+import { MCP_PATH } from './mcp-auth.server.ts';
 
 const REALM = 'Codebay';
 
@@ -71,6 +72,9 @@ export const basicAuth: Handle = async ({ event, resolve }) => {
 
 	// Containers can carry neither the app password nor the CSRF header; the route checks a token.
 	if (path.startsWith('/api/bridge/')) return resolve(event);
+
+	// Same trade for MCP clients: one bearer token instead of the app password, checked by the route.
+	if (path === MCP_PATH) return resolve(event);
 
 	// Covers the `/p/:id/*` proxy relay only; `Mochi.ws` routes call `wsUpgradeAllowed` themselves.
 	if (

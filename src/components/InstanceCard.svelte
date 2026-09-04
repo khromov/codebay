@@ -94,6 +94,16 @@
 	{#if instance.git_branch}
 		<BranchBox branch={instance.git_branch} />
 	{/if}
+	{#if instance.active_run}
+		<div class="agent-run" title="An MCP client is driving Claude in this sandbox">
+			<span class="agent-dot"></span>
+			<span class="agent-text">
+				{instance.active_run.status === 'queued'
+					? 'Agent run queued'
+					: (instance.active_run.last_activity ?? 'Agent running')}
+			</span>
+		</div>
+	{/if}
 	{#if instance.status === 'error' && instance.error}
 		<div class="card-error">{instance.error}</div>
 	{/if}
@@ -250,6 +260,34 @@
 		background: var(--bg);
 		color: var(--ink);
 		outline: none;
+	}
+	.agent-run {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+		margin-top: 8px;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		color: var(--ink-soft);
+	}
+	.agent-dot {
+		flex: none;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--fill);
+		animation: agent-pulse 1.6s ease-in-out infinite;
+	}
+	.agent-text {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	@keyframes agent-pulse {
+		50% {
+			opacity: 0.25;
+		}
 	}
 	.path {
 		margin-top: 10px;

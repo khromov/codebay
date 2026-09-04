@@ -29,6 +29,21 @@ export interface Instance {
 	git_branch: string | null;
 	attention: 'done' | 'waiting' | null;
 	forwarded_ports: PortForward[];
+	/** The newest unfinished MCP-driven run, or null when nothing is running in this sandbox. */
+	active_run: AgentRunSummary | null;
+}
+
+export type AgentRunStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
+
+/** The slice of an agent run the dashboard renders; the prompt and result never ride the stream. */
+export interface AgentRunSummary {
+	id: string;
+	instance_id: string;
+	status: AgentRunStatus;
+	last_activity: string | null;
+	started_at: number | null;
+	finished_at: number | null;
+	is_error: boolean;
 }
 
 /** `'ide'` serves full code-server; `'terminal'` serves only ttyd + Claude Code. */
