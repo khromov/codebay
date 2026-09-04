@@ -163,6 +163,8 @@
 <style>
 	.agentwrap {
 		overflow: hidden;
+		/* Matches the 18px the page puts under every other panel; this one sits above the boot log. */
+		margin-bottom: 18px;
 	}
 	.agent-bar {
 		display: flex;
