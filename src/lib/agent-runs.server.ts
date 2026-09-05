@@ -340,6 +340,11 @@ function optionsOf(row: AgentRunRow): StartRunOptions {
 	}
 }
 
+/** The alias or id the caller asked for; null when the run took the sandbox default. */
+export function requestedModel(row: AgentRunRow): string | null {
+	return optionsOf(row).model ?? null;
+}
+
 /**
  * Staging happens here rather than in `startRun` because a run may be queued against an instance
  * that is still booting and has no container to write into yet.
@@ -449,6 +454,7 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 		if (changed) {
 			updateRun(row.id, {
 				session_id: state.sessionId,
+				model: state.model,
 				last_activity: state.lastActivity,
 				num_turns: state.numTurns,
 				cost_usd: state.costUsd
@@ -470,6 +476,7 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 				num_turns: state.numTurns,
 				cost_usd: state.costUsd,
 				session_id: state.sessionId,
+				model: state.model,
 				last_activity: state.lastActivity,
 				// The stream's own result text is the better message when claude exited cleanly but
 				// reported a failure; stderr only carries anything when it crashed outright.
@@ -528,6 +535,7 @@ export function startRun(
 		prompt,
 		status: 'queued',
 		session_id: null,
+		model: null,
 		resume_session_id: opts.resumeSessionId ?? null,
 		options: JSON.stringify(opts),
 		result: null,

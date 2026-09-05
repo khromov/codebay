@@ -222,6 +222,8 @@ export interface AgentRunRow {
 	status: AgentRunStatus;
 	/** Claude's own session id, parsed out of the stream's `init` event; resumable. */
 	session_id: string | null;
+	/** The model Claude actually ran with, from the stream `init` event; the requested alias lives in `options`. */
+	model: string | null;
 	resume_session_id: string | null;
 	/** JSON blob of the launch options, so a run queued before its container existed can still start. */
 	options: string | null;
@@ -247,14 +249,15 @@ const OPEN_RUN_STATUSES = "('queued', 'running')";
 export function insertRun(row: AgentRunRow): void {
 	db.query(
 		`INSERT INTO agent_runs
-       (id, instance_id, prompt, status, session_id, resume_session_id, options, result, structured_output, last_activity, is_error, exit_code, cost_usd, duration_ms, num_turns, error, created_at, started_at, finished_at)
-     VALUES ($id, $instance_id, $prompt, $status, $session_id, $resume_session_id, $options, $result, $structured_output, $last_activity, $is_error, $exit_code, $cost_usd, $duration_ms, $num_turns, $error, $created_at, $started_at, $finished_at)`
+       (id, instance_id, prompt, status, session_id, model, resume_session_id, options, result, structured_output, last_activity, is_error, exit_code, cost_usd, duration_ms, num_turns, error, created_at, started_at, finished_at)
+     VALUES ($id, $instance_id, $prompt, $status, $session_id, $model, $resume_session_id, $options, $result, $structured_output, $last_activity, $is_error, $exit_code, $cost_usd, $duration_ms, $num_turns, $error, $created_at, $started_at, $finished_at)`
 	).run({
 		$id: row.id,
 		$instance_id: row.instance_id,
 		$prompt: row.prompt,
 		$status: row.status,
 		$session_id: row.session_id,
+		$model: row.model,
 		$resume_session_id: row.resume_session_id,
 		$options: row.options,
 		$result: row.result,
@@ -301,6 +304,7 @@ export function openRunFor(instanceId: string): AgentRunRow | null {
 const UPDATABLE_RUN_COLUMNS = [
 	'status',
 	'session_id',
+	'model',
 	'result',
 	'structured_output',
 	'last_activity',

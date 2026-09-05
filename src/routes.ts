@@ -82,7 +82,7 @@ import {
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
-import { runTimeline } from './lib/agent-runs.server.ts';
+import { requestedModel, runTimeline } from './lib/agent-runs.server.ts';
 import { PR_ATTRIBUTION_KEY, prAttributionEnabled } from './lib/sandbox-ops.server.ts';
 import { mcpRoutes } from './mcp/routes.server.ts';
 import {
@@ -138,6 +138,8 @@ function agentRunPayload(run: AgentRunRow) {
 		id: run.id,
 		status: run.status,
 		prompt: run.prompt,
+		model: run.model,
+		requested_model: requestedModel(run),
 		result: run.result,
 		error: run.error,
 		is_error: run.is_error === 1,

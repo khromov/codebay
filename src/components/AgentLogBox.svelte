@@ -14,6 +14,10 @@
 		id: string;
 		status: AgentRunStatus;
 		prompt: string;
+		/** The id Claude reported once it started; null until then. */
+		model: string | null;
+		/** What the caller asked for, an alias like `sonnet`; null when the sandbox default was used. */
+		requested_model: string | null;
 		result: string | null;
 		error: string | null;
 		is_error: boolean;
@@ -90,6 +94,16 @@
 
 	const isLive = (run: AgentRun) => run.status === 'running' || run.status === 'queued';
 
+	/** The id Claude reported, or the caller's alias until the run has started. */
+	const modelOf = (run: AgentRun) => run.model ?? run.requested_model;
+
+	function modelTitle(run: AgentRun): string | undefined {
+		if (run.model && run.requested_model && run.model !== run.requested_model) {
+			return `Requested as ${run.requested_model}`;
+		}
+		return run.model ? undefined : 'Requested; Claude has not reported the model it is using yet';
+	}
+
 	function when(run: AgentRun): string {
 		return new Date(run.created_at).toLocaleTimeString([], {
 			hour: '2-digit',
@@ -136,6 +150,9 @@
 						{#if isLive(run)}<span class="pulse"></span>{/if}
 						{run.status}
 					</span>
+					{#if modelOf(run)}
+						<span class="model" title={modelTitle(run)}>{modelOf(run)}</span>
+					{/if}
 					{#if !expanded}
 						<span class="peek">{peek(run)}</span>
 					{/if}
@@ -253,10 +270,19 @@
 	}
 	.when,
 	.status,
+	.model,
 	.run-meta,
 	.peek {
 		font-family: var(--font-mono);
 		font-size: 11px;
+	}
+	.model {
+		flex: none;
+		color: var(--ink-soft);
+		max-width: 14em;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.when {
 		flex: none;

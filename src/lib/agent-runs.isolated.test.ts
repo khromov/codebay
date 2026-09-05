@@ -190,7 +190,7 @@ describe('the staged launcher', () => {
 describe('polling', () => {
 	test('reads the exit file before the stream, and mirrors the bytes it fetched', async () => {
 		const stream =
-			line({ type: 'system', subtype: 'init', session_id: 'sess-9' }) +
+			line({ type: 'system', subtype: 'init', session_id: 'sess-9', model: 'claude-opus-5' }) +
 			line({
 				type: 'assistant',
 				message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }] }
@@ -220,6 +220,7 @@ describe('polling', () => {
 		const mid = await pollRunNow(run.id);
 		expect(mid?.status).toBe('running');
 		expect(mid?.session_id).toBe('sess-9');
+		expect(mid?.model).toBe('claude-opus-5');
 		expect(mid?.last_activity).toBe('Bash(ls)');
 
 		const done = await pollRunNow(run.id);
@@ -228,6 +229,7 @@ describe('polling', () => {
 		expect(done?.exit_code).toBe(0);
 		expect(done?.num_turns).toBe(4);
 		expect(done?.cost_usd).toBe(0.1);
+		expect(done?.model).toBe('claude-opus-5');
 		expect(done?.is_error).toBe(0);
 
 		// The exit read precedes the tail in the script, which is what makes a same-pass exit safe.

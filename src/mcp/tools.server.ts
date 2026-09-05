@@ -9,7 +9,13 @@ import {
 	subscribeLogs
 } from '../lib/instances.server.ts';
 import { getInstance, getRun, listRuns, type AgentRunRow } from '../lib/db.server.ts';
-import { pollRunNow, readRunLog, startRun, stopRun } from '../lib/agent-runs.server.ts';
+import {
+	pollRunNow,
+	readRunLog,
+	requestedModel,
+	startRun,
+	stopRun
+} from '../lib/agent-runs.server.ts';
 import {
 	createPr,
 	execCommand,
@@ -61,6 +67,8 @@ function runPayload(run: AgentRunRow) {
 		sandbox_id: run.instance_id,
 		status: run.status,
 		session_id: run.session_id,
+		model: run.model,
+		requested_model: requestedModel(run),
 		last_activity: run.last_activity,
 		result: run.result,
 		structured_output: run.structured_output ? JSON.parse(run.structured_output) : null,
@@ -97,7 +105,15 @@ const runOptions = {
 			v.description('Continue a previous run’s Claude session instead of starting fresh.')
 		)
 	),
-	model: v.optional(v.pipe(v.string(), v.description('Model alias or id, e.g. "sonnet".'))),
+	model: v.optional(
+		v.pipe(
+			v.string(),
+			v.description(
+				'Model alias or id, e.g. "sonnet". Omit for the sandbox default. The run reports the id ' +
+					'Claude actually used as `model` once it starts.'
+			)
+		)
+	),
 	max_turns: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
 	json_schema: v.optional(
 		v.pipe(
@@ -265,7 +281,7 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			name: 'get_run',
 			description:
 				'Status and result of an agent run. While it is still going you get the live session id, ' +
-				'turn count, cost and what Claude is doing right now. Set wait_seconds to block until it ' +
+				'model, turn count, cost and what Claude is doing right now. Set wait_seconds to block until it ' +
 				'finishes instead of polling.',
 			schema: v.object({
 				run_id: v.pipe(v.string(), v.minLength(1)),

@@ -25,6 +25,11 @@ describe('readRunChunk', () => {
 		expect(readRunFile(init).sessionId).toBe('sess-1');
 	});
 
+	test('records the model Claude actually ran with, which only the init event carries', () => {
+		expect(readRunFile(init).model).toBe('opus');
+		expect(readRunFile(toolUse + result).model).toBeNull();
+	});
+
 	test('summarises a tool call as name(argument)', () => {
 		expect(readRunFile(init + toolUse).lastActivity).toBe('Bash(bun test)');
 	});

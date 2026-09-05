@@ -127,7 +127,11 @@ describe('the protocol surface', () => {
 		const runAgent = tools.find((t) => t.name === 'run_agent')!;
 		expect(runAgent.inputSchema).toMatchObject({
 			type: 'object',
-			properties: { sandbox_id: { type: 'string' }, prompt: { type: 'string' } },
+			properties: {
+				sandbox_id: { type: 'string' },
+				prompt: { type: 'string' },
+				model: { type: 'string' }
+			},
 			required: ['sandbox_id', 'prompt']
 		});
 	});

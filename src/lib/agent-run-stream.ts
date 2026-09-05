@@ -7,6 +7,8 @@
 /** Everything the run row needs, accumulated across chunks. */
 export interface RunStreamState {
 	sessionId: string | null;
+	/** The model Claude actually ran with (an id like `claude-opus-5`), from the `init` event. */
+	model: string | null;
 	lastActivity: string | null;
 	numTurns: number | null;
 	costUsd: number | null;
@@ -22,6 +24,7 @@ export interface RunStreamState {
 export function emptyRunState(): RunStreamState {
 	return {
 		sessionId: null,
+		model: null,
 		lastActivity: null,
 		numTurns: null,
 		costUsd: null,
@@ -92,6 +95,7 @@ interface StreamEvent {
 	type?: string;
 	subtype?: string;
 	session_id?: string;
+	model?: string;
 	parent_tool_use_id?: string | null;
 	message?: { content?: ContentBlock[] };
 	error?: string;
@@ -106,6 +110,11 @@ interface StreamEvent {
 
 function applyEvent(state: RunStreamState, event: StreamEvent): void {
 	if (typeof event.session_id === 'string' && !state.sessionId) state.sessionId = event.session_id;
+
+	if (event.type === 'system' && event.subtype === 'init' && typeof event.model === 'string') {
+		state.model = event.model;
+		return;
+	}
 
 	if (event.type === 'system' && event.subtype === 'api_retry') {
 		state.lastActivity = `Retrying (${event.error ?? 'error'}), attempt ${event.attempt ?? 1}…`;
