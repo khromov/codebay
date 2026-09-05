@@ -18,6 +18,9 @@ import {
 	deleteInstanceRow,
 	getInstance,
 	getOption,
+	getRun,
+	openRunFor,
+	openRuns,
 	insertForward,
 	insertInstance,
 	listForwards,
@@ -67,12 +70,14 @@ import {
 	syncHealthMonitors
 } from './health.server.ts';
 import { runCapturePass, stopLogCapture, syncLogCapture } from './log-capture.server.ts';
+import { currentRunSummaries, runSummary, setRunChangeHook, stopRun } from './agent-runs.server.ts';
 import { isHostPortBindable, pickBindablePort } from './ports.server.ts';
 import { pickAvatar, pickUniqueAvatar } from '../avatars/pick.server.ts';
 import type { ServerWebSocket } from 'bun';
 import {
 	isInstanceFilter,
 	normalizeMode,
+	type AgentRunSummary,
 	type Instance,
 	type InstanceFilter,
 	type InstanceHealth,
@@ -186,6 +191,9 @@ export function subscribeLogs(id: string, onChunk: (chunk: string) => void): () 
 export type StreamEvent =
 	| { type: 'instances'; data: Instance[] }
 	| { type: 'health'; data: { id: string; health: InstanceHealth } }
+	// Its own frame rather than a list reconcile: run progress ticks every few seconds, and
+	// `reconcileInstances` runs a `docker inspect` per instance.
+	| { type: 'run'; data: AgentRunSummary }
 	| { type: 'preflight'; data: { docker: boolean; cli: boolean } }
 	// `name` is the chosen sprite, or null for the default box logo. Lets the header swap live.
 	| { type: 'pet'; data: { name: string | null } }
@@ -239,6 +247,11 @@ function sendTo(ws: ServerWebSocket<unknown>, event: StreamEvent): void {
 export function broadcastHealth(id: string, health: InstanceHealth): void {
 	broadcast({ type: 'health', data: { id, health } });
 }
+
+setRunChangeHook((runId) => {
+	const row = getRun(runId);
+	if (row) broadcast({ type: 'run', data: runSummary(row) });
+});
 
 /** Called from the settings action so every open dashboard swaps its header logo without a reload. */
 export function broadcastPet(name: string | null): void {
@@ -301,6 +314,7 @@ export function streamOpen(ws: ServerWebSocket<unknown>): void {
 	// Seed everything up front so a fresh or reconnected client is correct without waiting a tick.
 	void listInstances().then((list) => sendTo(ws, { type: 'instances', data: list }));
 	for (const snap of currentHealthSnapshots()) sendTo(ws, { type: 'health', data: snap });
+	for (const run of currentRunSummaries()) sendTo(ws, { type: 'run', data: run });
 	void backgroundPreflight().then((pf) => sendTo(ws, { type: 'preflight', data: pf }));
 	// Keeps a reconnecting client correct even if the pet changed while it was away.
 	sendTo(ws, { type: 'pet', data: { name: getOption('pet') || null } });
@@ -680,6 +694,8 @@ export async function listInstances(): Promise<Instance[]> {
 	for (const { id, health } of currentHealthSnapshots()) {
 		openPorts.set(id, new Set(health.openPorts));
 	}
+	// One query for every sandbox rather than one per row, since this runs on every reconcile tick.
+	const runs = new Map(openRuns().map((run) => [run.instance_id, runSummary(run)]));
 	const forwards = new Map<
 		string,
 		{ container_port: number; host_port: number; open: boolean }[]
@@ -700,7 +716,8 @@ export async function listInstances(): Promise<Instance[]> {
 		avatar: effectiveAvatarName(row),
 		git_branch: branches.get(row.id) ?? null,
 		attention: getAttention(row.id),
-		forwarded_ports: forwards.get(row.id) ?? []
+		forwarded_ports: forwards.get(row.id) ?? [],
+		active_run: runs.get(row.id) ?? null
 	}));
 }
 
@@ -771,6 +788,9 @@ export function rebuildInstance(id: string, opts: { noCache?: boolean } = {}): I
 	const row = getInstance(id);
 	if (!row) throw new Error('Instance not found');
 	if (inFlight.has(id)) return row; // a build is already in flight
+	// The rebuild replaces the container the run's detached process lives in, so it can never
+	// report back — fail it now rather than leaving the poller to time it out.
+	void cancelActiveRun(id, 'the sandbox was rebuilt');
 	// Claimed before the broadcast below, which reconciles synchronously: an unclaimed `creating`
 	// row reads as orphaned, and reconcile would flip it straight back off `creating`.
 	inFlight.add(id);
@@ -845,9 +865,16 @@ export async function startInstance(id: string): Promise<InstanceRow> {
 	return getInstance(id)!;
 }
 
+/** Runs are per-container, so any transition that replaces or stops one has to settle them first. */
+async function cancelActiveRun(id: string, reason: string): Promise<void> {
+	const open = openRunFor(id);
+	if (open) await stopRun(open.id, reason).catch(() => undefined);
+}
+
 export async function stopInstance(id: string): Promise<InstanceRow> {
 	const row = getInstance(id);
 	if (!row) throw new Error('Instance not found');
+	await cancelActiveRun(id, 'the sandbox was stopped');
 	// A later delete can't exec into a stopped container, so this is the last chance to mirror.
 	stopLogCapture(id);
 	if (row.container_id) await runCapturePass(row).catch(() => undefined);
@@ -864,6 +891,7 @@ export async function stopInstance(id: string): Promise<InstanceRow> {
 export async function deleteInstance(id: string): Promise<void> {
 	const row = getInstance(id);
 	if (!row) return;
+	await cancelActiveRun(id, 'the sandbox was deleted');
 	stopHealthMonitor(id);
 	// Mirror the tail of the session before the transcripts die with the container; the periodic
 	// chain is stopped first so it can't race this last pass. Retention outlives the instance —

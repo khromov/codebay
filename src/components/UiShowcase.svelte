@@ -183,7 +183,8 @@
 		terminal_split: 0,
 		git_branch: cardBranch ? branchName : null,
 		attention: cardAttention,
-		forwarded_ports: demoPorts
+		forwarded_ports: demoPorts,
+		active_run: null
 	});
 
 	const statuses: Instance['status'][] = ['creating', 'running', 'stopped', 'error'];
@@ -234,7 +235,8 @@
 				terminal_split: 0,
 				git_branch: 'main',
 				attention: null,
-				forwarded_ports: []
+				forwarded_ports: [],
+				active_run: null
 			};
 		})
 	);

@@ -25,6 +25,35 @@ The UI opens at `http://localhost:6969`. State (SQLite DB + per-instance workspa
 - `CODEBAY_GITHUB_TOKEN` — GitHub token to inject instead of reading `gh auth token` from the host
 - `DISABLE_OPEN_BROWSER=1` — skip opening the browser on startup
 
+## MCP server
+
+Codebay can expose itself to other AI agents over [MCP](https://modelcontextprotocol.io), so an agent
+can spin up a sandbox, run Claude Code in it non-interactively, and read back the result.
+
+It is **off by default**. Turn it on under Settings → **MCP server**, then copy the registration line
+it shows you:
+
+```sh
+claude mcp add --transport http codebay http://localhost:6969/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+The endpoint is `/mcp`. It returns `404` while disabled and `401` without a valid bearer token, and
+it is the one place that does not use `BASIC_AUTH_PASSWORD` — MCP clients send the token instead.
+
+The tools cover the whole loop: `create_sandbox`, `run_agent`, `get_run`, `list_runs`, `stop_run`,
+`get_diff`, `read_file`, `write_file`, `exec_command`, `git_push`, `create_pr`, `get_logs`,
+`list_sandboxes`, `get_sandbox` and `delete_sandbox`. Runs are asynchronous — `run_agent` hands back
+a run id and the work continues in the background, surviving a manager restart.
+
+Sandboxes created this way are ordinary instances: they show up on the dashboard with a live
+"agent running" line, and you can open the IDE to watch. They persist until an agent (or you)
+deletes them.
+
+> **Anything holding the token can create containers and run agents with your GitHub and Claude
+> credentials, with permission prompts bypassed inside the container.** Treat it like a password, and
+> regenerate it from Settings if it leaks.
+
 ## Troubleshooting
 
 - `403 Cross-site POST form submissions are forbidden` when clicking anything that saves — codebay is being reached at an origin other than `http://localhost:<PORT>`. Set `PUBLIC_ORIGIN` to the URL in your browser's address bar and restart (see Configuration).

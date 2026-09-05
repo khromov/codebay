@@ -3,7 +3,7 @@ import { migrate, getMigrations } from '@zihaolam/bun-sqlite-migrations';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DATA_DIR, DB_PATH } from './config.server.ts';
-import type { FolderHistoryEntry } from '../types.ts';
+import type { AgentRunStatus, FolderHistoryEntry } from '../types.ts';
 
 // db.server.ts lives in src/lib, so ../../migrations resolves to the repo root.
 const MIGRATIONS_DIR = join(import.meta.dir, '../../migrations');
@@ -212,4 +212,127 @@ export function setOption(key: string, value: string): void {
      VALUES ($key, $value)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`
 	).run({ $key: key, $value: value });
+}
+
+/** One `claude -p` invocation inside an instance, driven by the MCP server. */
+export interface AgentRunRow {
+	id: string;
+	instance_id: string;
+	prompt: string;
+	status: AgentRunStatus;
+	/** Claude's own session id, parsed out of the stream's `init` event; resumable. */
+	session_id: string | null;
+	/** The model Claude actually ran with, from the stream `init` event; the requested alias lives in `options`. */
+	model: string | null;
+	resume_session_id: string | null;
+	/** JSON blob of the launch options, so a run queued before its container existed can still start. */
+	options: string | null;
+	result: string | null;
+	/** JSON string, only when the caller passed a `--json-schema`. */
+	structured_output: string | null;
+	/** Latest tool call or assistant line, so a poller can see progress mid-run. */
+	last_activity: string | null;
+	is_error: number;
+	exit_code: number | null;
+	cost_usd: number | null;
+	duration_ms: number | null;
+	num_turns: number | null;
+	error: string | null;
+	created_at: number;
+	started_at: number | null;
+	finished_at: number | null;
+}
+
+/** Neither has finished, so both block a second run on the same instance. */
+const OPEN_RUN_STATUSES = "('queued', 'running')";
+
+export function insertRun(row: AgentRunRow): void {
+	db.query(
+		`INSERT INTO agent_runs
+       (id, instance_id, prompt, status, session_id, model, resume_session_id, options, result, structured_output, last_activity, is_error, exit_code, cost_usd, duration_ms, num_turns, error, created_at, started_at, finished_at)
+     VALUES ($id, $instance_id, $prompt, $status, $session_id, $model, $resume_session_id, $options, $result, $structured_output, $last_activity, $is_error, $exit_code, $cost_usd, $duration_ms, $num_turns, $error, $created_at, $started_at, $finished_at)`
+	).run({
+		$id: row.id,
+		$instance_id: row.instance_id,
+		$prompt: row.prompt,
+		$status: row.status,
+		$session_id: row.session_id,
+		$model: row.model,
+		$resume_session_id: row.resume_session_id,
+		$options: row.options,
+		$result: row.result,
+		$structured_output: row.structured_output,
+		$last_activity: row.last_activity,
+		$is_error: row.is_error,
+		$exit_code: row.exit_code,
+		$cost_usd: row.cost_usd,
+		$duration_ms: row.duration_ms,
+		$num_turns: row.num_turns,
+		$error: row.error,
+		$created_at: row.created_at,
+		$started_at: row.started_at,
+		$finished_at: row.finished_at
+	});
+}
+
+export function getRun(id: string): AgentRunRow | null {
+	return db.query('SELECT * FROM agent_runs WHERE id = $id').get({ $id: id }) as AgentRunRow | null;
+}
+
+export function listRuns(instanceId: string, limit = 50): AgentRunRow[] {
+	return db
+		.query('SELECT * FROM agent_runs WHERE instance_id = $id ORDER BY created_at DESC LIMIT $limit')
+		.all({ $id: instanceId, $limit: limit }) as AgentRunRow[];
+}
+
+/** Every unfinished run, across all instances — what the poller's timer works from. */
+export function openRuns(): AgentRunRow[] {
+	return db
+		.query(`SELECT * FROM agent_runs WHERE status IN ${OPEN_RUN_STATUSES} ORDER BY created_at`)
+		.all() as AgentRunRow[];
+}
+
+export function openRunFor(instanceId: string): AgentRunRow | null {
+	return db
+		.query(
+			`SELECT * FROM agent_runs WHERE instance_id = $id AND status IN ${OPEN_RUN_STATUSES} ORDER BY created_at LIMIT 1`
+		)
+		.get({ $id: instanceId }) as AgentRunRow | null;
+}
+
+/** The same allowlist discipline `updateInstance` uses — never interpolate a caller's column name. */
+const UPDATABLE_RUN_COLUMNS = [
+	'status',
+	'session_id',
+	'model',
+	'result',
+	'structured_output',
+	'last_activity',
+	'is_error',
+	'exit_code',
+	'cost_usd',
+	'duration_ms',
+	'num_turns',
+	'error',
+	'started_at',
+	'finished_at'
+] as const;
+
+type UpdatableRunColumn = (typeof UPDATABLE_RUN_COLUMNS)[number];
+
+export function updateRun(id: string, patch: Partial<Pick<AgentRunRow, UpdatableRunColumn>>): void {
+	const sets: string[] = [];
+	const params: Record<string, string | number | null> = { $id: id };
+	for (const col of UPDATABLE_RUN_COLUMNS) {
+		if (col in patch) {
+			sets.push(`${col} = $${col}`);
+			params[`$${col}`] = patch[col] ?? null;
+		}
+	}
+	if (sets.length === 0) return;
+	db.query(`UPDATE agent_runs SET ${sets.join(', ')} WHERE id = $id`).run(params);
+}
+
+export function deleteRuns(instanceId: string): void {
+	db.query('DELETE FROM agent_runs WHERE instance_id = $id').run({ $id: instanceId });
 }

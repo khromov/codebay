@@ -3,6 +3,7 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 	import HealthBox from './HealthBox.svelte';
+	import AgentLogBox from './AgentLogBox.svelte';
 	import StatusBadge from './StatusBadge.svelte';
 	import Skeleton from './Skeleton.svelte';
 	import { forwardedPortUrl } from '../lib/links.ts';
@@ -20,6 +21,9 @@
 	let health = $state<InstanceHealth | null>(null);
 	let lastFetchedAt = $state<number | null>(null);
 	let logs = $state('');
+	// Every `run` frame bumps this; AgentLogBox refetches on the change, so a live run's steps
+	// stream in without a second WebSocket.
+	let runBump = $state(0);
 	let logEl = $state<HTMLDivElement | null>(null);
 	let following = $state(true);
 
@@ -62,6 +66,8 @@
 			} else if (msg.type === 'health' && msg.data.id === id) {
 				health = msg.data.health;
 				lastFetchedAt = Date.now();
+			} else if (msg.type === 'run' && msg.data.instance_id === id) {
+				runBump += 1;
 			} else if (msg.type === 'theme') {
 				syncTheme(msg.data.value);
 			}
@@ -251,6 +257,8 @@
 			</p>
 		</div>
 	</section>
+
+	<AgentLogBox {id} bump={runBump} />
 
 	<div class="logwrap panel">
 		<div class="log-bar panel-bar">

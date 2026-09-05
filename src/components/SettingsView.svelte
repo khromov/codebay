@@ -24,6 +24,7 @@
 	import ListOrdered from '@lucide/svelte/icons/list-ordered';
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import Puzzle from '@lucide/svelte/icons/puzzle';
+	import Plug from '@lucide/svelte/icons/plug';
 	import { Toaster } from 'svelte-french-toast';
 	import { TOAST_OPTIONS } from '../toast.ts';
 	import { flushSync } from 'svelte';
@@ -71,6 +72,10 @@
 		copyIgnorePatterns,
 		builtinCopyIgnore,
 		claudeConfigDir,
+		mcpEnabled,
+		mcpToken,
+		mcpUrl,
+		mcpPrAttribution,
 		gitIdentityEnabled,
 		gitIdentityName,
 		gitIdentityEmail,
@@ -113,6 +118,10 @@
 		copyIgnorePatterns: string;
 		builtinCopyIgnore: string;
 		claudeConfigDir: string;
+		mcpEnabled: boolean;
+		mcpToken: string;
+		mcpUrl: string;
+		mcpPrAttribution: boolean;
 		gitIdentityEnabled: boolean;
 		gitIdentityName: string;
 		gitIdentityEmail: string;
@@ -396,6 +405,57 @@
 	function resetClaudeDir() {
 		flushSync(() => (claudeDir = ''));
 		claudeDirFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let mcp = $state(mcpEnabled);
+	// Unlike every other secret here this one round-trips to the client — a human has to copy it.
+	// svelte-ignore state_referenced_locally
+	let mcpTokenValue = $state(mcpToken);
+	let savingMcpToggle = $state(false);
+	let mcpToggleError = $state<string | null>(null);
+	let savingMcpToken = $state(false);
+	let mcpTokenError = $state<string | null>(null);
+	let mcpCopied = $state<string | null>(null);
+
+	const mcpToggleOpts = toggleOpts<{ enabled: boolean; token: string }>({
+		set: (v) => (mcp = v),
+		setSaving: (v) => (savingMcpToggle = v),
+		setError: (v) => (mcpToggleError = v),
+		onSuccess: (data) => (mcpTokenValue = data?.token ?? '')
+	});
+
+	const mcpTokenOpts = saveOpts<{ token: string }>({
+		setSaving: (v) => (savingMcpToken = v),
+		setError: (v) => (mcpTokenError = v),
+		onSuccess: (data) => (mcpTokenValue = data?.token ?? ''),
+		confirmMessage:
+			'Regenerate the MCP token? Any agent already configured with the current token will stop working.'
+	});
+
+	// svelte-ignore state_referenced_locally
+	let mcpAttribution = $state(mcpPrAttribution);
+	let savingMcpAttribution = $state(false);
+	let mcpAttributionError = $state<string | null>(null);
+
+	const mcpAttributionOpts = toggleOpts({
+		set: (v) => (mcpAttribution = v),
+		setSaving: (v) => (savingMcpAttribution = v),
+		setError: (v) => (mcpAttributionError = v)
+	});
+
+	const mcpCommand = $derived(
+		`claude mcp add --transport http codebay ${mcpUrl} --header "Authorization: Bearer ${mcpTokenValue}"`
+	);
+
+	async function copyMcp(label: string, text: string) {
+		try {
+			await navigator.clipboard.writeText(text);
+			mcpCopied = label;
+			setTimeout(() => (mcpCopied = null), 1500);
+		} catch {
+			mcpTokenError = 'Could not copy — select the text and copy it manually.';
+		}
 	}
 
 	// svelte-ignore state_referenced_locally
@@ -1228,6 +1288,116 @@
 					<div class="msg ok">Saved.</div>
 				{/if}
 			</form>
+		</section>
+
+		<section class="card">
+			<form class="row" method="POST" action="?/mcpToggle" {@attach enhance(mcpToggleOpts)}>
+				<div class="label">
+					<Plug size={20} />
+					<div class="text">
+						<div class="name">MCP server</div>
+						<div class="desc">
+							Expose Codebay to other AI agents over MCP, so they can create sandboxes, run Claude
+							Code in them non-interactively and read back the result. Off by default; the endpoint
+							404s until you turn it on, then authenticates with the bearer token below.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={mcp}
+						disabled={savingMcpToggle}
+						onchange={(e) => {
+							mcp = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if mcpToggleError}
+				<div class="sub"><div class="msg error">{mcpToggleError}</div></div>
+			{/if}
+
+			{#if mcp}
+				<div class="row divided">
+					<div class="label">
+						<div class="text">
+							<div class="name">Token</div>
+							<div class="desc">
+								Anything holding this token can create containers and run agents with your GitHub
+								and Claude credentials. Treat it like a password.
+							</div>
+						</div>
+					</div>
+					<div class="model-fields">
+						<label class="model-row">
+							<span class="model-label">Bearer</span>
+							<input
+								type="text"
+								class="image-input"
+								value={mcpTokenValue}
+								readonly
+								spellcheck="false"
+								onfocus={(e) => e.currentTarget.select()}
+							/>
+						</label>
+						<div class="mcp-actions">
+							<Button type="button" onclick={() => copyMcp('token', mcpTokenValue)}>
+								{mcpCopied === 'token' ? 'Copied' : 'Copy token'}
+							</Button>
+							<Button type="button" onclick={() => copyMcp('command', mcpCommand)}>
+								{mcpCopied === 'command' ? 'Copied' : 'Copy claude mcp add'}
+							</Button>
+							<form method="POST" action="?/mcpRegenerateToken" {@attach enhance(mcpTokenOpts)}>
+								<Button type="submit" disabled={savingMcpToken}>
+									{savingMcpToken ? 'Regenerating…' : 'Regenerate'}
+								</Button>
+							</form>
+						</div>
+						<code class="mcp-command">{mcpCommand}</code>
+						{#if mcpTokenError}
+							<div class="msg error">{mcpTokenError}</div>
+						{/if}
+					</div>
+				</div>
+
+				<form
+					class="row divided"
+					method="POST"
+					action="?/mcpPrAttributionToggle"
+					{@attach enhance(mcpAttributionOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Credit Codebay on pull requests</div>
+							<div class="desc">
+								Append a one-line footer to the body of every pull request an agent opens through
+								<code>create_pr</code>. Off by default — an attribution line on your PRs is yours to
+								opt into.
+							</div>
+						</div>
+					</div>
+					<label class="switch">
+						<input
+							type="checkbox"
+							name="enabled"
+							checked={mcpAttribution}
+							disabled={savingMcpAttribution}
+							onchange={(e) => {
+								mcpAttribution = e.currentTarget.checked;
+								e.currentTarget.form?.requestSubmit();
+							}}
+						/>
+						<span class="track"><span class="thumb"></span></span>
+					</label>
+				</form>
+				{#if mcpAttributionError}
+					<div class="sub"><div class="msg error">{mcpAttributionError}</div></div>
+				{/if}
+			{/if}
 		</section>
 
 		<section class="card">
@@ -2692,6 +2862,22 @@
 		gap: 6px;
 		flex: 1;
 		min-width: 220px;
+	}
+	.mcp-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	/* The registration line is long and unbreakable, so it scrolls rather than widening the card. */
+	.mcp-command {
+		display: block;
+		overflow-x: auto;
+		white-space: pre;
+		padding: 6px 8px;
+		border: 1px solid var(--edge);
+		background: var(--panel);
+		font-size: 11px;
+		line-height: 1.5;
 	}
 	.model-row {
 		display: flex;

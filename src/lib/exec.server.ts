@@ -32,12 +32,28 @@ function wrapWithStdin(script: string): string {
 }
 
 /**
+ * Resolves false on timeout. A host-side backstop only: the container process keeps running, so a
+ * caller that needs the command itself killed must also wrap it in the container's own `timeout`.
+ */
+function streamEnded(stream: NodeJS.ReadableStream, timeoutMs?: number): Promise<boolean> {
+	return new Promise((resolve, reject) => {
+		const timer = timeoutMs ? setTimeout(() => resolve(false), timeoutMs) : null;
+		const settle = (fn: () => void) => {
+			if (timer) clearTimeout(timer);
+			fn();
+		};
+		stream.on('end', () => settle(() => resolve(true)));
+		stream.on('error', (e) => settle(() => reject(e)));
+	});
+}
+
+/**
  * The one place the `bash -lc` container-exec pattern lives; every injection goes through it.
  * `stdin` reaches the script as `$CODEBAY_STDIN`, and `args` as `$0`, `$1`, ….
  */
 export async function execInContainer(
 	target: ExecTarget,
-	opts: { script: string; stdin?: string; args?: string[]; capture?: boolean }
+	opts: { script: string; stdin?: string; args?: string[]; capture?: boolean; timeoutMs?: number }
 ): Promise<{ ok: boolean; stdout: string; error?: string }> {
 	const user = target.remoteUser?.trim() || 'root';
 	const hasStdin = opts.stdin !== undefined;
@@ -60,10 +76,15 @@ export async function execInContainer(
 		const out = collector();
 		const err = collector();
 		exec.modem.demuxStream(stream, out.stream, err.stream);
-		await new Promise<void>((resolve, reject) => {
-			stream.on('end', resolve);
-			stream.on('error', reject);
-		});
+		if (!(await streamEnded(stream, opts.timeoutMs))) {
+			// Otherwise the exec socket and its demux collectors live on for as long as the command does.
+			stream.destroy();
+			return {
+				ok: false,
+				stdout: opts.capture ? out.text().trim() : '',
+				error: `timed out after ${opts.timeoutMs}ms`
+			};
+		}
 
 		const code = (await exec.inspect()).ExitCode ?? 1;
 		const stdout = opts.capture ? out.text().trim() : '';

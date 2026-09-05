@@ -17,7 +17,7 @@ import { execInContainer } from './exec.server.ts';
 const CAPTURE_MS = 10_000;
 
 const MANIFEST_MARKER = '__CODEBAY_MANIFEST__';
-const FETCH_MARKER = '__CODEBAY_FETCH__';
+export const FETCH_MARKER = '__CODEBAY_FETCH__';
 const FILE_MARKER = '__CODEBAY_FILE__';
 const END_MARKER = '__CODEBAY_END__';
 
@@ -48,14 +48,24 @@ function manifestScript(): string {
 	);
 }
 
+/**
+ * One framed base64 block of `pathExpr` from `offsetExpr` to EOF — the shape `parseFetchBlocks`
+ * reads. Both arguments are spliced into a shell script, so callers pass shell exprs, not values.
+ */
+export function tailBlockScript(pathExpr: string, offsetExpr: string): string {
+	return (
+		`printf '${FILE_MARKER}\\t%s\\n' "${pathExpr}"; ` +
+		`tail -c "+${offsetExpr}" "${pathExpr}" 2>/dev/null | base64; ` +
+		`printf '\\n${END_MARKER}\\n'`
+	);
+}
+
 /** Emits, per requested file, a framed block of base64 bytes from `startByte` to EOF. */
 function fetchScript(): string {
 	return (
 		`printf '%s\\n' '${FETCH_MARKER}'; ` +
 		`while [ "$#" -ge 2 ]; do p="$1"; o="$2"; shift 2; ` +
-		`printf '${FILE_MARKER}\\t%s\\n' "$p"; ` +
-		`tail -c "+$o" "$p" 2>/dev/null | base64; ` +
-		`printf '\\n${END_MARKER}\\n'; done`
+		`${tailBlockScript('$p', '$o')}; done`
 	);
 }
 

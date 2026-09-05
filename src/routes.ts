@@ -60,14 +60,31 @@ import {
 	deleteFolderHistory,
 	getInstance,
 	getOption,
+	listRuns,
+	type AgentRunRow,
 	listFolderHistory,
 	setOption
 } from './lib/db.server.ts';
-import { APP_VERSION, DEFAULT_COPY_IGNORE, DEFAULT_IMAGE } from './lib/config.server.ts';
+import {
+	APP_VERSION,
+	DEFAULT_COPY_IGNORE,
+	DEFAULT_IMAGE,
+	PUBLIC_ORIGIN
+} from './lib/config.server.ts';
 import { wsUpgradeAllowed } from './lib/auth.server.ts';
+import {
+	MCP_PATH,
+	getMcpToken,
+	mcpEnabled,
+	regenerateMcpToken,
+	setMcpEnabled
+} from './lib/mcp-auth.server.ts';
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
+import { requestedModel, runTimeline } from './lib/agent-runs.server.ts';
+import { PR_ATTRIBUTION_KEY, prAttributionEnabled } from './lib/sandbox-ops.server.ts';
+import { mcpRoutes } from './mcp/routes.server.ts';
 import {
 	isInstanceFilter,
 	isTheme,
@@ -110,6 +127,30 @@ function currentPet() {
 function currentFilter(): InstanceFilter {
 	const v = getOption('instance_filter');
 	return isInstanceFilter(v) ? v : 'all';
+}
+
+/** A ceiling on how many run timelines one Agent log request can pull off disk. */
+const MAX_OPEN_TIMELINES = 10;
+
+/** The prompt and result are the two fields the Agent log panel actually renders in full. */
+function agentRunPayload(run: AgentRunRow) {
+	return {
+		id: run.id,
+		status: run.status,
+		prompt: run.prompt,
+		model: run.model,
+		requested_model: requestedModel(run),
+		result: run.result,
+		error: run.error,
+		is_error: run.is_error === 1,
+		last_activity: run.last_activity,
+		num_turns: run.num_turns,
+		cost_usd: run.cost_usd,
+		duration_ms: run.duration_ms,
+		created_at: run.created_at,
+		started_at: run.started_at,
+		finished_at: run.finished_at
+	};
 }
 
 /** Lets a route handler just `throw` for both validation and business-logic failures. */
@@ -218,6 +259,12 @@ export const routes: Record<string, MochiRouteValue> = {
 				claudeConfigDir: getOption('claude_config_dir') ?? '',
 				// Not secrets, so the actual values (not just a "set" flag) go to the client.
 				// Blank means "no override" — fall back to the host's git config.
+				mcpEnabled: mcpEnabled(),
+				// The one secret here that IS sent to the client: copying it into an MCP client is
+				// the whole point of it existing.
+				mcpToken: mcpEnabled() ? getMcpToken() : '',
+				mcpUrl: `${PUBLIC_ORIGIN}${MCP_PATH}`,
+				mcpPrAttribution: prAttributionEnabled(),
 				gitIdentityEnabled: gitIdentityEnabled(),
 				gitIdentityName: getOption('git_identity_name') ?? '',
 				gitIdentityEmail: getOption('git_identity_email') ?? '',
@@ -341,6 +388,20 @@ export const routes: Record<string, MochiRouteValue> = {
 				const dir = str(formData, 'dir').trim();
 				setOption('claude_config_dir', dir);
 				return success({ dir });
+			},
+
+			mcpToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setMcpEnabled(enabled);
+				return success({ enabled, token: enabled ? getMcpToken() : '' });
+			},
+			// Rotating breaks every client already configured with the old token, so the UI confirms.
+			mcpRegenerateToken: () => success({ token: regenerateMcpToken() }),
+
+			mcpPrAttributionToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption(PR_ATTRIBUTION_KEY, enabled ? '1' : '0');
+				return success({ enabled });
 			},
 
 			gitIdentityToggle: ({ formData }) => {
@@ -639,6 +700,27 @@ export const routes: Record<string, MochiRouteValue> = {
 		return { ok: true };
 	}),
 
+	// GET-only, so the CSRF header guard doesn't apply; the Basic Auth gate still does.
+	'/api/instances/:id/agent-log': Mochi.api(({ method, params, url }) => {
+		if (method !== 'GET') return apiError(405, 'Method Not Allowed');
+		if (!getInstance(params.id!)) return apiError(404, 'Instance not found');
+		const runs = listRuns(params.id!, 20);
+		const known = new Set(runs.map((r) => r.id));
+		// The panel asks for whichever runs it has expanded; with none named it opens on the newest.
+		const wanted = (url.searchParams.get('run_ids') ?? '')
+			.split(',')
+			.filter((rid) => known.has(rid));
+		const ids = (wanted.length ? wanted : runs.slice(0, 1).map((r) => r.id)).slice(
+			0,
+			MAX_OPEN_TIMELINES
+		);
+		return json({
+			runs: runs.map(agentRunPayload),
+			// Keyed by run id: one request refreshes every expanded box at once.
+			timelines: Object.fromEntries(ids.map((rid) => [rid, runTimeline(rid)]))
+		});
+	}),
+
 	'/api/instances/:id/attention/clear': mutationRoute('POST', ({ params }) => {
 		clearAttention(params.id!);
 		return { ok: true };
@@ -694,6 +776,8 @@ export const routes: Record<string, MochiRouteValue> = {
 	}),
 
 	...proxyRoutes,
+
+	...mcpRoutes,
 
 	...(process.env.MODE === 'development'
 		? {
