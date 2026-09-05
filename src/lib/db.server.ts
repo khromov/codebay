@@ -3,7 +3,7 @@ import { migrate, getMigrations } from '@zihaolam/bun-sqlite-migrations';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DATA_DIR, DB_PATH } from './config.server.ts';
-import type { FolderHistoryEntry } from '../types.ts';
+import type { AgentRunStatus, FolderHistoryEntry } from '../types.ts';
 
 // db.server.ts lives in src/lib, so ../../migrations resolves to the repo root.
 const MIGRATIONS_DIR = join(import.meta.dir, '../../migrations');
@@ -213,8 +213,6 @@ export function setOption(key: string, value: string): void {
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`
 	).run({ $key: key, $value: value });
 }
-
-export type AgentRunStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
 
 /** One `claude -p` invocation inside an instance, driven by the MCP server. */
 export interface AgentRunRow {

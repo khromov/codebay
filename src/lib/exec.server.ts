@@ -77,6 +77,8 @@ export async function execInContainer(
 		const err = collector();
 		exec.modem.demuxStream(stream, out.stream, err.stream);
 		if (!(await streamEnded(stream, opts.timeoutMs))) {
+			// Otherwise the exec socket and its demux collectors live on for as long as the command does.
+			stream.destroy();
 			return {
 				ok: false,
 				stdout: opts.capture ? out.text().trim() : '',

@@ -1,6 +1,7 @@
 import { execInContainer, type ExecTarget } from './exec.server.ts';
 import { SOURCE_INJECTED_ENV } from './devcontainer.server.ts';
 import { getOption, type InstanceRow } from './db.server.ts';
+import { HOME_PRELUDE, shellSingleQuote as quote } from './container-files.server.ts';
 
 /** Enough for a big diff or a test run's output, small enough not to blow a caller's context. */
 export const OUTPUT_CAP = 200_000;
@@ -21,11 +22,6 @@ export interface CommandResult {
 	truncated: boolean;
 }
 
-/** Single-quote a value for the shell, so a path or message with spaces survives interpolation. */
-export function quote(value: string): string {
-	return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
 function target(row: InstanceRow): ExecTarget {
 	return { containerId: row.container_id!, remoteUser: row.remote_user };
 }
@@ -35,7 +31,7 @@ function workspacePrelude(row: InstanceRow): string {
 	const cd = row.remote_workspace_folder
 		? `cd ${quote(row.remote_workspace_folder)} || exit 1; `
 		: '';
-	return `h=$(eval echo ~$(id -un)); [ -n "$HOME" ] || export HOME="$h"; ${cd}`;
+	return `${HOME_PRELUDE}[ -n "$HOME" ] || export HOME="$h"; ${cd}`;
 }
 
 function decodeBlock(stdout: string, marker: string): string {
@@ -205,7 +201,8 @@ export async function gitPush(
 	row: InstanceRow,
 	opts: { branch?: string; commitMessage?: string; force?: boolean } = {}
 ): Promise<PushResult> {
-	const branch = opts.branch?.trim() || (await must(row, 'git rev-parse --abbrev-ref HEAD')).trim();
+	const current = (await must(row, 'git rev-parse --abbrev-ref HEAD')).trim();
+	const branch = opts.branch?.trim() || current;
 	if (!branch || branch === 'HEAD') {
 		throw new Error('the sandbox is on a detached HEAD — pass an explicit branch');
 	}
@@ -219,14 +216,13 @@ export async function gitPush(
 		}
 	}
 
-	const current = (await must(row, 'git rev-parse --abbrev-ref HEAD')).trim();
 	if (current !== branch) await must(row, `git checkout -B ${quote(branch)}`);
 
 	// --force-with-lease rather than --force: it still refuses to discard commits we never saw.
 	const force = opts.force ? ' --force-with-lease' : '';
 	const output = await must(
 		row,
-		`git push${force} -u origin HEAD:refs/heads/${branch.replace(/'/g, '')} 2>&1`,
+		`git push${force} -u origin HEAD:refs/heads/${quote(branch)} 2>&1`,
 		300
 	);
 	return { branch, committed, output: output.trim() };
@@ -256,7 +252,7 @@ export async function createPr(
 	const parts = [
 		'gh pr create',
 		`--title ${quote(opts.title)}`,
-		`--body ${quote(opts.body ?? '')}`
+		`--body ${quote(withAttribution(opts.body ?? ''))}`
 	];
 	if (opts.base) parts.push(`--base ${quote(opts.base)}`);
 	if (opts.draft) parts.push('--draft');

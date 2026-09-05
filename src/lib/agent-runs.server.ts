@@ -12,7 +12,11 @@ import {
 	type InstanceRow
 } from './db.server.ts';
 import { execInContainer, type ExecTarget } from './exec.server.ts';
-import { writeContainerFile } from './container-files.server.ts';
+import {
+	HOME_PRELUDE,
+	shellSingleQuote as quote,
+	writeContainerFile
+} from './container-files.server.ts';
 import { FETCH_MARKER, parseFetchBlocks, tailBlockScript } from './log-capture.server.ts';
 import {
 	AGENT_RUN_MARKER,
@@ -55,15 +59,7 @@ export interface StartRunOptions {
 	timeoutMs?: number;
 }
 
-/** Single-quote a value for the shell, so a path or flag with spaces survives interpolation. */
-function quote(value: string): string {
-	return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
 const runDirExpr = (runId: string) => `$h/.codebay/runs/${runId}`;
-
-/** Home is resolved the same way every injection does, since a docker exec may carry no `$HOME`. */
-const HOME_PRELUDE = 'h=$(eval echo ~$(id -un)); ';
 
 export function runMirrorPath(runId: string): string {
 	return join(LOGS_DIR, `run-${runId}.jsonl`);
@@ -109,8 +105,7 @@ function runScript(runId: string, row: InstanceRow, opts: StartRunOptions): stri
 		// setsid made this the session leader, so $$ is also the PGID stopRun signals.
 		`w pgid "$$"\n` +
 		// Tells the IDE/terminal launchers not to start a second Claude beside this one. The trap
-		// covers stopRun's INT/TERM; only an unblockable KILL can leave it behind, and the poller
-		// clears it on the pass that sees the exit file.
+		// covers stopRun's INT/TERM; the KILL step of stopScript removes it itself.
 		`m="$HOME/${AGENT_RUN_MARKER}"; : > "$m"; trap 'rm -f "$m"' EXIT INT TERM\n` +
 		// Claude Code refuses --dangerously-skip-permissions under uid 0, which is exactly what an
 		// instance with no resolved remote_user execs as.
@@ -153,11 +148,7 @@ function pollScript(runId: string, offset: number): string {
 	return (
 		`${HOME_PRELUDE}d="${d}"; ` +
 		`ex=$(tr -dc '0-9' < "$d/exit" 2>/dev/null); ` +
-		`pg=$(tr -dc '0-9' < "$d/pgid" 2>/dev/null); ` +
-		// Identity, not just `kill -0`: a restarted container reuses low PIDs, so a bare liveness
-		// probe would happily report an unrelated process as this run.
-		`alive=0; if [ -n "$pg" ]; then c=$(tr '\\0' ' ' < "/proc/$pg/cmdline" 2>/dev/null); ` +
-		`case "$c" in *${runId}*) alive=1 ;; esac; fi; ` +
+		`${ALIVE_CHECK(runId)}` +
 		`printf '${STATE_MARKER}%s\\t%s\\n' "$ex" "$alive"; ` +
 		// run.sh's own trap normally does this; this covers a run that was hard-killed.
 		`if [ -n "$ex" ]; then rm -f "$HOME/${AGENT_RUN_MARKER}"; fi; ` +
@@ -169,14 +160,26 @@ function pollScript(runId: string, offset: number): string {
 	);
 }
 
+/**
+ * Sets `$pg` and `$alive` from `$d/pgid`. Identity, not just `kill -0`: a restarted container
+ * reuses low PIDs, so a bare liveness probe would happily report an unrelated process as this run.
+ */
+const ALIVE_CHECK = (runId: string): string =>
+	`pg=$(tr -dc '0-9' < "$d/pgid" 2>/dev/null); ` +
+	`alive=0; if [ -n "$pg" ]; then c=$(tr '\\0' ' ' < "/proc/$pg/cmdline" 2>/dev/null); ` +
+	`case "$c" in *${runId}*) alive=1 ;; esac; fi; `;
+
 function stopScript(runId: string, signal: 'INT' | 'TERM' | 'KILL'): string {
 	const d = runDirExpr(runId);
 	return (
-		`${HOME_PRELUDE}d="${d}"; pg=$(cat "$d/pgid" 2>/dev/null); ` +
-		// `kill -- -0` would signal every process this user owns, so refuse anything but a real pgid.
-		`case "$pg" in ''|*[!0-9]*) exit 0 ;; esac; [ "$pg" -gt 1 ] || exit 0; ` +
+		`${HOME_PRELUDE}d="${d}"; ${ALIVE_CHECK(runId)}` +
+		// `kill -- -0` would signal every process this user owns, so refuse anything but a live pgid.
+		`[ "$alive" = 1 ] && [ "$pg" -gt 1 ] || exit 0; ` +
 		// The group kill reaches claude's own children; the bare pid is the setsid-less fallback.
-		`kill -${signal} -- "-$pg" 2>/dev/null || kill -${signal} "$pg" 2>/dev/null; true`
+		`kill -${signal} -- "-$pg" 2>/dev/null || kill -${signal} "$pg" 2>/dev/null; ` +
+		// KILL skips run.sh's trap, and a cancelled run is never polled again, so nothing else owns it.
+		(signal === 'KILL' ? `rm -f "$HOME/${AGENT_RUN_MARKER}" "$d/pgid"; ` : '') +
+		`true`
 	);
 }
 
@@ -194,6 +197,8 @@ interface RunCursor {
 	carry: string;
 	state: RunStreamState;
 	missingStrikes: number;
+	/** Streaming, because the byte tail can cut a multi-byte character across two passes. */
+	decoder: TextDecoder;
 }
 
 interface RunRegistry {
@@ -233,7 +238,7 @@ function cursorFor(runId: string): RunCursor {
 		} catch {
 			// No mirror yet — a run that hasn't produced output.
 		}
-		cursor = { carry, state, missingStrikes: 0 };
+		cursor = { carry, state, missingStrikes: 0, decoder: new TextDecoder('utf-8') };
 		registry.cursors.set(runId, cursor);
 	}
 	return cursor;
@@ -372,12 +377,22 @@ function launch(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 			finish(row.id, { status: 'error', error: staged, is_error: 1 });
 			return;
 		}
+		// stopRun doesn't go through once(), so a cancel can land while staging is still in flight.
+		if (getRun(row.id)?.status !== 'queued') return;
 		const res = await execInContainer(targetFor(instance), { script: launchScript(row.id) });
 		if (!res.ok) {
 			finish(row.id, {
 				status: 'error',
 				error: `could not start run: ${res.error ?? 'unknown error'}`,
 				is_error: 1
+			});
+			return;
+		}
+		if (getRun(row.id)?.status !== 'queued') {
+			// Cancelled during the launch exec: the process is real now, so put it down.
+			void execInContainer(targetFor(instance), {
+				script: stopScript(row.id, 'TERM'),
+				timeoutMs: 15_000
 			});
 			return;
 		}
@@ -412,26 +427,34 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 			.split('\t')
 			.map((f) => f.trim());
 
+		let changed = false;
 		const [block] = parseFetchBlocks(res.stdout);
 		if (block?.base64) {
 			const bytes = Buffer.from(block.base64, 'base64');
 			if (bytes.length) {
 				mkdirSync(LOGS_DIR, { recursive: true });
 				appendFileSync(runMirrorPath(row.id), bytes);
-				const next = readRunChunk(cursor.state, cursor.carry, bytes.toString('utf8'));
+				const text = cursor.decoder.decode(bytes, { stream: true });
+				const next = readRunChunk(cursor.state, cursor.carry, text);
 				cursor.state = next.state;
 				cursor.carry = next.carry;
+				changed = true;
 			}
 		}
 
+		// The row may have been cancelled while the exec was out; the mirror still got its bytes.
+		if (getRun(row.id)?.status !== 'running') return;
+
 		const { state } = cursor;
-		updateRun(row.id, {
-			session_id: state.sessionId,
-			last_activity: state.lastActivity,
-			num_turns: state.numTurns,
-			cost_usd: state.costUsd
-		});
-		onRunChanged?.(row.id);
+		if (changed) {
+			updateRun(row.id, {
+				session_id: state.sessionId,
+				last_activity: state.lastActivity,
+				num_turns: state.numTurns,
+				cost_usd: state.costUsd
+			});
+			onRunChanged?.(row.id);
+		}
 
 		if (exitRaw) {
 			const exitCode = Number.parseInt(exitRaw, 10);
@@ -548,10 +571,9 @@ export async function stopRun(
 			[5000, 'TERM'],
 			[10_000, 'KILL']
 		] as const) {
+			// stopScript itself checks the process is still this run, so a clean exit makes these no-ops.
 			setTimeout(() => {
-				if (getRun(runId)?.status === 'cancelled') {
-					void execInContainer(target, { script: stopScript(runId, signal), timeoutMs: 15_000 });
-				}
+				void execInContainer(target, { script: stopScript(runId, signal), timeoutMs: 15_000 });
 			}, delay).unref?.();
 		}
 	}

@@ -298,8 +298,10 @@ describe('stopRun', () => {
 
 		const kill = calls.map(scriptOf).find((s) => s.includes('kill -INT'))!;
 		expect(kill).toContain('kill -INT -- "-$pg"');
-		// Guarding the pgid matters: `kill -- -0` would signal every process the user owns.
-		expect(kill).toContain('*[!0-9]*) exit 0');
+		// Guarding the pgid matters: `kill -- -0` would signal every process the user owns, and a
+		// stale pgid file must never signal a reused pid.
+		expect(kill).toContain('/proc/$pg/cmdline');
+		expect(kill).toContain('[ "$alive" = 1 ] && [ "$pg" -gt 1 ] || exit 0');
 	});
 
 	test('is a no-op on a run that already finished', async () => {

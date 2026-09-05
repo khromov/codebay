@@ -465,7 +465,12 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			const tail = input.tail ?? 200;
 			if (input.kind === 'run') {
 				if (!input.run_id) throw new Error('run_id is required for kind "run"');
-				return { kind: 'run', run_id: input.run_id, log: readRunLog(input.run_id, tail) };
+				// Resolve through the DB so the id is a known token, never a path fragment.
+				const run = getRun(input.run_id);
+				if (!run || run.instance_id !== input.sandbox_id) {
+					throw new Error(`No run ${input.run_id} in sandbox ${input.sandbox_id}`);
+				}
+				return { kind: 'run', run_id: run.id, log: readRunLog(run.id, tail) };
 			}
 			// subscribeLogs replays the buffer synchronously before it starts streaming, so
 			// unsubscribing straight away leaves us with exactly the captured boot log.
