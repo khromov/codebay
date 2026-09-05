@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { PassThrough } from 'node:stream';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { LOGS_DIR } from './config.server.ts';
 import {
 	deleteInstanceRow,
@@ -242,6 +242,40 @@ describe('polling', () => {
 		expect(existsSync(mirror)).toBe(true);
 		expect(readFileSync(mirror, 'utf8')).toContain('sess-9');
 		rmSync(mirror, { force: true });
+	});
+
+	test('folds the terminal state from the mirror, so a chunk this process never fetched still counts', async () => {
+		// Two managers on one DATA_DIR leapfrog each other on the mirror; the other one fetched the
+		// final chunk, so this poller's exit pass sees the exit code with an empty tail.
+		fakeDocker([
+			pollReply({ stream: line({ type: 'system', subtype: 'init', session_id: 'sess-10' }) }),
+			pollReply({ exit: '0', alive: '0', stream: '' })
+		]);
+		const inst = seed();
+		created.push(inst.id);
+		const run = startRun(inst, 'go');
+		await pollRunNow(run.id); // launches
+		await pollRunNow(run.id); // first chunk
+		appendFileSync(
+			runMirrorPath(run.id),
+			line({
+				type: 'result',
+				subtype: 'success',
+				is_error: false,
+				result: 'fetched by the other manager',
+				num_turns: 26,
+				total_cost_usd: 1.78,
+				duration_ms: 500_000
+			})
+		);
+
+		const done = await pollRunNow(run.id);
+		expect(done?.status).toBe('done');
+		expect(done?.result).toBe('fetched by the other manager');
+		expect(done?.num_turns).toBe(26);
+		expect(done?.cost_usd).toBe(1.78);
+		expect(done?.duration_ms).toBe(500_000);
+		rmSync(runMirrorPath(run.id), { force: true });
 	});
 
 	test('a non-zero exit fails the run and reports the container stderr', async () => {

@@ -33,6 +33,7 @@ import {
 	emptyRunState,
 	parseRunTimeline,
 	readRunChunk,
+	readRunFile,
 	type RunStreamState,
 	type RunTimelineEntry
 } from './agent-run-stream.ts';
@@ -225,6 +226,15 @@ function once(runId: string, work: () => Promise<void>): Promise<void> {
 	const promise = work().finally(() => registry.inFlight.delete(runId));
 	registry.inFlight.set(runId, promise);
 	return promise;
+}
+
+/** The mirror is the record; the cursor is only a cache of it, and can lag it. */
+function stateFromMirror(runId: string, fallback: RunStreamState): RunStreamState {
+	try {
+		return readRunFile(readFileSync(runMirrorPath(runId), 'utf8'));
+	} catch {
+		return fallback;
+	}
 }
 
 /** Rebuilt from the host mirror, so a manager restart mid-run picks up exactly where it left off. */
@@ -450,7 +460,9 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 		// The row may have been cancelled while the exec was out; the mirror still got its bytes.
 		if (getRun(row.id)?.status !== 'running') return;
 
-		const { state } = cursor;
+		// The terminal fold reads the whole mirror rather than trusting the cursor: a chunk this
+		// process never fetched (a second manager on the same DATA_DIR did) is still on disk.
+		const state = exitRaw ? stateFromMirror(row.id, cursor.state) : cursor.state;
 		if (changed) {
 			updateRun(row.id, {
 				session_id: state.sessionId,
