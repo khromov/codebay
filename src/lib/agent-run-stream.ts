@@ -223,7 +223,13 @@ export function parseRunTimeline(text: string): RunTimelineEntry[] {
 		const trimmed = line.trim();
 		if (!trimmed) continue;
 		try {
-			out.push(...timelineFromEvent(JSON.parse(trimmed) as StreamEvent));
+			for (const entry of timelineFromEvent(JSON.parse(trimmed) as StreamEvent)) {
+				// Claude's closing message arrives twice — once as the final assistant text block and
+				// again as the `result` event's text — so the result supersedes it rather than repeats it.
+				const prev = out.at(-1);
+				if (entry.kind === 'result' && prev?.kind === 'text' && prev.text === entry.text) out.pop();
+				out.push(entry);
+			}
 		} catch {
 			// A torn trailing line; it reappears whole once more bytes land.
 		}

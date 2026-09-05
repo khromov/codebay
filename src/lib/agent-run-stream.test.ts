@@ -164,3 +164,21 @@ describe('parseRunTimeline', () => {
 		expect(rows[1]).toMatchObject({ kind: 'tool', name: 'Bash', text: 'ls' });
 	});
 });
+
+test('the result row supersedes an identical closing text row rather than repeating it', () => {
+	// Claude emits its closing message as both a final assistant text block and the result event.
+	const closing = 'All three done.';
+	const rows = parseRunTimeline(
+		line({ type: 'assistant', message: { content: [{ type: 'text', text: closing }] } }) +
+			line({ type: 'result', subtype: 'success', is_error: false, result: closing })
+	);
+	expect(rows).toEqual([{ kind: 'result', text: closing, isError: false }]);
+});
+
+test('keeps a closing text row that differs from the result', () => {
+	const rows = parseRunTimeline(
+		line({ type: 'assistant', message: { content: [{ type: 'text', text: 'Checking…' }] } }) +
+			line({ type: 'result', subtype: 'success', is_error: false, result: 'Done.' })
+	);
+	expect(rows.map((r) => r.kind)).toEqual(['text', 'result']);
+});

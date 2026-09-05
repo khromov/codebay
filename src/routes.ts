@@ -129,6 +129,9 @@ function currentFilter(): InstanceFilter {
 	return isInstanceFilter(v) ? v : 'all';
 }
 
+/** A ceiling on how many run timelines one Agent log request can pull off disk. */
+const MAX_OPEN_TIMELINES = 10;
+
 /** The prompt and result are the two fields the Agent log panel actually renders in full. */
 function agentRunPayload(run: AgentRunRow) {
 	return {
@@ -700,12 +703,19 @@ export const routes: Record<string, MochiRouteValue> = {
 		if (method !== 'GET') return apiError(405, 'Method Not Allowed');
 		if (!getInstance(params.id!)) return apiError(404, 'Instance not found');
 		const runs = listRuns(params.id!, 20);
-		// Default to the newest run, which is what the panel opens on.
-		const runId = url.searchParams.get('run_id') ?? runs[0]?.id ?? null;
+		const known = new Set(runs.map((r) => r.id));
+		// The panel asks for whichever runs it has expanded; with none named it opens on the newest.
+		const wanted = (url.searchParams.get('run_ids') ?? '')
+			.split(',')
+			.filter((rid) => known.has(rid));
+		const ids = (wanted.length ? wanted : runs.slice(0, 1).map((r) => r.id)).slice(
+			0,
+			MAX_OPEN_TIMELINES
+		);
 		return json({
 			runs: runs.map(agentRunPayload),
-			run_id: runId,
-			timeline: runId ? runTimeline(runId) : []
+			// Keyed by run id: one request refreshes every expanded box at once.
+			timelines: Object.fromEntries(ids.map((rid) => [rid, runTimeline(rid)]))
 		});
 	}),
 
