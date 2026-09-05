@@ -94,6 +94,10 @@
 
 	const isLive = (run: AgentRun) => run.status === 'running' || run.status === 'queued';
 
+	/** Newest step on top, keyed by the original position so a new step never re-keys the rest. */
+	const newestFirst = (entries: RunTimelineEntry[]) =>
+		entries.map((entry, index) => ({ entry, index })).reverse();
+
 	/** The id Claude reported, or the caller's alias until the run has started. */
 	const modelOf = (run: AgentRun) => run.model ?? run.requested_model;
 
@@ -161,12 +165,29 @@
 
 				{#if expanded}
 					<div class="prompt">
-						<div class="ptitle">Prompt</div>
+						<div class="ptitle">Initial prompt</div>
 						<div class="ptext">{run.prompt}</div>
 					</div>
 
 					<ol class="steps">
-						{#each timelines[run.id] ?? [] as entry, i (i)}
+						{#if isLive(run)}
+							<li class="step">
+								<span class="ico"><span class="pulse"></span></span>
+								<span class="body">
+									<!-- Deliberately not `last_activity`: while a run is live that is the same step
+									     the newest timeline row already shows, so echoing it prints the line twice. -->
+									<span class="text">
+										{run.status === 'queued' ? 'Queued — waiting for the sandbox' : 'Working…'}
+									</span>
+								</span>
+							</li>
+						{:else if (timelines[run.id] ?? []).length === 0}
+							<li class="step">
+								<span class="body"><span class="text">No steps recorded.</span></span>
+							</li>
+						{/if}
+
+						{#each newestFirst(timelines[run.id] ?? []) as { entry, index } (index)}
 							<li class="step" class:sub={entry.subagent}>
 								<span class="ico" class:bad={entry.kind === 'result' && entry.isError}>
 									{#if entry.kind === 'result' && entry.isError}
@@ -182,23 +203,6 @@
 								</span>
 							</li>
 						{/each}
-
-						{#if isLive(run)}
-							<li class="step">
-								<span class="ico"><span class="pulse"></span></span>
-								<span class="body">
-									<!-- Deliberately not `last_activity`: while a run is live that is the same step
-									     the final timeline row already shows, so echoing it prints the line twice. -->
-									<span class="text">
-										{run.status === 'queued' ? 'Queued — waiting for the sandbox' : 'Working…'}
-									</span>
-								</span>
-							</li>
-						{:else if (timelines[run.id] ?? []).length === 0}
-							<li class="step">
-								<span class="body"><span class="text">No steps recorded.</span></span>
-							</li>
-						{/if}
 					</ol>
 
 					{#if run.error && !isLive(run)}
@@ -337,6 +341,7 @@
 		max-height: 7.5em;
 		overflow-y: auto;
 	}
+	/* Newest step first, so the cap never hides what the run is doing right now. */
 	.steps {
 		list-style: none;
 		margin: 0;
