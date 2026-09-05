@@ -5,6 +5,7 @@ import { themeHandle } from './lib/theme.server.ts';
 import { PROXY_PREFIX } from './lib/proxy.server.ts';
 import { MCP_PATH } from './lib/mcp-auth.server.ts';
 import { resumeRuns } from './lib/agent-runs.server.ts';
+import { warnIfBuildStale } from './lib/build-freshness.server.ts';
 import {
 	APP_VERSION,
 	BASIC_AUTH_PASSWORD,
@@ -23,6 +24,7 @@ if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !BASIC_AUTH_PASSWORD) {
 		`⚠ Binding to ${HOST} (non-loopback) without a password — anyone on the network can reach this server.`
 	);
 }
+warnIfBuildStale();
 
 // Must precede Mochi.serve(), which is where MOCHI_KEY is read.
 ensureMochiKey();

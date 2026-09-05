@@ -51,8 +51,10 @@
 				timelines: Record<string, RunTimelineEntry[]>;
 			}>(`/api/instances/${id}/agent-log${q}`, undefined, 'Could not load the agent log');
 
-			runs = data.runs;
-			timelines = { ...timelines, ...data.timelines };
+			// This island can be older than the route (production serves the prebuilt bundle; routes
+			// load from source), so a key it does not know must degrade, not throw and unmount the box.
+			runs = Array.isArray(data.runs) ? data.runs : [];
+			timelines = { ...timelines, ...(data.timelines ?? {}) };
 
 			// A run that starts while the panel is open takes over: collapse the rest and expand it,
 			// so the box you are looking at is always the one currently doing something.
