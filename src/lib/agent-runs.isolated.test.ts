@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { PassThrough } from 'node:stream';
 import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { LOGS_DIR } from './config.server.ts';
 import {
 	deleteInstanceRow,
@@ -401,5 +402,5 @@ describe('stopRun', () => {
 });
 
 test('run mirrors live in the shared logs dir, so they outlive the sandbox', () => {
-	expect(runMirrorPath('abc')).toBe(`${LOGS_DIR}/run-abc.jsonl`);
+	expect(runMirrorPath('abc')).toBe(join(LOGS_DIR, 'run-abc.jsonl'));
 });
