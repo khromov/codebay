@@ -1,3 +1,7 @@
 # Svelte sources are text; one historically carried a NUL byte in a {#key}
 # sentinel, which made git hide the whole file from diffs.
 *.svelte diff
+
+# core.autocrlf would give Windows checkouts a CRLF working tree, which Prettier
+# (endOfLine: "lf") then rejects on every file — pin the working tree to LF instead.
+* text=auto eol=lf

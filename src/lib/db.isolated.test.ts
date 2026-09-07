@@ -13,7 +13,16 @@ import type { InstanceRow } from './db.server.ts';
 
 const db = await import('./db.server.ts');
 
-afterAll(() => rmSync(dataDir, { recursive: true, force: true }));
+afterAll(() => {
+	// force: covers ENOENT only. Windows raises EBUSY here whenever this file's DATA_DIR won the
+	// race to open the globalThis-pinned SQLite handle, which is never closed; the OS reaps the
+	// temp dir either way, so a failed unlink must not fail the suite.
+	try {
+		rmSync(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+	} catch {
+		// Best-effort: it lives under the OS temp dir.
+	}
+});
 
 function makeInstance(id: string, hostPort: number): InstanceRow {
 	return {

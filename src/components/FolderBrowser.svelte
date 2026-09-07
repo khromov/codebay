@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import type { BrowseResult, FolderHistoryEntry, InstanceMode } from '../types.ts';
 	import { isRepoUrl } from '../lib/repo-url.ts';
+	import { DRIVES_ROOT, DRIVES_ROOT_LABEL } from '../lib/drives.ts';
 	import Terminal from '@lucide/svelte/icons/terminal';
 	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import X from '@lucide/svelte/icons/x';
@@ -53,6 +54,9 @@
 			? result.entries.filter((e) => e.name.toLowerCase().includes(query.trim().toLowerCase()))
 			: []
 	);
+
+	// The virtual drive list is a chooser, not a folder — nothing in it can be handed to an instance.
+	const atDrivesRoot = $derived(result?.path === DRIVES_ROOT);
 
 	const shownHistory = $derived(showAll ? history : history.slice(0, 5));
 
@@ -180,7 +184,7 @@
 		</div>
 
 		<div class="crumbs">
-			<code>{result?.path ?? '…'}</code>
+			<code>{atDrivesRoot ? DRIVES_ROOT_LABEL : (result?.path ?? '…')}</code>
 		</div>
 
 		{#if history.length > 0}
@@ -268,7 +272,7 @@
 			{/if}
 		</div>
 
-		{#if result && !result.hasDevcontainer}
+		{#if result && !result.hasDevcontainer && !atDrivesRoot}
 			<div class="warn">
 				<TriangleAlert size={15} />
 				<span
@@ -279,11 +283,15 @@
 		{/if}
 
 		<div class="foot">
-			<span class="hint">Browse to a folder, then select this folder or any subfolder.</span>
+			<span class="hint"
+				>{atDrivesRoot
+					? 'Pick a drive to browse.'
+					: 'Browse to a folder, then select this folder or any subfolder.'}</span
+			>
 			<button
 				class="primary"
-				disabled={!result}
-				onclick={() => result && onpick(result.path, { mode })}
+				disabled={!result || atDrivesRoot}
+				onclick={() => result && !atDrivesRoot && onpick(result.path, { mode })}
 			>
 				Select this folder
 			</button>

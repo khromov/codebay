@@ -128,19 +128,42 @@ export function dockerEnv(): Record<string, string | undefined> {
 }
 
 /**
- * Resolved from our own dependency tree, not cwd, because under `bunx codebay`
+ * Windows picks an executable by PATHEXT, which `existsSync` doesn't apply — so each shim has
+ * to be probed by full name. The bare name is deliberately not a win32 candidate: npm writes a
+ * POSIX sh script there, which Bun can't exec. Bun's `.bunx` sibling is a data file and is never
+ * a candidate on any platform — spawning it throws EFTYPE.
+ */
+const BIN_SHIM_EXTS = process.platform === 'win32' ? ['.exe', '.cmd'] : [''];
+
+/** Null when no spawnable shim exists, so a caller can fall back instead of spawning a missing file. */
+export function binShim(binDir: string, name: string): string | null {
+	for (const ext of BIN_SHIM_EXTS) {
+		const candidate = join(binDir, name + ext);
+		if (existsSync(candidate)) return candidate;
+	}
+	return null;
+}
+
+/**
+ * An argv rather than a path, because the `devcontainer.js` fallback leads with a
+ * `#!/usr/bin/env node` shebang that Windows doesn't honour — there it only runs when handed to
+ * an interpreter. Resolved from our own dependency tree, not cwd, because under `bunx codebay`
  * cwd is the user's arbitrary folder.
  */
-export function devcontainerBin(): string {
+export function devcontainerBin(): string[] {
 	try {
 		const pkgJson = fileURLToPath(import.meta.resolve('@devcontainers/cli/package.json'));
-		const shim = join(dirname(pkgJson), '..', '..', '.bin', 'devcontainer');
-		if (existsSync(shim)) return shim;
+		const shim = binShim(join(dirname(pkgJson), '..', '..', '.bin'), 'devcontainer');
+		if (shim) return [shim];
 		const pkg = JSON.parse(readFileSync(pkgJson, 'utf8'));
 		const rel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.devcontainer;
-		if (rel) return join(dirname(pkgJson), rel);
+		if (rel) {
+			const js = join(dirname(pkgJson), rel);
+			return process.platform === 'win32' ? [process.execPath, js] : [js];
+		}
 	} catch {
 		// Fall through to the dev-checkout path below.
 	}
-	return join(process.cwd(), 'node_modules', '.bin', 'devcontainer');
+	const dir = join(process.cwd(), 'node_modules', '.bin');
+	return [binShim(dir, 'devcontainer') ?? join(dir, 'devcontainer')];
 }

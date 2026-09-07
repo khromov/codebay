@@ -6,16 +6,19 @@ import {
 	writeFileSync,
 	readFileSync,
 	existsSync,
-	statSync
+	lstatSync,
+	statSync,
+	symlinkSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { PUBLISH_HOST } from './config.server.ts';
 import { setOption } from './db.server.ts';
 import {
 	devcontainerUpArgs,
 	devcontainerUpEnv,
 	launchCommandFor,
+	copyWorkspace,
 	overrideConfigPath,
 	readDeclaredContainerPorts,
 	restoreCanonicalConfig,
@@ -610,6 +613,10 @@ describe('writeOverrideConfig separate config file', () => {
 		// The CLI tests --config against this exact regex and refuses to boot otherwise — which is
 		// why the Codebay-owned file rides --override-config instead of --config.
 		const accepted = /\/\.?devcontainer\.json$/;
+		// The CLI applies that regex to a URI path, not to the raw argument, so a Windows path is
+		// slash-normalized long before the check (verified: --config with backslashes reports
+		// `"path":"/C:/…/devcontainer.json"`). Mirror that, or this asserts only the host separator.
+		const asUriPath = (p: string) => p.replaceAll(sep, '/');
 		const forms = [
 			['.devcontainer', 'devcontainer.json'],
 			['.devcontainer.json'],
@@ -620,8 +627,8 @@ describe('writeOverrideConfig separate config file', () => {
 			mkdirSync(join(dir, ...form.slice(0, -1)), { recursive: true });
 			writeFileSync(join(dir, ...form), '{}');
 			const { configPath, overrideConfigPath } = await writeOverrideConfig(dir, 8001);
-			expect(configPath).toMatch(accepted);
-			expect(overrideConfigPath).not.toMatch(accepted);
+			expect(asUriPath(configPath!)).toMatch(accepted);
+			expect(asUriPath(overrideConfigPath)).not.toMatch(accepted);
 		}
 	});
 
@@ -969,7 +976,11 @@ describe('writeOverrideConfig terminal mode', () => {
 		expect(install).not.toContain('nvm');
 		// Wrapped so a failed install can never break the build; the injection retries at boot.
 		expect(install.trimEnd().endsWith('exit 0')).toBe(true);
-		expect(statSync(join(featureDir, 'install.sh')).mode & 0o111).toBeGreaterThan(0);
+		// Windows has no exec bit to set, and none is needed: the CLI runs `chmod +x ./install.sh`
+		// inside the image build, so the host mode never reaches the feature.
+		if (process.platform !== 'win32') {
+			expect(statSync(join(featureDir, 'install.sh')).mode & 0o111).toBeGreaterThan(0);
+		}
 	});
 
 	test('uses the upstream Claude features, not the local one, for the default image', async () => {
@@ -1083,4 +1094,59 @@ describe('devcontainerUp args and env', () => {
 			else process.env.DOCKER_BUILDKIT = prev;
 		}
 	});
+});
+
+describe('copyWorkspace', () => {
+	let source: string;
+	let dest: string;
+
+	beforeEach(() => {
+		source = mkdtempSync(join(tmpdir(), 'codebay-copy-src-'));
+		dest = join(mkdtempSync(join(tmpdir(), 'codebay-copy-dst-')), 'workspace');
+	});
+	afterEach(() => {
+		rmSync(source, { recursive: true, force: true });
+		rmSync(dest, { recursive: true, force: true });
+	});
+
+	test('copies the tree, skipping ignored basenames', async () => {
+		writeFileSync(join(source, 'keep.txt'), 'keep');
+		mkdirSync(join(source, 'node_modules'));
+		writeFileSync(join(source, 'node_modules', 'dep.js'), 'dep');
+
+		const { dereferencedSymlinks } = await copyWorkspace(source, dest, new Set(['node_modules']));
+
+		expect(readFileSync(join(dest, 'keep.txt'), 'utf8')).toBe('keep');
+		expect(existsSync(join(dest, 'node_modules'))).toBe(false);
+		expect(dereferencedSymlinks).toBe(0);
+	});
+
+	// Skipped on Windows for the very reason the dereference exists: creating the fixture symlink
+	// needs Developer Mode. The `dereference` argument is what makes the behaviour reachable here.
+	test.skipIf(process.platform === 'win32')(
+		'follows symlinks when dereferencing, and reports how many',
+		async () => {
+			writeFileSync(join(source, 'real.txt'), 'contents');
+			symlinkSync(join(source, 'real.txt'), join(source, 'link.txt'));
+
+			const { dereferencedSymlinks } = await copyWorkspace(source, dest, new Set(), true);
+
+			expect(dereferencedSymlinks).toBe(1);
+			expect(lstatSync(join(dest, 'link.txt')).isSymbolicLink()).toBe(false);
+			expect(readFileSync(join(dest, 'link.txt'), 'utf8')).toBe('contents');
+		}
+	);
+
+	test.skipIf(process.platform === 'win32')(
+		'preserves symlinks and counts none when not dereferencing',
+		async () => {
+			writeFileSync(join(source, 'real.txt'), 'contents');
+			symlinkSync(join(source, 'real.txt'), join(source, 'link.txt'));
+
+			const { dereferencedSymlinks } = await copyWorkspace(source, dest, new Set(), false);
+
+			expect(dereferencedSymlinks).toBe(0);
+			expect(lstatSync(join(dest, 'link.txt')).isSymbolicLink()).toBe(true);
+		}
+	);
 });
