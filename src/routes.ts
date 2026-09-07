@@ -61,7 +61,6 @@ import {
 	getInstance,
 	getOption,
 	listRuns,
-	type AgentRunRow,
 	listFolderHistory,
 	setOption
 } from './lib/db.server.ts';
@@ -82,7 +81,7 @@ import {
 import { clearAttention, setAttention } from './lib/bridge.server.ts';
 import { timingSafeEqualStr } from './lib/crypto.server.ts';
 import { proxyRoutes } from './lib/proxy.server.ts';
-import { requestedModel, runTimeline } from './lib/agent-runs.server.ts';
+import { runDetail, runTimeline } from './lib/agent-runs.server.ts';
 import { PR_ATTRIBUTION_KEY, prAttributionEnabled } from './lib/sandbox-ops.server.ts';
 import { mcpRoutes } from './mcp/routes.server.ts';
 import {
@@ -131,29 +130,6 @@ function currentFilter(): InstanceFilter {
 
 /** A ceiling on how many run timelines one Agent log request can pull off disk. */
 const MAX_OPEN_TIMELINES = 10;
-
-/** The prompt and result are the two fields the Agent log panel actually renders in full. */
-function agentRunPayload(run: AgentRunRow) {
-	return {
-		id: run.id,
-		status: run.status,
-		prompt: run.prompt,
-		model: run.model,
-		requested_model: requestedModel(run),
-		session_id: run.session_id,
-		resume_session_id: run.resume_session_id,
-		result: run.result,
-		error: run.error,
-		is_error: run.is_error === 1,
-		last_activity: run.last_activity,
-		num_turns: run.num_turns,
-		cost_usd: run.cost_usd,
-		duration_ms: run.duration_ms,
-		created_at: run.created_at,
-		started_at: run.started_at,
-		finished_at: run.finished_at
-	};
-}
 
 /** Lets a route handler just `throw` for both validation and business-logic failures. */
 async function mutate(fn: () => Promise<unknown> | unknown): Promise<Response> {
@@ -717,7 +693,7 @@ export const routes: Record<string, MochiRouteValue> = {
 			MAX_OPEN_TIMELINES
 		);
 		return json({
-			runs: runs.map(agentRunPayload),
+			runs: runs.map(runDetail),
 			// Keyed by run id: one request refreshes every expanded box at once.
 			timelines: Object.fromEntries(ids.map((rid) => [rid, runTimeline(rid)]))
 		});

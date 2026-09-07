@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { LOGS_DIR } from './config.server.ts';
 import {
@@ -11,13 +11,23 @@ import {
 	type AgentRunRow,
 	type InstanceRow
 } from './db.server.ts';
-import { execInContainer, type ExecTarget } from './exec.server.ts';
+import {
+	EXEC_STDIN_MAX_BYTES,
+	execInContainer,
+	execTargetFor as targetFor,
+	markerLine
+} from './exec.server.ts';
 import {
 	HOME_PRELUDE,
 	shellSingleQuote as quote,
 	writeContainerFile
 } from './container-files.server.ts';
-import { FETCH_MARKER, parseFetchBlocks, tailBlockScript } from './log-capture.server.ts';
+import {
+	FETCH_MARKER,
+	parseFetchBlocks,
+	sizeOnDisk,
+	tailBlockScript
+} from './log-capture.server.ts';
 import {
 	AGENT_RUN_MARKER,
 	CLAUDE_BINARY_WAIT_SECONDS,
@@ -50,6 +60,18 @@ const MISSING_PROCESS_STRIKES = 5;
 /** A run nobody stops would otherwise hold its sandbox's single slot forever. */
 const DEFAULT_TIMEOUT_MS = 30 * 60_000;
 
+/**
+ * Per-pass ceiling on stream bytes. Unbounded, a mirror far behind (manager down, a tool that
+ * dumped megabytes) makes every pass time out at the same offset until the strikes kill a live run.
+ */
+const POLL_CHUNK_BYTES = 2 * 1024 * 1024;
+
+/** The prompt is staged through the exec env carrier, so it inherits that carrier's ceiling. */
+export const PROMPT_MAX_BYTES = EXEC_STDIN_MAX_BYTES;
+
+/** How long a cancel waits for claude to flush the result it records on SIGINT before the last tail. */
+const STOP_DRAIN_SECONDS = 5;
+
 export interface StartRunOptions {
 	resumeSessionId?: string;
 	model?: string;
@@ -66,17 +88,7 @@ export function runMirrorPath(runId: string): string {
 	return join(LOGS_DIR, `run-${runId}.jsonl`);
 }
 
-function mirrorSize(runId: string): number {
-	try {
-		return statSync(runMirrorPath(runId)).size;
-	} catch {
-		return 0;
-	}
-}
-
-function targetFor(row: InstanceRow): ExecTarget {
-	return { containerId: row.container_id!, remoteUser: row.remote_user };
-}
+const mirrorSize = (runId: string) => sizeOnDisk(runMirrorPath(runId));
 
 /**
  * The script the detached process actually runs. It writes its own PGID first so `stopRun` can
@@ -105,9 +117,12 @@ function runScript(runId: string, row: InstanceRow, opts: StartRunOptions): stri
 		`die(){ printf 'codebay: %s\\n' "$2" >> "$d/stderr.log"; w exit "$1"; exit "$1"; }\n` +
 		// setsid made this the session leader, so $$ is also the PGID stopRun signals.
 		`w pgid "$$"\n` +
-		// Tells the IDE/terminal launchers not to start a second Claude beside this one. The trap
-		// covers stopRun's INT/TERM; the KILL step of stopScript removes it itself.
-		`m="$HOME/${AGENT_RUN_MARKER}"; : > "$m"; trap 'rm -f "$m"' EXIT INT TERM\n` +
+		// Tells the IDE/terminal launchers not to start a second Claude beside this one. The KILL
+		// step of stopScript removes it itself.
+		`m="$HOME/${AGENT_RUN_MARKER}"; : > "$m"; trap 'rm -f "$m"' EXIT\n` +
+		// A trapped signal only runs its handler and lets bash carry on, so without the explicit
+		// exit a cancel that lands during the wait loops below would still go on to launch claude.
+		`trap 'w exit 130; exit 130' INT; trap 'w exit 143; exit 143' TERM\n` +
 		// Claude Code refuses --dangerously-skip-permissions under uid 0, which is exactly what an
 		// instance with no resolved remote_user execs as.
 		`[ "$(id -u)" = 0 ] && export IS_SANDBOX=1\n` +
@@ -156,7 +171,7 @@ function pollScript(runId: string, offset: number): string {
 		// Only worth a read once the run is over; tailing it every pass is pure waste.
 		`if [ -n "$ex" ] && [ -s "$d/stderr.log" ]; then printf '${ERR_MARKER}%s\\n' "$(tail -c 2000 "$d/stderr.log" | tr '\\n' ' ')"; fi; ` +
 		`printf '%s\\n' '${FETCH_MARKER}'; ` +
-		`${tailBlockScript('$d/stream.jsonl', String(offset + 1))}; ` +
+		`${tailBlockScript('$d/stream.jsonl', String(offset + 1), POLL_CHUNK_BYTES)}; ` +
 		`true`
 	);
 }
@@ -184,13 +199,12 @@ function stopScript(runId: string, signal: 'INT' | 'TERM' | 'KILL'): string {
 	);
 }
 
-/** Returns the marker's line untrimmed — an empty leading field is meaningful to the caller. */
-function markerValue(stdout: string, marker: string): string | null {
-	const at = stdout.lastIndexOf(marker);
-	if (at === -1) return null;
-	const rest = stdout.slice(at + marker.length);
-	const nl = rest.indexOf('\n');
-	return (nl === -1 ? rest : rest.slice(0, nl)).replace(/\r$/, '');
+/** Waits for the exit file so a tail that follows a signal sees the result claude flushes on its way out. */
+function waitForExitScript(runId: string, seconds: number): string {
+	return (
+		`${HOME_PRELUDE}d="${runDirExpr(runId)}"; ` +
+		`i=0; while [ ! -f "$d/exit" ] && [ "$i" -lt ${seconds} ]; do sleep 1; i=$((i + 1)); done; `
+	);
 }
 
 /** In-memory per-run cursor: the incomplete trailing line the next chunk has to be prefixed with. */
@@ -226,6 +240,24 @@ function once(runId: string, work: () => Promise<void>): Promise<void> {
 	const promise = work().finally(() => registry.inFlight.delete(runId));
 	registry.inFlight.set(runId, promise);
 	return promise;
+}
+
+/** Like `once`, but for work that must run itself rather than join a pass already in flight. */
+async function afterInFlight(runId: string, work: () => Promise<void>): Promise<void> {
+	let pending: Promise<void> | undefined;
+	while ((pending = registry.inFlight.get(runId))) await pending;
+	return once(runId, work);
+}
+
+/** Appends a pass's fetched bytes to the mirror; null when the pass carried nothing new. */
+function mirrorChunk(runId: string, stdout: string): Buffer | null {
+	const [block] = parseFetchBlocks(stdout);
+	if (!block?.base64) return null;
+	const bytes = Buffer.from(block.base64, 'base64');
+	if (!bytes.length) return null;
+	mkdirSync(LOGS_DIR, { recursive: true });
+	appendFileSync(runMirrorPath(runId), bytes);
+	return bytes;
 }
 
 /** The mirror is the record; the cursor is only a cache of it, and can lag it. */
@@ -264,16 +296,38 @@ export function setRunChangeHook(hook: (runId: string) => void): void {
 	onRunChanged = hook;
 }
 
-export function runSummary(row: AgentRunRow): AgentRunSummary {
+/** The one projection of a run row every reader shares, so the Agent log and MCP can't drift apart. */
+export function runDetail(row: AgentRunRow) {
 	return {
 		id: row.id,
 		instance_id: row.instance_id,
 		status: row.status,
+		prompt: row.prompt,
+		session_id: row.session_id,
+		resume_session_id: row.resume_session_id,
+		model: row.model,
+		requested_model: requestedModel(row),
 		last_activity: row.last_activity,
+		result: row.result,
+		structured_output: row.structured_output
+			? (JSON.parse(row.structured_output) as unknown)
+			: null,
+		is_error: row.is_error === 1,
+		error: row.error,
+		exit_code: row.exit_code,
+		num_turns: row.num_turns,
+		cost_usd: row.cost_usd,
+		duration_ms: row.duration_ms,
+		created_at: row.created_at,
 		started_at: row.started_at,
-		finished_at: row.finished_at,
-		is_error: row.is_error === 1
+		finished_at: row.finished_at
 	};
+}
+
+export function runSummary(row: AgentRunRow): AgentRunSummary {
+	const { id, instance_id, status, last_activity, started_at, finished_at, is_error } =
+		runDetail(row);
+	return { id, instance_id, status, last_activity, started_at, finished_at, is_error };
 }
 
 /** Seeds a freshly connected socket, the way `currentHealthSnapshots` does for health. */
@@ -394,7 +448,12 @@ function launch(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 		}
 		// stopRun doesn't go through once(), so a cancel can land while staging is still in flight.
 		if (getRun(row.id)?.status !== 'queued') return;
-		const res = await execInContainer(targetFor(instance), { script: launchScript(row.id) });
+		// The script detaches and returns at once, so anything slower is a wedged stream — and this
+		// runs under once(), where a hung exec would also hang every get_run for the row.
+		const res = await execInContainer(targetFor(instance), {
+			script: launchScript(row.id),
+			timeoutMs: 30_000
+		});
 		if (!res.ok) {
 			finish(row.id, {
 				status: 'error',
@@ -438,23 +497,17 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 
 		// Read in the script's own order: the state line was captured before these bytes, so an
 		// exit code here guarantees the stream below it is complete.
-		const [exitRaw = '', aliveRaw = ''] = (markerValue(res.stdout, STATE_MARKER) ?? '')
+		const [exitRaw = '', aliveRaw = ''] = (markerLine(res.stdout, STATE_MARKER) ?? '')
 			.split('\t')
 			.map((f) => f.trim());
 
-		let changed = false;
-		const [block] = parseFetchBlocks(res.stdout);
-		if (block?.base64) {
-			const bytes = Buffer.from(block.base64, 'base64');
-			if (bytes.length) {
-				mkdirSync(LOGS_DIR, { recursive: true });
-				appendFileSync(runMirrorPath(row.id), bytes);
-				const text = cursor.decoder.decode(bytes, { stream: true });
-				const next = readRunChunk(cursor.state, cursor.carry, text);
-				cursor.state = next.state;
-				cursor.carry = next.carry;
-				changed = true;
-			}
+		const bytes = mirrorChunk(row.id, res.stdout);
+		const changed = bytes !== null;
+		if (bytes) {
+			const text = cursor.decoder.decode(bytes, { stream: true });
+			const next = readRunChunk(cursor.state, cursor.carry, text);
+			cursor.state = next.state;
+			cursor.carry = next.carry;
 		}
 
 		// The row may have been cancelled while the exec was out; the mirror still got its bytes.
@@ -477,7 +530,7 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 		if (exitRaw) {
 			const exitCode = Number.parseInt(exitRaw, 10);
 			const failed = state.isError || exitCode !== 0;
-			const stderr = markerValue(res.stdout, ERR_MARKER)?.trim();
+			const stderr = markerLine(res.stdout, ERR_MARKER)?.trim();
 			finish(row.id, {
 				status: failed ? 'error' : 'done',
 				exit_code: exitCode,
@@ -499,7 +552,9 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 
 		const timeoutMs = optionsOf(row).timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		if (row.started_at && Date.now() - row.started_at > timeoutMs) {
-			await stopRun(row.id, `timed out after ${Math.round(timeoutMs / 60_000)} minutes`);
+			await stopRun(row.id, `timed out after ${Math.round(timeoutMs / 60_000)} minutes`, {
+				failed: true
+			});
 			return;
 		}
 
@@ -534,6 +589,13 @@ export function startRun(
 	opts: StartRunOptions = {}
 ): AgentRunRow {
 	if (!prompt.trim()) throw new Error('prompt is required');
+	const promptBytes = Buffer.byteLength(prompt, 'utf8');
+	if (promptBytes > PROMPT_MAX_BYTES) {
+		throw new Error(
+			`prompt is ${promptBytes} bytes; a run carries at most ${PROMPT_MAX_BYTES} — put the bulk in a ` +
+				'workspace file and refer to it'
+		);
+	}
 	if (instance.status === 'error') throw new Error('sandbox failed to build');
 	// Claude Code keeps one session directory per project, so two concurrent runs would interleave.
 	const open = openRunFor(instance.id);
@@ -572,40 +634,71 @@ export function startRun(
 }
 
 /**
- * SIGINT first: per Claude Code's headless docs it ends the turn cleanly and records a result,
- * where SIGTERM leaves the turn unfinished. SIGTERM is only the follow-up for a wedged process.
+ * SIGINT first, because Claude Code ends the turn cleanly and records a result on it where SIGTERM
+ * leaves the turn unfinished; `failed` marks a stop the caller didn't ask for (a timeout) as an error.
  */
 export async function stopRun(
 	runId: string,
-	reason = 'cancelled by the caller'
+	reason = 'cancelled by the caller',
+	{ failed = false } = {}
 ): Promise<AgentRunRow> {
 	const row = getRun(runId);
 	if (!row) throw new Error('Run not found');
 	if (row.status !== 'running' && row.status !== 'queued') return row;
+	// The mirror, not the cursor: after a manager restart no cursor exists until the first pass.
+	const state = stateFromMirror(runId, registry.cursors.get(runId)?.state ?? emptyRunState());
+	// Settled before the signal goes out, so a caller that doesn't await (rebuild) still sees the
+	// slot free and the poller stops exec'ing into a container that is on its way out.
+	finish(runId, {
+		status: failed ? 'error' : 'cancelled',
+		is_error: failed ? 1 : 0,
+		error: reason,
+		result: state.result ?? null,
+		last_activity: state.lastActivity ?? row.last_activity,
+		duration_ms: row.started_at ? Date.now() - row.started_at : null
+	});
 	const instance = getInstance(row.instance_id);
 	if (instance?.container_id) {
 		const target = targetFor(instance);
 		// SIGINT lets claude flush its result event and exit cleanly; the rest is for a wedged process.
 		await execInContainer(target, { script: stopScript(runId, 'INT'), timeoutMs: 15_000 });
 		for (const [delay, signal] of [
-			[5000, 'TERM'],
-			[10_000, 'KILL']
+			[STOP_DRAIN_SECONDS * 1000, 'TERM'],
+			[STOP_DRAIN_SECONDS * 2000, 'KILL']
 		] as const) {
 			// stopScript itself checks the process is still this run, so a clean exit makes these no-ops.
 			setTimeout(() => {
 				void execInContainer(target, { script: stopScript(runId, signal), timeoutMs: 15_000 });
 			}, delay).unref?.();
 		}
+		await drainAfterStop(runId, instance);
 	}
-	const cursor = registry.cursors.get(runId);
-	finish(runId, {
-		status: 'cancelled',
-		error: reason,
-		result: cursor?.state.result ?? null,
-		last_activity: cursor?.state.lastActivity ?? row.last_activity,
-		duration_ms: row.started_at ? Date.now() - row.started_at : null
-	});
 	return getRun(runId)!;
+}
+
+/**
+ * The poller never visits a cancelled row again, so without this last tail the result claude flushed
+ * on SIGINT would sit in the container and never reach the row or the mirror.
+ */
+async function drainAfterStop(runId: string, instance: InstanceRow): Promise<void> {
+	await afterInFlight(runId, async () => {
+		const res = await execInContainer(targetFor(instance), {
+			script: waitForExitScript(runId, STOP_DRAIN_SECONDS) + pollScript(runId, mirrorSize(runId)),
+			capture: true,
+			timeoutMs: (STOP_DRAIN_SECONDS + 25) * 1000
+		});
+		if (!res.ok || !mirrorChunk(runId, res.stdout)) return;
+		const state = stateFromMirror(runId, emptyRunState());
+		updateRun(runId, {
+			session_id: state.sessionId,
+			model: state.model,
+			last_activity: state.lastActivity,
+			num_turns: state.numTurns,
+			cost_usd: state.costUsd,
+			result: state.result
+		});
+		onRunChanged?.(runId);
+	});
 }
 
 /**

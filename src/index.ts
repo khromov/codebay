@@ -1,9 +1,8 @@
 import { Mochi, sequence, silenceInternalRoutes } from 'mochi-framework';
 import { routes } from './routes.ts';
-import { basicAuth } from './lib/auth.server.ts';
+import { basicAuth, tokenAuthenticated } from './lib/auth.server.ts';
 import { themeHandle } from './lib/theme.server.ts';
 import { PROXY_PREFIX } from './lib/proxy.server.ts';
-import { MCP_PATH } from './lib/mcp-auth.server.ts';
 import { resumeRuns } from './lib/agent-runs.server.ts';
 import { warnIfBuildStale } from './lib/build-freshness.server.ts';
 import { LOCK_STALE_MS, acquireDataDirLock } from './lib/data-dir-lock.server.ts';
@@ -40,6 +39,11 @@ if (!lock.ok) {
 	);
 	process.exit(1);
 }
+// A default Ctrl-C skips the exit hooks, and an unreleased lock refuses the restart that follows.
+process.on('exit', () => lock.release());
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+	process.on(signal, () => process.exit(signal === 'SIGINT' ? 130 : 143));
+}
 
 // Must precede Mochi.serve(), which is where MOCHI_KEY is read.
 ensureMochiKey();
@@ -63,10 +67,9 @@ await Mochi.serve({
 		trustedOrigins: TRUSTED_ORIGINS
 	},
 	filters: {
-		// Containers curl the bridge with no Origin header, which the check would 403;
-		// safe because the route authenticates by token, not ambient browser credentials.
-		'csrf:check': (decision, { url }) =>
-			url.pathname.startsWith('/api/bridge/') || url.pathname === MCP_PATH ? null : decision,
+		// Containers and MCP clients send no Origin header, which the check would 403; safe because
+		// those routes authenticate by token, not ambient browser credentials.
+		'csrf:check': (decision, { url }) => (tokenAuthenticated(url.pathname) ? null : decision),
 		'consoleLogger:line': (line, ctx) => {
 			const kept = silenceInternalRoutes(line, ctx);
 			if (kept == null) {
@@ -75,12 +78,8 @@ await Mochi.serve({
 			if (ctx.source.name === 'ws:message' && ctx.path.startsWith(PROXY_PREFIX + '/')) {
 				return null;
 			}
-			// These fire on every Claude hook event and carry the bridge token.
-			if (ctx.path.startsWith('/api/bridge/')) {
-				return null;
-			}
-			// One line per JSON-RPC frame is pure noise, and the frames carry the MCP token.
-			if (ctx.path === MCP_PATH) {
+			// A line per Claude hook event or JSON-RPC frame is noise, and each would print its token.
+			if (tokenAuthenticated(ctx.path)) {
 				return null;
 			}
 			return kept;

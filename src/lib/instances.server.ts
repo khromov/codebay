@@ -41,6 +41,7 @@ import {
 	stopContainer
 } from './docker.server.ts';
 import {
+	AGENT_RUN_MARKER,
 	copyWorkspace,
 	devcontainerCliAvailable,
 	devcontainerUp,
@@ -838,7 +839,9 @@ function quote(value: string): string {
 export async function relaunchSurface(row: InstanceRow): Promise<void> {
 	if (!row.container_id) return;
 
-	const steps: string[] = [];
+	// No run survives a container restart, but its marker does when the container was stopped out
+	// from under it — left in place, every launcher would keep opening a plain shell instead of Claude.
+	const steps: string[] = [`rm -f "$HOME/${AGENT_RUN_MARKER}"`];
 	// The folderOpen task's run-once gate is meant to span one container run, but the marker file
 	// outlives it — left in place, a restarted IDE container never reopens the Claude terminal.
 	if (row.mode !== 'terminal') steps.push(`rm -f "$HOME/${TERMINAL_LAUNCHED_MARKER}"`);

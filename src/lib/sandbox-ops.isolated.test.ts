@@ -1,9 +1,30 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { setOption } from './db.server.ts';
-import { PR_ATTRIBUTION, PR_ATTRIBUTION_KEY, withAttribution } from './sandbox-ops.server.ts';
+import {
+	PR_ATTRIBUTION,
+	PR_ATTRIBUTION_KEY,
+	WRITE_FILE_MAX_BYTES,
+	withAttribution,
+	writeWorkspaceFile
+} from './sandbox-ops.server.ts';
+import type { InstanceRow } from './db.server.ts';
 import { AGENT_RUN_MARKER, launchClaude } from './devcontainer.server.ts';
 
 afterEach(() => setOption(PR_ATTRIBUTION_KEY, '0'));
+
+describe('writeWorkspaceFile', () => {
+	test('refuses content the exec carrier cannot hold, naming the limit', async () => {
+		const row = {
+			container_id: 'c',
+			remote_user: 'node',
+			remote_workspace_folder: '/workspaces/proj'
+		} as InstanceRow;
+		const content = 'x'.repeat(WRITE_FILE_MAX_BYTES + 1);
+		await expect(writeWorkspaceFile(row, 'big.txt', content)).rejects.toThrow(
+			new RegExp(`at most ${WRITE_FILE_MAX_BYTES}`)
+		);
+	});
+});
 
 describe('pull-request attribution', () => {
 	test('is off by default, so a PR body passes through untouched', () => {

@@ -49,13 +49,15 @@ function manifestScript(): string {
 }
 
 /**
- * One framed base64 block of `pathExpr` from `offsetExpr` to EOF — the shape `parseFetchBlocks`
- * reads. Both arguments are spliced into a shell script, so callers pass shell exprs, not values.
+ * One framed base64 block of `pathExpr` from `offsetExpr` to EOF (or `maxBytes`) — the shape
+ * `parseFetchBlocks` reads. Both exprs are spliced into a shell script, so callers pass shell
+ * exprs, not values.
  */
-export function tailBlockScript(pathExpr: string, offsetExpr: string): string {
+export function tailBlockScript(pathExpr: string, offsetExpr: string, maxBytes?: number): string {
+	const cap = maxBytes ? ` | head -c ${maxBytes}` : '';
 	return (
 		`printf '${FILE_MARKER}\\t%s\\n' "${pathExpr}"; ` +
-		`tail -c "+${offsetExpr}" "${pathExpr}" 2>/dev/null | base64; ` +
+		`tail -c "+${offsetExpr}" "${pathExpr}" 2>/dev/null${cap} | base64; ` +
 		`printf '\\n${END_MARKER}\\n'`
 	);
 }
@@ -128,7 +130,7 @@ export function parseFetchBlocks(stdout: string): { path: string; base64: string
 	return blocks;
 }
 
-function sizeOnDisk(path: string): number {
+export function sizeOnDisk(path: string): number {
 	try {
 		return statSync(path).size;
 	} catch {

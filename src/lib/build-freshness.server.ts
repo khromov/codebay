@@ -36,7 +36,16 @@ export function staleBuildInputs(
 ): string[] {
 	if (!existsSync(manifestPath)) return [];
 	const builtAt = statSync(manifestPath).mtimeMs;
-	const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as BuildManifest;
+	let manifest: BuildManifest;
+	try {
+		manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as BuildManifest;
+	} catch (err) {
+		// A truncated manifest is Mochi's problem to report at serve time; an advisory check must not be what crashes boot.
+		console.warn(
+			`⚠ could not read ${manifestPath} for the build-freshness check: ${(err as Error).message}`
+		);
+		return [];
+	}
 	return buildInputs(manifest)
 		.filter((p) => {
 			const abs = join(root, p);

@@ -10,13 +10,15 @@ import {
 } from '../lib/instances.server.ts';
 import { getInstance, getRun, listRuns, type AgentRunRow } from '../lib/db.server.ts';
 import {
+	PROMPT_MAX_BYTES,
 	pollRunNow,
 	readRunLog,
-	requestedModel,
+	runDetail,
 	startRun,
 	stopRun
 } from '../lib/agent-runs.server.ts';
 import {
+	WRITE_FILE_MAX_BYTES,
 	createPr,
 	execCommand,
 	gitDiff,
@@ -54,34 +56,16 @@ function requireRunning(id: string) {
 }
 
 /** The IDE link is what makes a sandbox inspectable by a human, so every sandbox payload carries it. */
+const ideUrl = (id: string) => `${PUBLIC_ORIGIN}${proxyPathFor(id)}`;
+
 function sandboxPayload(row: ReturnType<typeof requireInstance>) {
-	return {
-		...sanitizeInstance(row),
-		ide_url: `${PUBLIC_ORIGIN}${proxyPathFor(row.id)}`
-	};
+	return { ...sanitizeInstance(row), ide_url: ideUrl(row.id) };
 }
 
+/** The prompt is left out: the caller wrote it, and it can be as large as the carrier allows. */
 function runPayload(run: AgentRunRow) {
-	return {
-		run_id: run.id,
-		sandbox_id: run.instance_id,
-		status: run.status,
-		session_id: run.session_id,
-		model: run.model,
-		requested_model: requestedModel(run),
-		last_activity: run.last_activity,
-		result: run.result,
-		structured_output: run.structured_output ? JSON.parse(run.structured_output) : null,
-		is_error: run.is_error === 1,
-		error: run.error,
-		exit_code: run.exit_code,
-		num_turns: run.num_turns,
-		cost_usd: run.cost_usd,
-		duration_ms: run.duration_ms,
-		created_at: run.created_at,
-		started_at: run.started_at,
-		finished_at: run.finished_at
-	};
+	const { id, instance_id, prompt: _prompt, ...detail } = runDetail(run);
+	return { run_id: id, sandbox_id: instance_id, ...detail };
 }
 
 /**
@@ -134,14 +118,18 @@ const runOptions = {
 	timeout_minutes: v.optional(v.pipe(v.number(), v.minValue(1), v.maxValue(240)))
 };
 
-type RunOptionInput = {
-	resume_session_id?: string;
-	model?: string;
-	max_turns?: number;
-	json_schema?: string;
-	permission_mode?: (typeof CLAUDE_PERMISSION_MODES)[number];
-	timeout_minutes?: number;
-};
+type RunOptionInput = v.InferInput<v.ObjectSchema<typeof runOptions, undefined>>;
+
+// The byte limits are enforced at runtime (startRun, writeWorkspaceFile) and only documented here:
+// a `v.check` can't be rendered into the JSON Schema an MCP client reads.
+const promptSchema = (description: string) =>
+	v.pipe(
+		v.string(),
+		v.minLength(1),
+		v.description(
+			`${description} At most ${PROMPT_MAX_BYTES} bytes of UTF-8; refer to a workspace file for anything larger.`
+		)
+	);
 
 function toStartOptions(input: RunOptionInput) {
 	return {
@@ -182,9 +170,7 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 				name: v.optional(v.string()),
 				branch: v.optional(v.pipe(v.string(), v.description('Branch to check out after cloning.'))),
 				mode: v.optional(v.picklist(['ide', 'terminal'] as const)),
-				prompt: v.optional(
-					v.pipe(v.string(), v.description('Queues an agent run once the sandbox is running.'))
-				),
+				prompt: v.optional(promptSchema('Queues an agent run once the sandbox is running.')),
 				...runOptions
 			})
 		},
@@ -193,10 +179,19 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 				branch: input.branch,
 				mode: input.mode ? normalizeMode(input.mode) : undefined
 			});
-			const run = input.prompt ? startRun(instance, input.prompt, toStartOptions(input)) : null;
+			// The sandbox exists once createInstance returns, so a failed run must not swallow its id —
+			// the caller would retry and leak the first one.
+			let run: AgentRunRow | null = null;
+			let runError: string | undefined;
+			try {
+				if (input.prompt) run = startRun(instance, input.prompt, toStartOptions(input));
+			} catch (err) {
+				runError = err instanceof Error ? err.message : String(err);
+			}
 			return {
 				sandbox: sandboxPayload(instance),
 				run: run ? runPayload(run) : null,
+				...(runError ? { run_error: runError } : {}),
 				note: 'The sandbox is building. Poll get_sandbox until status is "running".'
 			};
 		}
@@ -215,10 +210,7 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			const all = await listInstances();
 			const rows = input.status ? all.filter((i) => i.status === input.status) : all;
 			return {
-				sandboxes: rows.map((row) => ({
-					...row,
-					ide_url: `${PUBLIC_ORIGIN}${proxyPathFor(row.id)}`
-				}))
+				sandboxes: rows.map((row) => ({ ...row, ide_url: ideUrl(row.id) }))
 			};
 		}
 	);
@@ -266,7 +258,7 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 				'run at a time per sandbox.',
 			schema: v.object({
 				sandbox_id: sandboxId,
-				prompt: v.pipe(v.string(), v.minLength(1), v.description('What Claude should do.')),
+				prompt: promptSchema('What Claude should do.'),
 				...runOptions
 			})
 		},
@@ -377,11 +369,15 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			name: 'write_file',
 			description:
 				'Write a file into the sandbox workspace, creating parent directories as needed. Useful ' +
-				'for seeding config or fixtures before prompting Claude.',
+				`for seeding config or fixtures before prompting Claude. Content is capped at ${WRITE_FILE_MAX_BYTES} ` +
+				'bytes per call; build anything larger inside the sandbox with exec_command.',
 			schema: v.object({
 				sandbox_id: sandboxId,
 				path: v.pipe(v.string(), v.minLength(1)),
-				content: v.string()
+				content: v.pipe(
+					v.string(),
+					v.description(`The file's full UTF-8 text, at most ${WRITE_FILE_MAX_BYTES} bytes.`)
+				)
 			})
 		},
 		async (input) => {

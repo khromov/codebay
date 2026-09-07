@@ -98,6 +98,19 @@ describe('staleBuildInputs', () => {
 		rmSync(join(root, '.mochi'), { recursive: true });
 		expect(staleBuildInputs(root)).toEqual([]);
 	});
+
+	test('warns instead of throwing on a manifest that is not valid JSON', () => {
+		const root = scaffold();
+		writeFileSync(join(root, '.mochi', 'manifest.json'), '{"version": 2, "compo');
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			expect(staleBuildInputs(root)).toEqual([]);
+			expect(warn).toHaveBeenCalledTimes(1);
+			expect(String(warn.mock.calls[0]![0])).toContain('manifest.json');
+		} finally {
+			warn.mockRestore();
+		}
+	});
 });
 
 describe('warnIfBuildStale', () => {

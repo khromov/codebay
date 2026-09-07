@@ -1,10 +1,19 @@
-import { execInContainer, type ExecTarget } from './exec.server.ts';
+import {
+	EXEC_STDIN_MAX_BYTES_BASE64,
+	afterMarker,
+	execInContainer,
+	execTargetFor,
+	markerLine
+} from './exec.server.ts';
 import { SOURCE_INJECTED_ENV } from './devcontainer.server.ts';
 import { getOption, type InstanceRow } from './db.server.ts';
 import { HOME_PRELUDE, shellSingleQuote as quote } from './container-files.server.ts';
 
 /** Enough for a big diff or a test run's output, small enough not to blow a caller's context. */
 export const OUTPUT_CAP = 200_000;
+
+/** What `write_file` can carry in one call: the content rides base64'd through the exec env carrier. */
+export const WRITE_FILE_MAX_BYTES = EXEC_STDIN_MAX_BYTES_BASE64;
 
 const CODE_MARKER = '__CODEBAY_CMD__';
 const OUT_MARKER = '__CODEBAY_CMD_OUT__';
@@ -22,10 +31,6 @@ export interface CommandResult {
 	truncated: boolean;
 }
 
-function target(row: InstanceRow): ExecTarget {
-	return { containerId: row.container_id!, remoteUser: row.remote_user };
-}
-
 /** Everything here runs from the workspace, since an exec only inherits the image's WorkingDir. */
 function workspacePrelude(row: InstanceRow): string {
 	const cd = row.remote_workspace_folder
@@ -35,9 +40,8 @@ function workspacePrelude(row: InstanceRow): string {
 }
 
 function decodeBlock(stdout: string, marker: string): string {
-	const at = stdout.indexOf(marker);
-	if (at === -1) return '';
-	const rest = stdout.slice(at + marker.length);
+	const rest = afterMarker(stdout, marker);
+	if (rest === null) return '';
 	const end = rest.indexOf(END_MARKER);
 	// GNU base64 wraps at 76 columns, and a trimmed capture can drop the final newline.
 	const b64 = (end === -1 ? rest : rest.slice(0, end)).replace(/\s+/g, '');
@@ -51,11 +55,9 @@ function cap(text: string): { text: string; truncated: boolean } {
 }
 
 /**
- * Runs an arbitrary command in the sandbox and captures both streams separately.
- *
- * The command rides in through `execInContainer`'s stdin carrier rather than the script body, so
- * nothing has to be escaped and it never reaches the container's process list. Output is base64'd
- * because the capture path trims and the demuxed stream is text — the same reason log capture does.
+ * The command rides in through the stdin carrier rather than the script body, so nothing has to be
+ * escaped and it never reaches the container's process list; output is base64'd because the
+ * capture path trims and the demuxed stream is text.
  */
 export async function execCommand(
 	row: InstanceRow,
@@ -76,7 +78,7 @@ export async function execCommand(
 		`printf '${ERR_MARKER}\\n'; base64 < "$e"; printf '\\n${END_MARKER}\\n'; ` +
 		`rm -f "$o" "$e"; true`;
 
-	const res = await execInContainer(target(row), {
+	const res = await execInContainer(execTargetFor(row), {
 		script,
 		stdin: opts.cwd ? `cd ${quote(opts.cwd)} || exit 1\n${command}` : command,
 		capture: true,
@@ -92,17 +94,7 @@ export async function execCommand(
 		};
 	}
 
-	const codeAt = res.stdout.lastIndexOf(CODE_MARKER);
-	const exitCode =
-		codeAt === -1
-			? -1
-			: Number.parseInt(
-					res.stdout
-						.slice(codeAt + CODE_MARKER.length)
-						.split('\n')[0]!
-						.trim(),
-					10
-				);
+	const exitCode = Number.parseInt(markerLine(res.stdout, CODE_MARKER) ?? '', 10);
 	const out = cap(decodeBlock(res.stdout, OUT_MARKER));
 	const err = cap(decodeBlock(res.stdout, ERR_MARKER));
 	return {
@@ -132,7 +124,7 @@ export async function readWorkspaceFile(row: InstanceRow, path: string): Promise
 		workspacePrelude(row) +
 		`if [ ! -f "$1" ]; then printf '${CODE_MARKER}1\\n'; exit 0; fi; ` +
 		`printf '${CODE_MARKER}0\\n'; printf '${OUT_MARKER}\\n'; base64 < "$1"; printf '\\n${END_MARKER}\\n'`;
-	const res = await execInContainer(target(row), {
+	const res = await execInContainer(execTargetFor(row), {
 		script,
 		args: ['read-file', path],
 		capture: true,
@@ -148,10 +140,17 @@ export async function writeWorkspaceFile(
 	path: string,
 	content: string
 ): Promise<void> {
+	const bytes = Buffer.byteLength(content, 'utf8');
+	if (bytes > WRITE_FILE_MAX_BYTES) {
+		throw new Error(
+			`content is ${bytes} bytes; write_file carries at most ${WRITE_FILE_MAX_BYTES} — split it, or ` +
+				'build the file inside the sandbox with exec_command'
+		);
+	}
 	const script =
 		workspacePrelude(row) +
 		`set -e; mkdir -p "$(dirname "$1")"; printf '%s' "$CODEBAY_STDIN" | base64 -d > "$1"`;
-	const res = await execInContainer(target(row), {
+	const res = await execInContainer(execTargetFor(row), {
 		script,
 		args: ['write-file', path],
 		stdin: Buffer.from(content, 'utf8').toString('base64'),

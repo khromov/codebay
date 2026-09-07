@@ -332,7 +332,3 @@ export function updateRun(id: string, patch: Partial<Pick<AgentRunRow, Updatable
 	if (sets.length === 0) return;
 	db.query(`UPDATE agent_runs SET ${sets.join(', ')} WHERE id = $id`).run(params);
 }
-
-export function deleteRuns(instanceId: string): void {
-	db.query('DELETE FROM agent_runs WHERE instance_id = $id').run({ $id: instanceId });
-}

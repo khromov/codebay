@@ -10,7 +10,13 @@ import {
 	openRunFor,
 	type InstanceRow
 } from './db.server.ts';
-import { pollRunNow, runMirrorPath, startRun, stopRun } from './agent-runs.server.ts';
+import {
+	PROMPT_MAX_BYTES,
+	pollRunNow,
+	runMirrorPath,
+	startRun,
+	stopRun
+} from './agent-runs.server.ts';
 
 /**
  * Same seam as the other lifecycle tests: seeding the pinned docker slot runs everything against an
@@ -143,6 +149,16 @@ describe('startRun', () => {
 		const inst = seed();
 		created.push(inst.id);
 		expect(() => startRun(inst, '   ')).toThrow(/prompt is required/);
+	});
+
+	test('rejects a prompt the exec carrier cannot stage, naming the limit', () => {
+		fakeDocker();
+		const inst = seed();
+		created.push(inst.id);
+		expect(() => startRun(inst, 'x'.repeat(PROMPT_MAX_BYTES + 1))).toThrow(
+			new RegExp(`at most ${PROMPT_MAX_BYTES}`)
+		);
+		expect(openRunFor(inst.id)).toBeNull();
 	});
 });
 
@@ -338,6 +354,37 @@ describe('stopRun', () => {
 		// stale pgid file must never signal a reused pid.
 		expect(kill).toContain('/proc/$pg/cmdline');
 		expect(kill).toContain('[ "$alive" = 1 ] && [ "$pg" -gt 1 ] || exit 0');
+	});
+
+	test('tails once more after the signal, so the result claude flushes on SIGINT reaches the row', async () => {
+		const result = line({
+			type: 'result',
+			subtype: 'success',
+			result: 'Stopped cleanly.',
+			session_id: 'sess-int',
+			num_turns: 2
+		});
+		// The only poll-shaped exec is the drain after SIGINT: pollRunNow below joins the launch pass.
+		const calls = fakeDocker([pollReply({ exit: '130', alive: '0', stream: result })]);
+		const inst = seed();
+		created.push(inst.id);
+		const run = startRun(inst, 'go');
+		await pollRunNow(run.id);
+
+		const stopped = await stopRun(run.id);
+		expect(stopped.status).toBe('cancelled');
+		expect(stopped.result).toBe('Stopped cleanly.');
+		expect(stopped.session_id).toBe('sess-int');
+		expect(readFileSync(runMirrorPath(run.id), 'utf8')).toBe(result);
+
+		const scripts = calls.map(scriptOf);
+		const drain = scripts.findLast((s) => s.includes('__CODEBAY_RUNSTATE__'))!;
+		// The tail has to wait for the exit file, or it races claude's own flush and reads nothing.
+		expect(drain).toContain('while [ ! -f "$d/exit" ]');
+		expect(scripts.indexOf(drain)).toBeGreaterThan(
+			scripts.findIndex((s) => s.includes('kill -INT'))
+		);
+		rmSync(runMirrorPath(run.id), { force: true });
 	});
 
 	test('is a no-op on a run that already finished', async () => {

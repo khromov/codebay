@@ -6,6 +6,7 @@
 	import CircleCheck from '@lucide/svelte/icons/circle-check';
 	import CircleX from '@lucide/svelte/icons/circle-x';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import { untrack } from 'svelte';
 	import { apiFetch } from '../api.ts';
 	import type { RunTimelineEntry } from '../lib/agent-run-stream.ts';
 	import type { AgentRunStatus } from '../types.ts';
@@ -84,7 +85,8 @@
 		// which leaves this effect with no dependency at all — the panel then renders the state it
 		// mounted with and never updates again, which is exactly what shipped first time round.
 		if (bump < 0) return;
-		void load();
+		// load() reads and writes `open`; tracked, that re-runs this effect off its own fetch.
+		untrack(() => void load());
 	});
 
 	function toggle(runId: string) {

@@ -1,7 +1,6 @@
 /**
- * Parser for `claude -p --output-format stream-json --verbose` output. Pure and byte-oriented:
- * the poller tails raw bytes out of the container, so it hands us arbitrary chunks that usually
- * end mid-line. Kept free of Node/Bun APIs so it can be unit-tested on its own.
+ * Chunk-oriented because the poller tails raw bytes that usually end mid-line, and free of
+ * Node/Bun APIs so it can be unit-tested on its own.
  */
 
 /** Everything the run row needs, accumulated across chunks. */
