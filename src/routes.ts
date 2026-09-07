@@ -140,6 +140,8 @@ function agentRunPayload(run: AgentRunRow) {
 		prompt: run.prompt,
 		model: run.model,
 		requested_model: requestedModel(run),
+		session_id: run.session_id,
+		resume_session_id: run.resume_session_id,
 		result: run.result,
 		error: run.error,
 		is_error: run.is_error === 1,

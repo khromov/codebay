@@ -18,6 +18,10 @@
 		model: string | null;
 		/** What the caller asked for, an alias like `sonnet`; null when the sandbox default was used. */
 		requested_model: string | null;
+		/** Claude's own session id, reported once the run starts; null until then. */
+		session_id: string | null;
+		/** Set when the run was launched to continue an earlier session, which is what makes it a continuation. */
+		resume_session_id: string | null;
 		result: string | null;
 		error: string | null;
 		is_error: boolean;
@@ -108,6 +112,20 @@
 		return run.model ? undefined : 'Requested; Claude has not reported the model it is using yet';
 	}
 
+	/** A resumed run reports the session it continued, so the two ids match and one short form labels both. */
+	const sessionOf = (run: AgentRun) => run.session_id ?? run.resume_session_id;
+
+	const shortSession = (sid: string) => sid.slice(0, 8);
+
+	function sessionTitle(run: AgentRun): string {
+		const sid = sessionOf(run);
+		if (!sid) return '';
+		const lead = run.resume_session_id
+			? 'Continues an earlier run in this session'
+			: 'New session, started by this run';
+		return `${lead}\nSession ${sid}${run.session_id ? '' : ' (requested; not started yet)'}`;
+	}
+
 	function when(run: AgentRun): string {
 		return new Date(run.created_at).toLocaleTimeString([], {
 			hour: '2-digit',
@@ -156,6 +174,13 @@
 					</span>
 					{#if modelOf(run)}
 						<span class="model" title={modelTitle(run)}>{modelOf(run)}</span>
+					{/if}
+					{#if sessionOf(run)}
+						{@const sid = sessionOf(run)!}
+						<span class="session" class:resumed={run.resume_session_id} title={sessionTitle(run)}>
+							{run.resume_session_id ? '⤷' : '◆'}
+							{shortSession(sid)}
+						</span>
 					{/if}
 					{#if !expanded}
 						<span class="peek">{peek(run)}</span>
@@ -275,10 +300,22 @@
 	.when,
 	.status,
 	.model,
+	.session,
 	.run-meta,
 	.peek {
 		font-family: var(--font-mono);
 		font-size: 11px;
+	}
+	.session {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--ink-faint);
+	}
+	/* A continuation is the exception worth spotting in the strip, so only it gets full-strength ink. */
+	.session.resumed {
+		color: var(--ink-soft);
 	}
 	.model {
 		flex: none;
