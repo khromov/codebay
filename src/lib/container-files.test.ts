@@ -154,7 +154,8 @@ describe('writeFileScript / readFileScript', () => {
 		});
 	});
 
-	test.skipIf(process.getuid?.() === 0)(
+	// Windows has no mode bits for chmod to clear, so the file stays readable and the probe passes.
+	test.skipIf(process.getuid?.() === 0 || process.platform === 'win32')(
 		'an unreadable file errors instead of reading as absent',
 		() => {
 			runInTmp((dir) => {

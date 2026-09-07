@@ -4,7 +4,9 @@
 
 ## Quick start
 
-Requires [Bun](https://bun.sh) >= 1.3.13 (Node.js is not supported) and a running Docker daemon (Docker Desktop, Colima, OrbStack…). macOS and Linux are supported; Windows is untested.
+Requires [Bun](https://bun.sh) >= 1.3.13 (Node.js is not supported) and a running Docker daemon (Docker Desktop, Colima, OrbStack…). macOS, Linux and Windows are supported.
+
+On Windows, Docker Desktop must use its **WSL2 backend**, so the workspace copies under `%USERPROFILE%\.codebay\` can be bind-mounted into the Linux daemon. Symlinks in a source folder are copied as regular files rather than recreated, because Windows only permits creating them under Developer Mode — the same thing Git for Windows does by default.
 
 ```sh
 bunx codebay@latest

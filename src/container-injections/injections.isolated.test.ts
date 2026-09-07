@@ -2,6 +2,14 @@ import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+/**
+ * These suites drive container-side scripts through the *host* shell as a stand-in for a container.
+ * Windows has no such stand-in: Git Bash presents a POSIX filesystem in which the Windows paths
+ * these harnesses build don't round-trip, and their PATHs are colon-joined POSIX ones. The scripts
+ * only ever execute inside a Linux container, so the coverage lives on the other runners.
+ */
+const POSIX_SHELL_ONLY = process.platform === 'win32';
 import { injections, resolveInjections, resolveInjectionStages } from '../lib/injections.server.ts';
 import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings, hasAttentionHook } from './attention-hooks.ts';
@@ -510,40 +518,55 @@ describe('claude-code-update script', () => {
 		}
 	}
 
-	test('parses the version out of the real `claude --version` output and upgrades when behind', () => {
-		for (const { raw, version } of CLAUDE_VERSION_FIXTURES) {
-			const { out, installed } = runUpdate(raw, NPM_VIEW_FIXTURE);
-			expect(installed).toBe(true);
-			expect(out).toContain(`updated ${version} -> ${NPM_VIEW_FIXTURE}`);
+	test.skipIf(POSIX_SHELL_ONLY)(
+		'parses the version out of the real `claude --version` output and upgrades when behind',
+		() => {
+			for (const { raw, version } of CLAUDE_VERSION_FIXTURES) {
+				const { out, installed } = runUpdate(raw, NPM_VIEW_FIXTURE);
+				expect(installed).toBe(true);
+				expect(out).toContain(`updated ${version} -> ${NPM_VIEW_FIXTURE}`);
+			}
 		}
-	});
+	);
 
-	test('does not reinstall when the parsed version already matches npm latest', () => {
-		const { out, installed } = runUpdate(`${NPM_VIEW_FIXTURE} (Claude Code)`, NPM_VIEW_FIXTURE);
-		expect(installed).toBe(false);
-		expect(out).toContain(`current ${NPM_VIEW_FIXTURE}`);
-	});
+	test.skipIf(POSIX_SHELL_ONLY)(
+		'does not reinstall when the parsed version already matches npm latest',
+		() => {
+			const { out, installed } = runUpdate(`${NPM_VIEW_FIXTURE} (Claude Code)`, NPM_VIEW_FIXTURE);
+			expect(installed).toBe(false);
+			expect(out).toContain(`current ${NPM_VIEW_FIXTURE}`);
+		}
+	);
 
-	test('skips the upgrade when `npm view` returns nothing (offline/firewalled registry)', () => {
-		const { out, installed } = runUpdate('2.1.220 (Claude Code)', '');
-		expect(installed).toBe(false);
-		expect(out).toBe('');
-	});
+	test.skipIf(POSIX_SHELL_ONLY)(
+		'skips the upgrade when `npm view` returns nothing (offline/firewalled registry)',
+		() => {
+			const { out, installed } = runUpdate('2.1.220 (Claude Code)', '');
+			expect(installed).toBe(false);
+			expect(out).toBe('');
+		}
+	);
 
-	test('reports no `updated` when the reinstall leaves claude on the old version (stranded binary)', () => {
-		// npm "succeeds" but `claude --version` still reports the old version — the native-binary-in-root
-		// failure. Verification must catch it and fail (exit 1) instead of printing a false `updated`.
-		const { out, installed } = runUpdate('2.1.220 (Claude Code)', '2.1.222', '2.1.220');
-		expect(installed).toBe(true);
-		expect(out).not.toContain('updated');
-	});
+	test.skipIf(POSIX_SHELL_ONLY)(
+		'reports no `updated` when the reinstall leaves claude on the old version (stranded binary)',
+		() => {
+			// npm "succeeds" but `claude --version` still reports the old version — the native-binary-in-root
+			// failure. Verification must catch it and fail (exit 1) instead of printing a false `updated`.
+			const { out, installed } = runUpdate('2.1.220 (Claude Code)', '2.1.222', '2.1.220');
+			expect(installed).toBe(true);
+			expect(out).not.toContain('updated');
+		}
+	);
 
-	test('renders a placeholder, not a doubled space, when the pre-update version is unparseable', () => {
-		// claude present but its --version yields no semver (stranded/odd build): `installed` is empty,
-		// so the message must read `updated none -> …`, never `updated  -> …`.
-		const { out } = runUpdate('unknown', '2.1.222');
-		expect(out).toContain('updated none -> 2.1.222');
-	});
+	test.skipIf(POSIX_SHELL_ONLY)(
+		'renders a placeholder, not a doubled space, when the pre-update version is unparseable',
+		() => {
+			// claude present but its --version yields no semver (stranded/odd build): `installed` is empty,
+			// so the message must read `updated none -> …`, never `updated  -> …`.
+			const { out } = runUpdate('unknown', '2.1.222');
+			expect(out).toContain('updated none -> 2.1.222');
+		}
+	);
 
 	// Same shim harness, but the latest version arrives as `$0` instead of via `npm view`.
 	function runPinned(
@@ -576,20 +599,26 @@ describe('claude-code-update script', () => {
 		}
 	}
 
-	test('pinned script never runs `npm view` and upgrades when behind the supplied version', () => {
-		expect(PINNED_UPDATE_SCRIPT).not.toContain('npm view');
-		const { out, installed } = runPinned('2.1.220 (Claude Code)', '2.1.222');
-		expect(installed).toBe(true);
-		expect(out).toContain('updated 2.1.220 -> 2.1.222');
-	});
+	test.skipIf(POSIX_SHELL_ONLY)(
+		'pinned script never runs `npm view` and upgrades when behind the supplied version',
+		() => {
+			expect(PINNED_UPDATE_SCRIPT).not.toContain('npm view');
+			const { out, installed } = runPinned('2.1.220 (Claude Code)', '2.1.222');
+			expect(installed).toBe(true);
+			expect(out).toContain('updated 2.1.220 -> 2.1.222');
+		}
+	);
 
-	test('pinned script does not reinstall when already at the supplied version', () => {
-		const { out, installed } = runPinned('2.1.222 (Claude Code)', '2.1.222');
-		expect(installed).toBe(false);
-		expect(out).toContain('current 2.1.222');
-	});
+	test.skipIf(POSIX_SHELL_ONLY)(
+		'pinned script does not reinstall when already at the supplied version',
+		() => {
+			const { out, installed } = runPinned('2.1.222 (Claude Code)', '2.1.222');
+			expect(installed).toBe(false);
+			expect(out).toContain('current 2.1.222');
+		}
+	);
 
-	test('pinned script exits silently when claude is not installed', () => {
+	test.skipIf(POSIX_SHELL_ONLY)('pinned script exits silently when claude is not installed', () => {
 		const { out, installed } = runPinned(null, '2.1.222');
 		expect(installed).toBe(false);
 		expect(out).toBe('');
@@ -1392,7 +1421,7 @@ describe('claude-code-credentials LIVE_CREDENTIALS_TEST', () => {
 	});
 });
 
-describe('code-server-dark', () => {
+describe.skipIf(POSIX_SHELL_ONLY)('code-server-dark', () => {
 	// The real manifest's shape: `id` is the settingsId VS Code matches against, and the label is
 	// an nls placeholder — which is exactly why the theme id must come from `id`, not the label.
 	const manifest = () => ({

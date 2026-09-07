@@ -15,7 +15,8 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import { binShim } from '../src/lib/config.server.ts';
 
 const root = process.cwd();
 const failures: string[] = [];
@@ -42,7 +43,7 @@ try {
 	const packOut = await run(['bun', 'pm', 'pack', '--destination', work], root);
 	const tarball = packOut.match(/^.*\.tgz$/m)?.[0].trim();
 	if (!tarball) throw new Error(`could not find the packed tarball in:\n${packOut}`);
-	console.log(`verify-package: packed ${tarball.replace(work + '/', '')}`);
+	console.log(`verify-package: packed ${basename(tarball)}`);
 
 	// 2. Install it into an empty project, exactly like a user would.
 	const project = join(work, 'project');
@@ -56,7 +57,10 @@ try {
 	// 3. Boot it from the project dir (NOT the repo) in production mode.
 	const port = 8100 + Math.floor((Date.now() / 1000) % 700);
 	const log: string[] = [];
-	server = spawn(join(project, 'node_modules', '.bin', 'codebay'), {
+	// The installed shim is `codebay.exe`/`.cmd` on Windows — the extensionless name is POSIX-only.
+	const codebayBin = binShim(join(project, 'node_modules', '.bin'), 'codebay');
+	if (!codebayBin) throw new Error('the installed package produced no spawnable codebay shim');
+	server = spawn(codebayBin, {
 		cwd: project,
 		env: {
 			...process.env,

@@ -381,7 +381,18 @@ async function boot(row: InstanceRow, opts: { branch?: string } = {}): Promise<v
 		} else {
 			appendLog(row.id, `Copying ${row.source_path} → ${row.workspace_path}\n`);
 			const ignore = parseCopyIgnore(getOption('copy_ignore_patterns') ?? DEFAULT_COPY_IGNORE);
-			await copyWorkspace(row.source_path, row.workspace_path, ignore);
+			const { dereferencedSymlinks } = await copyWorkspace(
+				row.source_path,
+				row.workspace_path,
+				ignore
+			);
+			if (dereferencedSymlinks > 0) {
+				appendLog(
+					row.id,
+					`⚠ ${dereferencedSymlinks} symlink(s) copied as regular files — Windows needs Developer Mode (or admin rights) to recreate symlinks, so edits to them no longer write through to their targets
+`
+				);
+			}
 			appendLog(row.id, `⏱ copy: ${elapsed(sourceStart)}\n`);
 		}
 		await seedDeclaredPorts(row);
