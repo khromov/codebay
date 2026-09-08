@@ -1,5 +1,12 @@
 {
 	"mcpServers": {
+		"codebay": {
+			"type": "http",
+			"url": "${CODEBAY_MCP_URL:-http://localhost:6969/mcp}",
+			"headers": {
+				"Authorization": "Bearer ${CODEBAY_MCP_TOKEN}"
+			}
+		},
 		"mochi": {
 			"type": "http",
 			"url": "https://mochi.fast/mcp"

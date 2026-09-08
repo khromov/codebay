@@ -127,8 +127,11 @@ describe('relaunchSurface', () => {
 		stubSurface(true);
 		const calls = fakeDocker();
 		await relaunchSurface(seed());
-		// Terminal mode has nothing else to do, so the exec is skipped outright.
-		expect(calls.execs).toHaveLength(0);
+		// A stopped-mid-run container keeps its agent marker, so that cleanup always goes out —
+		// but the surface itself is not relaunched.
+		expect(calls.execs).toHaveLength(1);
+		expect(scriptOf(calls.execs[0]!)).toContain('rm -f "$HOME/.codebay-agent-active"');
+		expect(scriptOf(calls.execs[0]!)).not.toContain('ttyd --port');
 	});
 
 	test('clears the IDE run-once marker even when code-server is already back up', async () => {

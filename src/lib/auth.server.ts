@@ -1,6 +1,7 @@
 import type { Handle } from 'mochi-framework';
 import { BASIC_AUTH_PASSWORD, BASIC_AUTH_USERNAME } from './config.server.ts';
 import { timingSafeEqualStr } from './crypto.server.ts';
+import { MCP_PATH } from './mcp-auth.server.ts';
 
 const REALM = 'Codebay';
 
@@ -37,6 +38,15 @@ function wsOriginOk(request: Request): boolean {
 	}
 }
 
+/**
+ * Paths that authenticate with their own token instead of the app password: exempt from Basic
+ * Auth and the CSRF check (their clients can't carry either), and from the request log, since
+ * every hit carries that token.
+ */
+export function tokenAuthenticated(pathname: string): boolean {
+	return pathname.startsWith('/api/bridge/') || pathname === MCP_PATH;
+}
+
 /** `Mochi.ws` routes are dispatched by Bun directly and never reach `basicAuth`. */
 export function wsUpgradeAllowed(request: Request): boolean {
 	if (!wsOriginOk(request)) return false;
@@ -69,8 +79,7 @@ function credentialsOk(header: string | null): boolean {
 export const basicAuth: Handle = async ({ event, resolve }) => {
 	const path = new URL(event.request.url).pathname;
 
-	// Containers can carry neither the app password nor the CSRF header; the route checks a token.
-	if (path.startsWith('/api/bridge/')) return resolve(event);
+	if (tokenAuthenticated(path)) return resolve(event);
 
 	// Covers the `/p/:id/*` proxy relay only; `Mochi.ws` routes call `wsUpgradeAllowed` themselves.
 	if (

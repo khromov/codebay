@@ -13,7 +13,7 @@ export interface ContainerFile {
 }
 
 /** Resolves the exec user's home the same way every injection historically has. */
-const HOME_PRELUDE = 'h=$(eval echo ~$(id -un)); ';
+export const HOME_PRELUDE = 'h=$(eval echo ~$(id -un)); ';
 
 const filePath = (file: ContainerFile): string => `${file.dir ?? '$h'}/${file.name}`;
 
