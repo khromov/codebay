@@ -43,14 +43,11 @@ export const INSTALL_SCRIPT =
 const CHECK_SCRIPT = 'command -v claude >/dev/null 2>&1 && echo 1 || echo 0';
 
 /**
- * The runtime fallback to the build-time `codebay-claude` feature, mirroring tmux/ttyd. Terminal
- * mode only: there the launcher *is* `claude`, so a missing binary leaves a bare shell — IDE-mode
- * instances on a project image keep owning their own tooling.
+ * The runtime fallback to the build-time `codebay-claude` feature, mirroring tmux/ttyd. Both editor modes need the selected CLI even when a project image does not ship it.
  */
 export const claudeCodeInstall: Injection = {
 	id: 'claude-code-install',
 	label: 'Claude Code',
-	modes: ['terminal'],
 
 	async apply(target, log) {
 		log('Checking Claude Code is installed…\n');

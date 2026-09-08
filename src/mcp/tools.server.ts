@@ -1,3 +1,4 @@
+import { CODEX_PERMISSION_MODES, CODEX_EFFORT_LEVELS } from '../agents.ts';
 import * as v from 'valibot';
 import type { McpServer } from 'tmcp';
 import { tool } from 'tmcp/utils';
@@ -83,10 +84,15 @@ function safe<T>(run: (input: T) => unknown) {
 }
 
 const runOptions = {
+	agent: v.optional(v.picklist(['claude', 'codex'] as const)),
+	codex_permission_mode: v.optional(v.picklist(CODEX_PERMISSION_MODES)),
+	reasoning_effort: v.optional(v.picklist(CODEX_EFFORT_LEVELS)),
 	resume_session_id: v.optional(
 		v.pipe(
 			v.string(),
-			v.description('Continue a previous run’s Claude session instead of starting fresh.')
+			v.description(
+				'Continue a previous run’s session with the same agent instead of starting fresh.'
+			)
 		)
 	),
 	model: v.optional(
@@ -94,11 +100,18 @@ const runOptions = {
 			v.string(),
 			v.description(
 				'Model alias or id, e.g. "sonnet". Omit for the sandbox default. The run reports the id ' +
-					'Claude actually used as `model` once it starts.'
+					'the agent actually used as `model` when its native stream reports it; Codex may leave it unset.'
 			)
 		)
 	),
-	max_turns: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+	max_turns: v.optional(
+		v.pipe(
+			v.number(),
+			v.integer(),
+			v.minValue(1),
+			v.description('Claude only. Use timeout_minutes for a Codex run limit.')
+		)
+	),
 	json_schema: v.optional(
 		v.pipe(
 			v.string(),
@@ -133,6 +146,9 @@ const promptSchema = (description: string) =>
 
 function toStartOptions(input: RunOptionInput) {
 	return {
+		agent: input.agent,
+		codexPermissionMode: input.codex_permission_mode,
+		reasoningEffort: input.reasoning_effort,
 		resumeSessionId: input.resume_session_id,
 		model: input.model,
 		maxTurns: input.max_turns,
@@ -177,7 +193,8 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 		async (input) => {
 			const instance = await createInstance(input.source, input.name, {
 				branch: input.branch,
-				mode: input.mode ? normalizeMode(input.mode) : undefined
+				mode: input.mode ? normalizeMode(input.mode) : undefined,
+				agent: input.agent
 			});
 			// The sandbox exists once createInstance returns, so a failed run must not swallow its id —
 			// the caller would retry and leak the first one.
@@ -253,12 +270,12 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 		{
 			name: 'run_agent',
 			description:
-				'Run Claude Code non-interactively against the sandbox and return a run handle. The run ' +
+				'Run the selected coding agent non-interactively against the sandbox and return a run handle. The run ' +
 				'continues in the background; poll get_run for progress and the final result. Only one ' +
 				'run at a time per sandbox.',
 			schema: v.object({
 				sandbox_id: sandboxId,
-				prompt: promptSchema('What Claude should do.'),
+				prompt: promptSchema('What the agent should do.'),
 				...runOptions
 			})
 		},
@@ -273,7 +290,7 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			name: 'get_run',
 			description:
 				'Status and result of an agent run. While it is still going you get the live session id, ' +
-				'model, turn count, cost and what Claude is doing right now. Set wait_seconds to block until it ' +
+				'model, turn count, cost and what the agent is doing right now. Set wait_seconds to block until it ' +
 				'finishes instead of polling.',
 			schema: v.object({
 				run_id: v.pipe(v.string(), v.minLength(1)),
@@ -323,7 +340,7 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 		{
 			name: 'stop_run',
 			description:
-				'Cancel an agent run. Sends SIGINT first so Claude can end its turn cleanly, then ' +
+				'Cancel an agent run. Sends SIGINT first so the agent can end its turn cleanly, then ' +
 				'escalates if it does not exit.',
 			schema: v.object({ run_id: v.pipe(v.string(), v.minLength(1)) })
 		},
@@ -369,7 +386,7 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			name: 'write_file',
 			description:
 				'Write a file into the sandbox workspace, creating parent directories as needed. Useful ' +
-				`for seeding config or fixtures before prompting Claude. Content is capped at ${WRITE_FILE_MAX_BYTES} ` +
+				`for seeding config or fixtures before prompting the agent. Content is capped at ${WRITE_FILE_MAX_BYTES} ` +
 				'bytes per call; build anything larger inside the sandbox with exec_command.',
 			schema: v.object({
 				sandbox_id: sandboxId,

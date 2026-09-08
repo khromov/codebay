@@ -1,3 +1,4 @@
+import { manualCredentialEnabled } from '../lib/agents.server.ts';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { hostClaudeFile } from '../lib/host-claude.server.ts';
@@ -11,7 +12,7 @@ import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 /** A blank field falls through to the env var, so a user can set just one provider. */
 function manualClaudeToken(): string | null {
-	if (getOption('manual_tokens_enabled') !== '1') return null;
+	if (!manualCredentialEnabled('claude')) return null;
 	return getOption('manual_claude_code_token')?.trim() || null;
 }
 

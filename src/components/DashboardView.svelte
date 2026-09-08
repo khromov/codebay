@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Agent } from '../agents.ts';
 	import {
 		type Instance,
 		type InstanceFilter,
@@ -68,7 +69,7 @@
 
 	async function createFrom(
 		sourcePath: string,
-		opts?: { branch?: string; mode?: Instance['mode'] }
+		opts?: { branch?: string; mode?: Instance['mode']; agent?: Agent }
 	) {
 		browserOpen = false;
 		creating = true;
@@ -76,7 +77,7 @@
 		try {
 			await apiPost(
 				'/api/instances',
-				{ sourcePath, branch: opts?.branch, mode: opts?.mode },
+				{ sourcePath, branch: opts?.branch, mode: opts?.mode, agent: opts?.agent },
 				'Failed to create instance'
 			);
 			// The live stream delivers the new instance.
@@ -208,6 +209,7 @@
 
 {#if browserOpen}
 	<FolderBrowser
+		agentSelection={preflight.agentSelection ?? 'claude'}
 		onpick={createFrom}
 		defaultMode={preflight.defaultMode}
 		initialMode={browserMode}

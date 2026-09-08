@@ -1,3 +1,11 @@
+import { agentsFor, type AgentSelection } from '../agents.ts';
+import { getAgentSelection } from './agents.server.ts';
+import { codexInstall } from '../container-injections/codex-install.ts';
+import { codexCredentials } from '../container-injections/codex-credentials.ts';
+import { codexConfig } from '../container-injections/codex-config.ts';
+import { codexSkills } from '../container-injections/codex-skills.ts';
+import { codexAttentionHooks } from '../container-injections/codex-attention-hooks.ts';
+import { codexIdeExtension } from '../container-injections/codex-ide-extension.ts';
 import type { InstanceMode, InstanceRow } from './db.server.ts';
 import type { ExecTarget } from './exec.server.ts';
 import { getOption } from './db.server.ts';
@@ -61,7 +69,7 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 	return [
 		// Disjoint resources — and the slow network installs (apt tmux, npm/standalone claude,
 		// Open VSX extension) start immediately instead of queueing behind one another.
-		// claude-code-install (terminal-only) must precede claude-code-update: both are the sole
+		// claude-code-install must precede claude-code-update: both are the sole
 		// npm-global writer of their stage, and the update no-ops until a binary exists.
 		[
 			gitSafeDirectory,
@@ -93,10 +101,32 @@ function buildStages(claudeInjection: Injection): Injection[][] {
  * `mode` drops injections that don't apply to it (e.g. ttyd off IDE instances, the IDE
  * extension off terminal ones); omit it in mode-agnostic contexts to keep every injection.
  */
-export function resolveInjectionStages(mode?: InstanceMode): Injection[][] {
+export function resolveInjectionStages(
+	mode?: InstanceMode,
+	selection: AgentSelection = getAgentSelection()
+): Injection[][] {
+	const enabled = agentsFor(selection);
 	const claudeInjection =
 		getOption('custom_endpoint_enabled') === '1' ? claudeCodeCustom : claudeCodeCredentials;
-	const stages = buildStages(claudeInjection)
+	const claudeIds = new Set(
+		buildStages(claudeInjection)
+			.flat()
+			.filter((i) => i.id.startsWith('claude-') || i.id === 'attention-hooks')
+			.map((i) => i.id)
+	);
+	const stages = [
+		...buildStages(claudeInjection).map((stage) =>
+			stage.filter((i) => !claudeIds.has(i.id) || enabled.includes('claude'))
+		),
+		...(enabled.includes('codex')
+			? [
+					[codexInstall],
+					[codexCredentials, codexSkills, codexIdeExtension],
+					[codexConfig],
+					[codexAttentionHooks]
+				]
+			: [])
+	]
 		.map((stage) => (mode ? stage.filter((i) => !i.modes || i.modes.includes(mode)) : stage))
 		.filter((stage) => stage.length > 0);
 	// One injection per stage restores the fully serial boot for diagnosing injection interference.
@@ -104,8 +134,8 @@ export function resolveInjectionStages(mode?: InstanceMode): Injection[][] {
 }
 
 /** Flat view of `resolveInjectionStages()` for order-insensitive consumers (health, auth chips). */
-export function resolveInjections(mode?: InstanceMode): Injection[] {
-	return resolveInjectionStages(mode).flat();
+export function resolveInjections(mode?: InstanceMode, selection?: AgentSelection): Injection[] {
+	return resolveInjectionStages(mode, selection).flat();
 }
 
 /** @deprecated Use `resolveInjections()`; this ignores settings/mode and is kept for the tests. */

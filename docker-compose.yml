@@ -12,6 +12,7 @@ services:
       BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD:?set BASIC_AUTH_PASSWORD — HOST is 0.0.0.0}
       MOCHI_KEY: ${MOCHI_KEY:-}
       CODEBAY_GITHUB_TOKEN: ${CODEBAY_GITHUB_TOKEN:-}
+      CODEBAY_OPENAI_API_KEY: ${CODEBAY_OPENAI_API_KEY:-}
       CODEBAY_CLAUDE_CODE_TOKEN: ${CODEBAY_CLAUDE_CODE_TOKEN:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

@@ -339,7 +339,7 @@ describe('resolveInjections — mode filtering', () => {
 		expect(ids).not.toContain('ttyd');
 	});
 
-	test('claude-code-install is terminal-only and runs before every claude-* step', () => {
+	test('claude-code-install covers both surfaces and runs before every claude-* step', () => {
 		const terminal = resolveInjections('terminal').map((i) => i.id);
 		expect(terminal).toContain('claude-code-install');
 		// The tail (update, credentials, trust, aliases…) all assume a `claude` binary exists.
@@ -347,7 +347,7 @@ describe('resolveInjections — mode filtering', () => {
 			terminal.indexOf('claude-code-update')
 		);
 		// IDE mode on a project image keeps deferring tooling to the project.
-		expect(resolveInjections('ide').map((i) => i.id)).not.toContain('claude-code-install');
+		expect(resolveInjections('ide').map((i) => i.id)).toContain('claude-code-install');
 	});
 
 	test('mode-agnostic (no argument) keeps every injection', () => {

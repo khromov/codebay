@@ -1,4 +1,12 @@
 import {
+	isAgent,
+	CODEX_PERMISSION_MODES,
+	CODEX_EFFORT_LEVELS,
+	CODEX_VERBOSITIES,
+	type CodexPermissionMode
+} from './agents.ts';
+import { getAgentSelection, getAgentSettings } from './lib/agents.server.ts';
+import {
 	Mochi,
 	apiError,
 	error,
@@ -34,6 +42,8 @@ import { avatars, findAvatar } from './avatars/index.ts';
 import {
 	addForwardedPort,
 	broadcastDefaultMode,
+	broadcastAgentSelection,
+	setInstanceAgent,
 	broadcastFilter,
 	broadcastPet,
 	broadcastTheme,
@@ -114,7 +124,7 @@ async function preflight() {
 				})
 		)
 	]);
-	return { docker, cli, auth, defaultMode: getDefaultMode() };
+	return { docker, cli, auth, defaultMode: getDefaultMode(), agentSelection: getAgentSelection() };
 }
 
 /** The header pet logo, resolved from the DB option. A name that left the catalog reads as "off". */
@@ -224,6 +234,7 @@ export const routes: Record<string, MochiRouteValue> = {
 			return {
 				pet: currentPet(),
 				defaultMode: getDefaultMode(),
+				agentSettings: getAgentSettings(),
 				claudePermissionMode: getClaudePermissionMode(),
 				claudeEffortLevel: getClaudeEffortLevel(),
 				claudeOutputStyle: getClaudeOutputStyle(),
@@ -285,6 +296,66 @@ export const routes: Record<string, MochiRouteValue> = {
 			};
 		},
 		actions: {
+			agentSelection: ({ formData }) => {
+				const selection = str(formData, 'selection');
+				if (selection !== 'claude' && selection !== 'codex' && selection !== 'both')
+					return fail(400, { error: 'Select Claude, Codex, or both' });
+				setOption('agent_selection', selection);
+				broadcastAgentSelection(selection);
+				return success({ selection });
+			},
+			codexSettings: ({ formData }) => {
+				const permission = str(formData, 'permissionMode');
+				const effort = str(formData, 'effort');
+				const verbosity = str(formData, 'verbosity');
+				const baseUrl = str(formData, 'baseUrl');
+				const endpoint = onChecked(formData, 'endpointEnabled');
+				if (
+					!CODEX_PERMISSION_MODES.includes(permission as CodexPermissionMode) ||
+					!(CODEX_EFFORT_LEVELS as readonly string[]).includes(effort) ||
+					!(CODEX_VERBOSITIES as readonly string[]).includes(verbosity)
+				)
+					return fail(400, { error: 'Invalid Codex settings' });
+				if (endpoint) {
+					try {
+						const url = new URL(baseUrl);
+						if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+							throw new Error();
+					} catch {
+						return fail(400, { error: 'Enter an HTTP(S) endpoint without embedded credentials' });
+					}
+					if (!str(formData, 'model'))
+						return fail(400, { error: 'Set a model ID for the custom endpoint' });
+				}
+				for (const [option, field] of [
+					['codex_config_dir', 'configDir'],
+					['codex_model', 'model'],
+					['codex_base_url', 'baseUrl'],
+					['codex_permission_mode', 'permissionMode'],
+					['codex_effort', 'effort'],
+					['codex_verbosity', 'verbosity']
+				])
+					setOption(option!, str(formData, field!));
+				setOption('codex_endpoint_enabled', endpoint ? '1' : '0');
+				const key = str(formData, 'apiKey');
+				if (onChecked(formData, 'clearKey')) setOption('codex_api_key', '');
+				else if (key) setOption('codex_api_key', key);
+				invalidateSecretValues();
+				return success({ saved: true });
+			},
+			manualCredential: ({ formData }) => {
+				const service = str(formData, 'service');
+				if (service !== 'claude' && service !== 'github')
+					return fail(400, { error: 'Unknown credential service' });
+				setOption(`manual_${service}_enabled`, onChecked(formData, 'enabled') ? '1' : '0');
+				const key = service === 'claude' ? 'manual_claude_code_token' : 'manual_github_token';
+				const token = str(formData, 'token');
+				if (onChecked(formData, 'clear')) setOption(key, '');
+				else if (token) setOption(key, token);
+				invalidateSecretValues();
+				return success({ saved: true });
+			},
+
 			// The default editor surface (full IDE vs terminal) new instances start in.
 			defaultMode: ({ formData }) => {
 				const mode = normalizeMode(str(formData, 'mode'));
@@ -540,6 +611,8 @@ export const routes: Record<string, MochiRouteValue> = {
 			},
 
 			clearVersionCache: () => {
+				setOption('codex_latest_version', '');
+				setOption('codex_latest_checked_at', '');
 				setOption(LATEST_VERSION_KEY, '');
 				setOption(LATEST_CHECKED_AT_KEY, '');
 				return success({});
@@ -600,12 +673,15 @@ export const routes: Record<string, MochiRouteValue> = {
 				name?: string;
 				branch?: string;
 				mode?: string;
+				agent?: string;
 			} | null;
 			if (!body?.sourcePath) return apiError(400, 'sourcePath is required');
+			if (body.agent !== undefined && !isAgent(body.agent)) return apiError(400, 'Invalid agent');
 			try {
 				// An omitted mode falls back to the global default inside createInstance.
 				const mode = body.mode === undefined ? undefined : normalizeMode(body.mode);
 				const instance = await createInstance(body.sourcePath, body.name, {
+					agent: body.agent as 'claude' | 'codex' | undefined,
 					branch: body.branch,
 					mode
 				});
@@ -633,6 +709,11 @@ export const routes: Record<string, MochiRouteValue> = {
 	'/api/instances/delete-all': mutationRoute('POST', async () => {
 		await deleteAllInstances();
 		return { ok: true };
+	}),
+
+	'/api/instances/:id/agent': mutationRoute('POST', async ({ params, request }) => {
+		const body = (await request.json().catch(() => null)) as { agent?: unknown } | null;
+		return { instance: sanitizeInstance(await setInstanceAgent(params.id!, body?.agent)) };
 	}),
 
 	'/api/instances/:id/rename': mutationRoute('POST', async ({ params, request }) => {
@@ -726,9 +807,11 @@ export const routes: Record<string, MochiRouteValue> = {
 			);
 			return apiError(403, 'Forbidden');
 		}
-		if (state === 'done') setAttention(id, 'done');
-		else if (state === 'waiting') setAttention(id, 'waiting');
-		else clearAttention(id); // 'busy' / anything else → Claude resumed, dismiss the pulse
+		const agent = url.searchParams.get('agent') ?? 'claude';
+		if (!isAgent(agent)) return apiError(400, 'Unknown agent');
+		if (state === 'done') setAttention(id, 'done', agent);
+		else if (state === 'waiting') setAttention(id, 'waiting', agent);
+		else clearAttention(id, agent);
 		console.log(
 			`[bridge] accepted id=${id} → attention=${state === 'done' || state === 'waiting' ? state : 'cleared'}`
 		);

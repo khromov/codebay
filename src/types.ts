@@ -1,3 +1,4 @@
+import type { Agent, AgentSelection } from './agents.ts';
 export interface PortForward {
 	container_port: number;
 	host_port: number;
@@ -7,6 +8,8 @@ export interface PortForward {
 
 /** Mirrors the server's InstanceRow minus `bridge_token`. */
 export interface Instance {
+	agent?: Agent;
+	agent_selection?: AgentSelection;
 	id: string;
 	name: string;
 	source_path: string;
@@ -37,6 +40,7 @@ export type AgentRunStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelle
 
 /** The slice of an agent run the dashboard renders; the prompt and result never ride the stream. */
 export interface AgentRunSummary {
+	agent?: Agent;
 	id: string;
 	instance_id: string;
 	status: AgentRunStatus;
@@ -139,6 +143,7 @@ export interface AuthProvider {
 }
 
 export interface Preflight {
+	agentSelection?: AgentSelection;
 	docker: boolean;
 	cli: boolean;
 	auth: AuthProvider[];

@@ -271,6 +271,10 @@
 					livePreflight = { ...livePreflight, defaultMode: msg.data.mode };
 					return;
 				}
+				if (msg.type === 'agent-selection') {
+					livePreflight = { ...livePreflight, agentSelection: msg.data.selection };
+					return;
+				}
 				if (msg.type === 'theme') {
 					syncTheme(msg.data.value);
 					return;
@@ -388,17 +392,20 @@
 					{#if mountable(inst.id)}
 						{#if inst.mode === 'terminal'}
 							<TerminalSplit
+								agent={inst.agent ?? 'claude'}
 								id={inst.id}
 								active={inst.id === active}
 								initialOpen={inst.terminal_split === 1}
 							/>
 						{:else}
-							<iframe
-								bind:this={frames[inst.id]}
-								src={ideUrl(inst)}
-								title={inst.name}
-								onload={() => loadedFrames.add(inst.id)}
-							></iframe>
+							{#key inst.agent ?? 'claude'}
+								<iframe
+									bind:this={frames[inst.id]}
+									src={ideUrl(inst)}
+									title={inst.name}
+									onload={() => loadedFrames.add(inst.id)}
+								></iframe>
+							{/key}
 						{/if}
 					{/if}
 					<!-- Two distinct waits: the health probe is unbounded and gets the override, the

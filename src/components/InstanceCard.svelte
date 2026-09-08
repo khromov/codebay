@@ -79,10 +79,12 @@
 				class="attn"
 				class:attn-done={instance.attention === 'done'}
 				class:attn-waiting={instance.attention === 'waiting'}
-				title={instance.attention === 'waiting' ? 'Claude is waiting for input' : 'Claude finished'}
+				title={instance.attention === 'waiting'
+					? 'An agent is waiting for input'
+					: 'An agent finished'}
 				aria-label={instance.attention === 'waiting'
-					? 'Claude is waiting for input'
-					: 'Claude finished'}
+					? 'An agent is waiting for input'
+					: 'An agent finished'}
 			></span>
 		{/if}
 		<StatusBadge status={instance.status} />
@@ -95,7 +97,7 @@
 		<BranchBox branch={instance.git_branch} />
 	{/if}
 	{#if instance.active_run}
-		<div class="agent-run" title="An MCP client is driving Claude in this sandbox">
+		<div class="agent-run" title="An MCP client is running an agent in this sandbox">
 			<span class="agent-dot"></span>
 			<span class="agent-text">
 				{instance.active_run.status === 'queued'

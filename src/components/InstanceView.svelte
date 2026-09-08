@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AGENT_LABELS, type Agent } from '../agents.ts';
 	import { ideUrl, type Instance, type InstanceHealth } from '../types.ts';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
@@ -76,6 +77,15 @@
 
 	const url = $derived(instance ? ideUrl(instance) : '#');
 
+	let agentError = $state('');
+	async function chooseAgent(agent: string) {
+		agentError = '';
+		try {
+			await apiPost(`/api/instances/${id}/agent`, { agent });
+		} catch (error) {
+			agentError = (error as Error).message;
+		}
+	}
 	let newPort = $state('');
 	let portError = $state<string | null>(null);
 	// Set when the forward set changes this session; cleared once a rebuild applies it.
@@ -204,6 +214,28 @@
 		/>
 	</div>
 
+	{#if instance}
+		<section class="agent-choice panel" style="padding: 16px; margin-bottom: 16px;">
+			<label for="preferred-agent">Launch agent</label>
+			{#if instance.agent_selection === 'both'}
+				<select
+					id="preferred-agent"
+					value={instance.agent ?? 'claude'}
+					disabled={instance.status === 'creating'}
+					onchange={(event) => chooseAgent(event.currentTarget.value)}
+				>
+					<option value="claude">Claude</option><option value="codex">Codex</option>
+				</select>
+				<p>
+					Both agents are installed. Changing this opens the selected agent when you return to the
+					console; existing sessions keep running. You can also launch either agent in a separate
+					shell.
+				</p>
+			{:else}<span>{AGENT_LABELS[(instance.agent ?? 'claude') as Agent]}</span>{/if}
+			{#if agentError}<p role="alert">{agentError}</p>{/if}
+		</section>
+	{/if}
+
 	<section class="ports panel">
 		<div class="ports-bar panel-bar">
 			<span>Forwarded ports</span>
@@ -289,6 +321,22 @@
 </main>
 
 <style>
+	.agent-choice {
+		display: grid;
+		gap: 10px;
+		font-size: 12px;
+	}
+	.agent-choice p {
+		line-height: 1.6;
+		margin: 0;
+	}
+	.agent-choice select {
+		padding: 8px;
+		font: inherit;
+		color: var(--ink);
+		background: var(--bg);
+		border: 1px solid var(--rule);
+	}
 	.topbar {
 		display: flex;
 		align-items: center;

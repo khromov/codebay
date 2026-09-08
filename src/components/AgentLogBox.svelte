@@ -13,6 +13,8 @@
 
 	interface AgentRun {
 		id: string;
+		agent?: 'claude' | 'codex';
+		token_usage?: Record<string, number> | null;
 		status: AgentRunStatus;
 		prompt: string;
 		/** The id Claude reported once it started; null until then. */
@@ -111,7 +113,9 @@
 		if (run.model && run.requested_model && run.model !== run.requested_model) {
 			return `Requested as ${run.requested_model}`;
 		}
-		return run.model ? undefined : 'Requested; Claude has not reported the model it is using yet';
+		return run.model
+			? undefined
+			: 'Requested; The agent has not reported the model it is using yet';
 	}
 
 	/** A resumed run reports the session it continued, so the two ids match and one short form labels both. */
@@ -138,6 +142,11 @@
 
 	function meta(run: AgentRun): string {
 		const bits: string[] = [];
+		if (run.agent) bits.push(run.agent === 'codex' ? 'Codex' : 'Claude');
+		if (run.token_usage)
+			bits.push(
+				`${run.token_usage.input_tokens ?? 0} in / ${run.token_usage.output_tokens ?? 0} out tokens`
+			);
 		if (run.num_turns != null) bits.push(`${run.num_turns} turns`);
 		if (run.cost_usd != null) bits.push(`$${run.cost_usd.toFixed(4)}`);
 		if (run.duration_ms != null) bits.push(`${(run.duration_ms / 1000).toFixed(1)}s`);

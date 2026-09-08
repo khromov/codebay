@@ -1,4 +1,11 @@
 <script lang="ts">
+	import {
+		agentsFor,
+		preferredAgent,
+		AGENT_LABELS,
+		type Agent,
+		type AgentSelection
+	} from '../agents.ts';
 	import { tick } from 'svelte';
 	import type { BrowseResult, FolderHistoryEntry, InstanceMode } from '../types.ts';
 	import { isRepoUrl } from '../lib/repo-url.ts';
@@ -17,11 +24,16 @@
 		onpick,
 		onclose,
 		defaultMode = 'ide',
+		agentSelection = 'claude',
 		initialMode = null
 	}: {
-		onpick: (source: string, opts?: { branch?: string; mode?: InstanceMode }) => void;
+		onpick: (
+			source: string,
+			opts?: { branch?: string; mode?: InstanceMode; agent?: Agent }
+		) => void;
 		onclose: () => void;
 		defaultMode?: InstanceMode;
+		agentSelection?: AgentSelection;
 		/** Opens pinned to this mode — set by the dashboard's mode shortcut button. */
 		initialMode?: InstanceMode | null;
 	} = $props();
@@ -31,6 +43,8 @@
 	// svelte-ignore state_referenced_locally
 	let modeOverride = $state<InstanceMode | null>(initialMode);
 	const mode = $derived(modeOverride ?? defaultMode);
+	let agentOverride = $state<Agent | undefined>(undefined);
+	const agent = $derived(preferredAgent(agentSelection, agentOverride));
 
 	let result = $state<BrowseResult | null>(null);
 	let loading = $state(true);
@@ -46,7 +60,7 @@
 
 	function cloneRepoUrl() {
 		if (!repoValid) return;
-		onpick(repoUrl.trim(), { branch: repoBranch.trim() || undefined, mode });
+		onpick(repoUrl.trim(), { branch: repoBranch.trim() || undefined, mode, agent });
 	}
 
 	const filtered = $derived(
@@ -124,6 +138,20 @@
 
 		<div class="mode">
 			<div class="mode-label">Editor</div>
+			{#if agentSelection === 'both'}
+				<label class="agent-choice"
+					>Launch agent
+					<select
+						value={agent}
+						onchange={(event) => (agentOverride = event.currentTarget.value as Agent)}
+					>
+						{#each agentsFor(agentSelection) as choice (choice)}<option value={choice}
+								>{AGENT_LABELS[choice]}</option
+							>{/each}
+					</select>
+				</label>
+			{/if}
+
 			<div class="mode-toggle" role="group" aria-label="Editor mode">
 				<button
 					type="button"
@@ -192,7 +220,7 @@
 				<div class="recent-label">Recent</div>
 				{#each shownHistory as entry (entry.source_path)}
 					<div class="recent-row">
-						<button class="recent-pick" onclick={() => onpick(entry.source_path, { mode })}>
+						<button class="recent-pick" onclick={() => onpick(entry.source_path, { mode, agent })}>
 							<span class="icon">
 								{#if isRepoUrl(entry.source_path)}<GitBranch size={16} />{:else}<FolderClock
 										size={16}
@@ -266,7 +294,9 @@
 							<span class="ename">{entry.name}</span>
 							{#if entry.hasDevcontainer}<span class="badge">devcontainer</span>{/if}
 						</button>
-						<button class="pick-inline" onclick={() => onpick(entry.path, { mode })}>Select</button>
+						<button class="pick-inline" onclick={() => onpick(entry.path, { mode, agent })}
+							>Select</button
+						>
 					</div>
 				{/each}
 			{/if}
@@ -291,7 +321,7 @@
 			<button
 				class="primary"
 				disabled={!result || atDrivesRoot}
-				onclick={() => result && !atDrivesRoot && onpick(result.path, { mode })}
+				onclick={() => result && !atDrivesRoot && onpick(result.path, { mode, agent })}
 			>
 				Select this folder
 			</button>
@@ -300,6 +330,18 @@
 </div>
 
 <style>
+	.agent-choice {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		font-size: 12px;
+	}
+	.agent-choice select {
+		padding: 6px;
+		color: var(--ink);
+		background: var(--bg);
+		border: 1px solid var(--rule);
+	}
 	.overlay {
 		position: fixed;
 		inset: 0;
