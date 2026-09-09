@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { enhance, type MochiEnhanceOptions } from 'mochi-framework';
 	import {
+		AGENTS,
+		AGENT_LABELS,
+		agentsFor,
 		CODEX_PERMISSION_MODES,
 		CODEX_EFFORT_LEVELS,
 		CODEX_VERBOSITIES,
@@ -8,6 +11,7 @@
 	} from '../agents.ts';
 	import Button from './Button.svelte';
 	let { settings, section }: { settings: AgentSettings; section: 'selection' | 'codex' } = $props();
+	const enabled = $derived(agentsFor(settings.selection));
 	let message = $state('');
 	let failed = $state(false);
 	let pending = $state(false);
@@ -37,17 +41,18 @@
 	{@attach enhance(options)}
 >
 	{#if section === 'selection'}
-		<label for="agent-selection">Available agents</label>
+		<span class="heading">Available agents</span>
 		<p>
 			Claude is enabled by default. With both enabled, each sandbox installs both agents and
 			launches the one you choose when creating it. Open another console to run the other agent
 			manually.
 		</p>
-		<select id="agent-selection" name="selection" value={settings.selection}>
-			<option value="claude">Claude (default)</option><option value="codex">Codex</option><option
-				value="both">Claude and Codex</option
+		{#each AGENTS as agent (agent)}
+			<label class="check"
+				><input type="checkbox" name={agent} checked={enabled.includes(agent)} />
+				{AGENT_LABELS[agent]}</label
 			>
-		</select>
+		{/each}
 		<p>Existing containers keep their installed agents until rebuilt.</p>
 	{:else}
 		<label for="codex-dir">Host config directory</label>
@@ -142,7 +147,8 @@
 		display: grid;
 		gap: 12px;
 	}
-	label {
+	label,
+	.heading {
 		font-weight: 600;
 	}
 	p {

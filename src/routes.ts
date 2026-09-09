@@ -1,8 +1,10 @@
 import {
 	isAgent,
+	AGENTS,
 	CODEX_PERMISSION_MODES,
 	CODEX_EFFORT_LEVELS,
 	CODEX_VERBOSITIES,
+	type AgentSelection,
 	type CodexPermissionMode
 } from './agents.ts';
 import { getAgentSelection, getAgentSettings } from './lib/agents.server.ts';
@@ -297,9 +299,10 @@ export const routes: Record<string, MochiRouteValue> = {
 		},
 		actions: {
 			agentSelection: ({ formData }) => {
-				const selection = str(formData, 'selection');
-				if (selection !== 'claude' && selection !== 'codex' && selection !== 'both')
-					return fail(400, { error: 'Select Claude, Codex, or both' });
+				// One checkbox per agent, so the stored value stays the single 'claude' | 'codex' | 'both'.
+				const selected = AGENTS.filter((agent) => onChecked(formData, agent));
+				if (!selected.length) return fail(400, { error: 'Enable at least one agent' });
+				const selection: AgentSelection = selected.length === AGENTS.length ? 'both' : selected[0]!;
 				setOption('agent_selection', selection);
 				broadcastAgentSelection(selection);
 				return success({ selection });

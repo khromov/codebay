@@ -60,15 +60,25 @@ const TMUX_FEATURE_METADATA = {
 };
 
 /**
+ * A subshell that is the left operand of `||` runs with errexit ignored (POSIX drops `-e` for every
+ * command of an AND-OR list but the last), which let a failed download carry on and symlink a
+ * truncated binary onto PATH; testing `$?` on its own line keeps the script's own `set -e` live.
+ */
+function bestEffortFeatureInstall(id: string, script: string): string {
+	return (
+		'#!/bin/sh\n(\n' +
+		`${script}\n` +
+		')\n' +
+		`[ $? -eq 0 ] || echo "${id}: install failed (non-fatal); the manager retries after the container starts"\n` +
+		'exit 0\n'
+	);
+}
+
+/**
  * Build time is the only reliable moment to fetch packages in a container that
  * firewalls egress after start; failures are swallowed so this can't break a build.
  */
-const TMUX_FEATURE_INSTALL =
-	'#!/bin/sh\n' +
-	'(\n' +
-	`${TMUX_INSTALL_SCRIPT}\n` +
-	') || echo "codebay-tmux: install failed (non-fatal); the manager retries after the container starts"\n' +
-	'exit 0\n';
+const TMUX_FEATURE_INSTALL = bestEffortFeatureInstall('codebay-tmux', TMUX_INSTALL_SCRIPT);
 
 /** Relative to .devcontainer/. Only written for terminal-mode instances. */
 const TTYD_FEATURE_DIR = 'codebay-ttyd';
@@ -82,12 +92,7 @@ const TTYD_FEATURE_METADATA = {
 };
 
 /** Best-effort like tmux: build time is the only reliable moment to fetch in an egress-firewalled container. */
-const TTYD_FEATURE_INSTALL =
-	'#!/bin/sh\n' +
-	'(\n' +
-	`${TTYD_INSTALL_SCRIPT}\n` +
-	') || echo "codebay-ttyd: install failed (non-fatal); the manager retries after the container starts"\n' +
-	'exit 0\n';
+const TTYD_FEATURE_INSTALL = bestEffortFeatureInstall('codebay-ttyd', TTYD_INSTALL_SCRIPT);
 
 /** Relative to .devcontainer/. Only written for terminal-mode instances on a project-supplied config. */
 const CLAUDE_FEATURE_DIR = 'codebay-claude';
@@ -101,12 +106,7 @@ const CLAUDE_FEATURE_METADATA = {
 };
 
 /** Best-effort like tmux/ttyd: build time is the only reliable moment to fetch in an egress-firewalled container. */
-const CLAUDE_FEATURE_INSTALL =
-	'#!/bin/sh\n' +
-	'(\n' +
-	`${CLAUDE_INSTALL_SCRIPT}\n` +
-	') || echo "codebay-claude: install failed (non-fatal); the manager retries after the container starts"\n' +
-	'exit 0\n';
+const CLAUDE_FEATURE_INSTALL = bestEffortFeatureInstall('codebay-claude', CLAUDE_INSTALL_SCRIPT);
 
 /** Manager-dropped files the project's own .gitignore won't cover, kept out of git status. */
 const MANAGER_GIT_EXCLUDES = [
@@ -805,9 +805,7 @@ export async function writeOverrideConfig(
 		);
 		await writeFile(
 			join(feature, 'install.sh'),
-			'#!/bin/sh\n(\n' +
-				CODEX_INSTALL_SCRIPT +
-				'\n) || echo "Codex build-time install unavailable; retrying after startup"\nexit 0\n',
+			bestEffortFeatureInstall('codebay-codex', CODEX_INSTALL_SCRIPT),
 			{ mode: 0o755 }
 		);
 	}

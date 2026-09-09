@@ -23,8 +23,8 @@ d=$(mktemp -d)
 trap 'rm -rf "$d"' EXIT
 url="https://github.com/openai/codex/releases/latest/download/$asset.tar.gz"
 if [ -n "\${CODEBAY_CODEX_VERSION:-}" ]; then url="https://github.com/openai/codex/releases/download/rust-v$CODEBAY_CODEX_VERSION/$asset.tar.gz"; fi
-if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 10 --max-time 120 "$url" -o "$d/codex.tar.gz"
-elif command -v wget >/dev/null 2>&1; then wget -q -T 120 "$url" -O "$d/codex.tar.gz"
+if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 10 --retry 3 --speed-limit 4096 --speed-time 60 --max-time 600 "$url" -o "$d/codex.tar.gz"
+elif command -v wget >/dev/null 2>&1; then wget -q -T 60 --tries=3 "$url" -O "$d/codex.tar.gz"
 else echo 'curl or wget is required to install Codex' >&2; exit 1; fi
 tar -xzf "$d/codex.tar.gz" -C "$d"
 "$d/bin/codex" --version
@@ -79,7 +79,7 @@ export const codexInstall: Injection = {
 			{
 				script: `export CODEBAY_CODEX_UPDATE=1 CODEBAY_CODEX_VERSION=${version ?? ''}\n${INSTALL_SCRIPT}`,
 				args: ['codex-install', target.remoteUser ?? 'root'],
-				timeoutMs: 180_000
+				timeoutMs: 660_000
 			}
 		);
 		log(
