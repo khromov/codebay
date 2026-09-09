@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { AgentSettings as AgentSettingsData } from '../agents.ts';
 	import '@fontsource-variable/doto';
 	import '@fontsource-variable/jetbrains-mono';
 	import SettingsView from '../components/SettingsView.svelte';
@@ -11,6 +12,7 @@
 	} from '../types.ts';
 
 	let {
+		agentSettings,
 		pet,
 		defaultMode,
 		claudePermissionMode,
@@ -30,7 +32,6 @@
 		gitIdentityName,
 		gitIdentityEmail,
 		dockerArch,
-		manualTokensEnabled,
 		githubTokenSet,
 		claudeTokenSet,
 		customEndpointEnabled,
@@ -57,6 +58,7 @@
 		advancedBlockingExtInstall,
 		version
 	}: {
+		agentSettings: AgentSettingsData;
 		pet?: AvatarArt;
 		defaultMode: InstanceMode;
 		claudePermissionMode: ClaudePermissionMode;
@@ -76,7 +78,6 @@
 		gitIdentityName: string;
 		gitIdentityEmail: string;
 		dockerArch: string | null;
-		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
 		claudeTokenSet: boolean;
 		customEndpointEnabled: boolean;
@@ -106,6 +107,7 @@
 </script>
 
 <SettingsView
+	{agentSettings}
 	{pet}
 	{defaultMode}
 	{claudePermissionMode}
@@ -125,7 +127,6 @@
 	{gitIdentityName}
 	{gitIdentityEmail}
 	{dockerArch}
-	{manualTokensEnabled}
 	{githubTokenSet}
 	{claudeTokenSet}
 	{customEndpointEnabled}

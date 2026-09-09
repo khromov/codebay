@@ -23,6 +23,7 @@ import {
 	readDeclaredContainerPorts,
 	restoreCanonicalConfig,
 	TERMINAL_LAUNCHED_MARKER,
+	writeAgentPreference,
 	writeOverrideConfig
 } from './devcontainer.server.ts';
 
@@ -991,15 +992,15 @@ describe('writeOverrideConfig terminal mode', () => {
 		expect(existsSync(join(dir, '.devcontainer', 'codebay-claude'))).toBe(false);
 	});
 
-	test('never stages the codebay-claude feature in IDE mode', async () => {
+	test('installs the enabled CLI when a custom IDE image does not provide it', async () => {
 		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
 		writeFileSync(
 			join(dir, '.devcontainer', 'devcontainer.json'),
 			JSON.stringify({ image: 'ships/own:1' })
 		);
 		await writeOverrideConfig(dir, 8001);
-		expect(readDevcontainer().features['./codebay-claude']).toBeUndefined();
-		expect(existsSync(join(dir, '.devcontainer', 'codebay-claude'))).toBe(false);
+		expect(readDevcontainer().features['./codebay-claude']).toBeDefined();
+		expect(existsSync(join(dir, '.devcontainer', 'codebay-claude'))).toBe(true);
 	});
 });
 
@@ -1149,4 +1150,77 @@ describe('copyWorkspace', () => {
 			expect(lstatSync(join(dest, 'link.txt')).isSymbolicLink()).toBe(true);
 		}
 	);
+});
+
+describe('Codex provisioning matrix', () => {
+	let dir: string;
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-codex-provision-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+	for (const mode of ['ide', 'terminal'] as const) {
+		for (const selection of ['claude', 'codex', 'both'] as const) {
+			test(`${mode} provisions ${selection} and launches one selected provider`, async () => {
+				const agent = selection === 'claude' ? 'claude' : 'codex';
+				await writeOverrideConfig(dir, 8001, [], undefined, mode, 'default', [], selection, agent);
+				const config = JSON.parse(
+					readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8')
+				);
+				expect(!!config.features['./codebay-codex']).toBe(selection !== 'claude');
+				expect(Object.keys(config.features).some((key) => key.includes('anthropics'))).toBe(
+					selection !== 'codex'
+				);
+				expect(readFileSync(join(dir, '.devcontainer', 'codebay-agent'), 'utf8').trim()).toBe(
+					agent
+				);
+				const script =
+					mode === 'terminal'
+						? readFileSync(join(dir, '.devcontainer', 'codebay-terminal.sh'), 'utf8')
+						: JSON.parse(readFileSync(join(dir, '.vscode', 'tasks.json'), 'utf8'))
+								.tasks.map((task: { command: string }) => task.command)
+								.join('\n');
+				if (selection === 'codex') {
+					expect(script).toContain('codex --dangerously-bypass-approvals-and-sandbox');
+					expect(script).not.toContain('claude --');
+					expect(script).not.toContain('.claude/ide/');
+				}
+				if (selection === 'both') {
+					expect(script).toContain('codebay-codex');
+					expect(script).toContain('claude --');
+					expect(script).toContain('codex --');
+				}
+				if (mode === 'ide')
+					expect(config.postStartCommand.includes('openai.chatgpt')).toBe(selection !== 'claude');
+				if (process.platform !== 'win32') {
+					const parsed = Bun.spawnSync(['bash', '-n'], { stdin: Buffer.from(script) });
+					expect(parsed.exitCode).toBe(0);
+				}
+			});
+		}
+	}
+	test('switching IDE preference changes only auto-launch and preserves both task identities', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'ide', 'default', [], 'both', 'claude');
+		const path = join(dir, '.vscode', 'tasks.json');
+		const before = JSON.parse(readFileSync(path, 'utf8')).tasks;
+		expect(
+			before
+				.filter(
+					(task: { runOptions: { runOn?: string } }) => task.runOptions.runOn === 'folderOpen'
+				)
+				.map((task: { label: string }) => task.label)
+		).toEqual(['Claude (Codebay)']);
+		await writeAgentPreference(dir, 'codex', 'ide');
+		const after = JSON.parse(readFileSync(path, 'utf8')).tasks;
+		expect(after.map((task: { command: string }) => task.command)).toEqual(
+			before.map((task: { command: string }) => task.command)
+		);
+		expect(
+			after
+				.filter(
+					(task: { runOptions: { runOn?: string } }) => task.runOptions.runOn === 'folderOpen'
+				)
+				.map((task: { label: string }) => task.label)
+		).toEqual(['Codex (Codebay)']);
+		expect(readFileSync(join(dir, '.devcontainer', 'codebay-agent'), 'utf8')).toBe('codex\n');
+	});
 });

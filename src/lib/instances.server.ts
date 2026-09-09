@@ -1,4 +1,7 @@
+import { agentsFor, isAgent, preferredAgent, type AgentSelection, type Agent } from '../agents.ts';
+import { getAgentSelection } from './agents.server.ts';
 import { rm, stat } from 'node:fs/promises';
+import { writeAgentPreference } from './devcontainer.server.ts';
 import { basename, join } from 'node:path';
 import {
 	CODE_SERVER_PORT,
@@ -146,7 +149,12 @@ let secretValuesCache: string[] | null = null;
 
 function getSecretValues(): string[] {
 	if (secretValuesCache === null) {
-		secretValuesCache = customEnvVarValues()
+		secretValuesCache = [
+			...customEnvVarValues(),
+			getOption('codex_api_key') ?? '',
+			process.env.CODEBAY_OPENAI_API_KEY ?? '',
+			process.env.OPENAI_API_KEY ?? ''
+		]
 			.filter((v) => v.length >= 4)
 			.sort((a, b) => b.length - a.length);
 	}
@@ -202,6 +210,7 @@ export type StreamEvent =
 	| { type: 'filter'; data: { value: InstanceFilter } }
 	// The global default editor surface, so the picker's toggle follows a settings change.
 	| { type: 'default-mode'; data: { mode: InstanceMode } }
+	| { type: 'agent-selection'; data: { selection: AgentSelection } }
 	// The colour scheme, so a change in the settings popup repaints the window behind it.
 	| { type: 'theme'; data: { value: Theme } };
 
@@ -265,6 +274,10 @@ export function broadcastFilter(value: InstanceFilter): void {
 }
 
 /** Settings opens in its own popup, so the dashboard behind it needs the new default pushed. */
+export function broadcastAgentSelection(selection: AgentSelection): void {
+	broadcast({ type: 'agent-selection', data: { selection } });
+}
+
 export function broadcastDefaultMode(mode: InstanceMode): void {
 	broadcast({ type: 'default-mode', data: { mode } });
 }
@@ -327,6 +340,7 @@ export function streamOpen(ws: ServerWebSocket<unknown>): void {
 	});
 	// Same, for the default mode the picker's toggle seeds from.
 	sendTo(ws, { type: 'default-mode', data: { mode: getDefaultMode() } });
+	sendTo(ws, { type: 'agent-selection', data: { selection: getAgentSelection() } });
 }
 
 export function streamClose(ws: ServerWebSocket<unknown>): void {
@@ -486,6 +500,9 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			stopLogCapture(row.id);
 			await runCapturePass(row).catch(() => undefined);
 		}
+		row.agent_selection = getAgentSelection();
+		row.agent = preferredAgent(row.agent_selection, row.agent);
+		updateInstance(row.id, { agent: row.agent, agent_selection: row.agent_selection });
 		await rescueHijackedPort(row);
 		const forwards = listForwards(row.id).map((f) => ({
 			container_port: f.container_port,
@@ -500,7 +517,9 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			defaultImage,
 			row.mode,
 			getClaudePermissionMode(),
-			customEnvVarsConfig()?.vars ?? []
+			customEnvVarsConfig()?.vars ?? [],
+			row.agent_selection,
+			row.agent
 		);
 		updateInstance(row.id, { image_source: imageSource });
 
@@ -556,7 +575,7 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		// Stages parallelize independent injections; per-injection failures are still swallowed
 		// so one bad injection can't abort the rest of provisioning.
 		const injectionsStart = Date.now();
-		for (const stage of resolveInjectionStages(row.mode)) {
+		for (const stage of resolveInjectionStages(row.mode, row.agent_selection)) {
 			await Promise.all(
 				stage.map(async (injection) => {
 					try {
@@ -630,8 +649,14 @@ export function getDefaultMode(): InstanceMode {
 export async function createInstance(
 	source: string,
 	name?: string,
-	opts: { branch?: string; mode?: InstanceMode } = {}
+	opts: { branch?: string; mode?: InstanceMode; agent?: Agent } = {}
 ): Promise<InstanceRow> {
+	const selection = getAgentSelection();
+	if (
+		opts.agent !== undefined &&
+		(!isAgent(opts.agent) || !agentsFor(selection).includes(opts.agent))
+	)
+		throw new Error('The selected agent is not enabled in Settings');
 	const parsedRepo = parseRepoUrl(source);
 	if (parsedRepo) {
 		// Normalize to the clean https clone URL so re-picks from history dedupe.
@@ -659,6 +684,8 @@ export async function createInstance(
 		// Kept synchronous through insertInstance so two concurrent creations can't claim the same free sprite.
 		avatar: pickUniqueAvatar(id, allInstances().map(effectiveAvatarName)).name,
 		mode: opts.mode ?? getDefaultMode(),
+		agent: preferredAgent(selection, opts.agent),
+		agent_selection: selection,
 		terminal_split: 0,
 		// Born under the separate-config scheme, so there is never a legacy injection to undo.
 		config_migrated: 1
@@ -844,10 +871,14 @@ export async function relaunchSurface(row: InstanceRow): Promise<void> {
 	const steps: string[] = [`rm -f "$HOME/${AGENT_RUN_MARKER}"`];
 	// The folderOpen task's run-once gate is meant to span one container run, but the marker file
 	// outlives it — left in place, a restarted IDE container never reopens the Claude terminal.
-	if (row.mode !== 'terminal') steps.push(`rm -f "$HOME/${TERMINAL_LAUNCHED_MARKER}"`);
+	if (row.mode !== 'terminal')
+		steps.push(
+			`rm -f "$HOME/${TERMINAL_LAUNCHED_MARKER}" "$HOME/${TERMINAL_LAUNCHED_MARKER}-codex"`
+		);
 	// code-server comes back on its own (its feature ships a container entrypoint), so only launch
 	// a surface that is actually down rather than racing the entrypoint for the port.
-	if (!(await surfaceAccessible(row.host_port))) steps.push(launchCommandFor(row.mode));
+	if (!(await surfaceAccessible(row.host_port)))
+		steps.push(launchCommandFor(row.mode, row.agent_selection));
 	if (!steps.length) return;
 
 	// Both launchers resolve paths off `$PWD`, which under postStartCommand is the workspace
@@ -935,4 +966,16 @@ export async function deleteDatabaseAndShutdown(): Promise<void> {
 	closeDb();
 	await rm(DATA_DIR, { recursive: true, force: true });
 	setTimeout(() => process.exit(0), 150);
+}
+
+export async function setInstanceAgent(id: string, value: unknown): Promise<InstanceRow> {
+	const row = getInstance(id);
+	if (!row) throw new Error('Instance not found');
+	if (!isAgent(value) || !agentsFor(row.agent_selection ?? 'claude').includes(value))
+		throw new Error('Agent is not installed; enable it in Settings and rebuild');
+	if (row.status === 'creating') throw new Error('Wait for the instance to finish building');
+	await writeAgentPreference(row.workspace_path, value, row.mode);
+	updateInstance(id, { agent: value });
+	triggerReconcile();
+	return { ...row, agent: value };
 }

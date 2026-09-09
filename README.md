@@ -1,6 +1,6 @@
 # Codebay
 
-**Codebay - the devcontainer manager** — a web UI for spinning up isolated devcontainer instances from any local folder or Git repo URL, each running Claude Code in a browser-based VS Code (`code-server`).
+**Codebay - the devcontainer manager** — a web UI for spinning up isolated devcontainer instances from any local folder or Git repo URL, running Claude Code, Codex, or both in a browser-based VS Code (`code-server`) or terminal.
 
 ## Quick start
 
@@ -24,13 +24,39 @@ The UI opens at `http://localhost:6969`. State (SQLite DB + per-instance workspa
 - `TRUSTED_ORIGINS` — comma-separated extra origins accepted alongside `PUBLIC_ORIGIN`, for when the UI is legitimately reachable at more than one address (e.g. `http://localhost:6969,http://192.168.1.50:6969`)
 - `BASIC_AUTH_PASSWORD` — enables HTTP Basic Auth over the whole UI (disabled when unset); required if you bind beyond loopback with `HOST=0.0.0.0`
 - `CODEBAY_CLAUDE_CODE_TOKEN` — Claude Code token to inject into every container (e.g. from `claude setup-token`) instead of discovering the host's credentials
+- `CODEBAY_OPENAI_API_KEY` — OpenAI API key for Codex; falls back to `OPENAI_API_KEY`, then the host Codex login. A key saved in Settings takes precedence.
+- `CODEX_HOME` — host Codex configuration directory (default `~/.codex`); can also be overridden in Settings
 - `CODEBAY_GITHUB_TOKEN` — GitHub token to inject instead of reading `gh auth token` from the host
 - `DISABLE_OPEN_BROWSER=1` — skip opening the browser on startup
+
+## Agents and settings
+
+Settings → **Agents** selects **Claude** (the default), **Codex**, or **Claude and Codex**.
+New containers install the selected agents; existing containers adopt the selection when rebuilt.
+With both enabled, choose the preferred agent when creating a sandbox or change it on the sandbox's
+settings page without rebuilding. Only the preferred agent launches automatically. Each agent has
+its own persistent terminal session, so switching preserves the other session; open another console
+and run `claude` or `codex` to use both at once.
+
+Claude and Codex have separate credentials, model, reasoning, output, permissions, and custom
+endpoint settings. GitHub credentials and environment settings are shared under **Git & environment**.
+General, MCP, Appearance, and Advanced settings have their own sections.
+
+Codex imports the host's file-backed login (or macOS Keychain login), portable model/display
+preferences, `AGENTS.md`, `AGENTS.override.md`, rules, and skills from `CODEX_HOME`, plus
+`~/.agents/skills`. A saved API key can replace host login; if no login can be exported, run
+`codex login --device-auth` in the container. Host files are never modified. Custom endpoints must
+implement the Responses API and use the model ID and API key configured for Codex.
+
+Both agents support terminal and IDE surfaces, health checks, attention notifications, captured
+transcripts, and MCP runs. Codex uses its native status line, reasoning effort, and response verbosity.
+Full access inside the container is the default for both agents; Codex also offers workspace-write
+and read-only modes. Codex's IDE extension is installed from Open VSX in IDE mode.
 
 ## MCP server
 
 Codebay can expose itself to other AI agents over [MCP](https://modelcontextprotocol.io), so an agent
-can spin up a sandbox, run Claude Code in it non-interactively, and read back the result.
+can spin up a sandbox, run Claude Code or Codex in it non-interactively, and read back the result.
 
 It is **off by default**. Turn it on under Settings → **MCP server**, then copy the registration line
 it shows you:
@@ -40,6 +66,17 @@ claude mcp add --transport http codebay http://localhost:6969/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
+For a Codex client:
+
+```sh
+export CODEBAY_MCP_TOKEN="<token>"
+codex mcp add codebay --url http://localhost:6969/mcp \
+  --bearer-token-env-var CODEBAY_MCP_TOKEN
+```
+
+Keep `CODEBAY_MCP_TOKEN` in the environment whenever you launch that client (in PowerShell, use
+`$env:CODEBAY_MCP_TOKEN = "<token>"`). Settings provides copy buttons for both clients.
+
 The endpoint is `/mcp`. It returns `404` while disabled and `401` without a valid bearer token, and
 it is the one place that does not use `BASIC_AUTH_PASSWORD` — MCP clients send the token instead.
 
@@ -48,11 +85,19 @@ The tools cover the whole loop: `create_sandbox`, `run_agent`, `get_run`, `list_
 `list_sandboxes`, `get_sandbox` and `delete_sandbox`. Runs are asynchronous — `run_agent` hands back
 a run id and the work continues in the background, surviving a manager restart.
 
+`create_sandbox` and `run_agent` accept `agent: "claude" | "codex"`; omission uses the sandbox's
+preferred agent. Runs retain their agent even if that preference changes. Both support prompts,
+model overrides, session resume, structured JSON output, timeout, cancellation, and live timelines.
+Only one MCP run can be active per sandbox. Codex reports native token usage and leaves dollar cost
+unset; Claude-only `max_turns` and `permission_mode` are rejected for Codex. Use
+`codex_permission_mode` and `reasoning_effort` for Codex. Unattended Codex runs never wait for
+interactive permission approval; restricted modes reject actions outside their sandbox.
+
 Sandboxes created this way are ordinary instances: they show up on the dashboard with a live
 "agent running" line, and you can open the IDE to watch. They persist until an agent (or you)
 deletes them.
 
-> **Anything holding the token can create containers and run agents with your GitHub and Claude
+> **Anything holding the token can create containers and run agents with your GitHub and enabled agent
 > credentials, with permission prompts bypassed inside the container.** Treat it like a password, and
 > regenerate it from Settings if it leaks.
 

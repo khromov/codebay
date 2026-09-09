@@ -1,3 +1,4 @@
+import { manualCredentialEnabled } from '../lib/agents.server.ts';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -13,7 +14,7 @@ const GH_HOST = 'github.com';
 
 /** A blank field falls through to the env var, so a user can set just one provider. */
 function manualGithubToken(): string | null {
-	if (getOption('manual_tokens_enabled') !== '1') return null;
+	if (!manualCredentialEnabled('github')) return null;
 	return getOption('manual_github_token')?.trim() || null;
 }
 

@@ -1,3 +1,5 @@
+import type { Agent } from '../agents.ts';
+import { readCodexChunk, parseCodexTimeline } from './codex-run-stream.ts';
 /**
  * Chunk-oriented because the poller tails raw bytes that usually end mid-line, and free of
  * Node/Bun APIs so it can be unit-tested on its own.
@@ -5,6 +7,7 @@
 
 /** Everything the run row needs, accumulated across chunks. */
 export interface RunStreamState {
+	tokenUsage?: Record<string, number> | null;
 	sessionId: string | null;
 	/** The model Claude actually ran with (an id like `claude-opus-5`), from the `init` event. */
 	model: string | null;
@@ -149,8 +152,10 @@ function applyEvent(state: RunStreamState, event: StreamEvent): void {
 export function readRunChunk(
 	state: RunStreamState,
 	carry: string,
-	chunk: string
+	chunk: string,
+	agent: Agent = 'claude'
 ): { state: RunStreamState; carry: string } {
+	if (agent === 'codex') return readCodexChunk(state, carry, chunk);
 	const lines = (carry + chunk).split('\n');
 	const tail = lines.pop() ?? '';
 	for (const line of lines) {
@@ -166,8 +171,8 @@ export function readRunChunk(
 }
 
 /** Replays a whole mirror file — how a run's state is rebuilt after the manager restarts. */
-export function readRunFile(text: string): RunStreamState {
-	return readRunChunk(emptyRunState(), '', text).state;
+export function readRunFile(text: string, agent: Agent = 'claude'): RunStreamState {
+	return readRunChunk(emptyRunState(), '', text, agent).state;
 }
 
 /** One rendered row of the Agent log panel. */
@@ -225,7 +230,8 @@ function timelineFromEvent(event: StreamEvent): RunTimelineEntry[] {
  * Flattens a whole mirrored run into the rows the Agent log renders. Separate from `readRunChunk`
  * because that one only keeps the *latest* of each field — a timeline needs every step.
  */
-export function parseRunTimeline(text: string): RunTimelineEntry[] {
+export function parseRunTimeline(text: string, agent: Agent = 'claude'): RunTimelineEntry[] {
+	if (agent === 'codex') return parseCodexTimeline(text);
 	const out: RunTimelineEntry[] = [];
 	for (const line of text.split('\n')) {
 		const trimmed = line.trim();

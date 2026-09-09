@@ -1,3 +1,4 @@
+import type { Agent, AgentSelection } from '../agents.ts';
 import { Database } from 'bun:sqlite';
 import { migrate, getMigrations } from '@zihaolam/bun-sqlite-migrations';
 import { mkdirSync } from 'node:fs';
@@ -14,6 +15,8 @@ export type InstanceStatus = 'creating' | 'running' | 'stopped' | 'error';
 export type InstanceMode = 'ide' | 'terminal';
 
 export interface InstanceRow {
+	agent?: Agent;
+	agent_selection?: AgentSelection;
 	id: string;
 	name: string;
 	source_path: string;
@@ -68,8 +71,8 @@ export function closeDb(): void {
 export function insertInstance(row: InstanceRow): void {
 	db.query(
 		`INSERT INTO instances
-       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source, avatar, mode, terminal_split, config_migrated)
-     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source, $avatar, $mode, $terminal_split, $config_migrated)`
+       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source, avatar, mode, terminal_split, config_migrated, agent, agent_selection)
+     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source, $avatar, $mode, $terminal_split, $config_migrated, $agent, $agent_selection)`
 	).run({
 		$id: row.id,
 		$name: row.name,
@@ -87,7 +90,9 @@ export function insertInstance(row: InstanceRow): void {
 		$avatar: row.avatar,
 		$mode: row.mode,
 		$terminal_split: row.terminal_split,
-		$config_migrated: row.config_migrated
+		$config_migrated: row.config_migrated,
+		$agent: row.agent ?? 'claude',
+		$agent_selection: row.agent_selection ?? 'claude'
 	});
 }
 
@@ -151,6 +156,8 @@ const UPDATABLE_COLUMNS = [
 	'image_source',
 	'terminal_split',
 	'config_migrated',
+	'agent',
+	'agent_selection',
 	// Reassigned when a rebuild finds the recorded port taken over on the host.
 	'host_port'
 ] as const;
@@ -216,6 +223,8 @@ export function setOption(key: string, value: string): void {
 
 /** One `claude -p` invocation inside an instance, driven by the MCP server. */
 export interface AgentRunRow {
+	agent?: Agent;
+	token_usage?: string | null;
 	id: string;
 	instance_id: string;
 	prompt: string;
@@ -249,8 +258,8 @@ const OPEN_RUN_STATUSES = "('queued', 'running')";
 export function insertRun(row: AgentRunRow): void {
 	db.query(
 		`INSERT INTO agent_runs
-       (id, instance_id, prompt, status, session_id, model, resume_session_id, options, result, structured_output, last_activity, is_error, exit_code, cost_usd, duration_ms, num_turns, error, created_at, started_at, finished_at)
-     VALUES ($id, $instance_id, $prompt, $status, $session_id, $model, $resume_session_id, $options, $result, $structured_output, $last_activity, $is_error, $exit_code, $cost_usd, $duration_ms, $num_turns, $error, $created_at, $started_at, $finished_at)`
+       (id, instance_id, prompt, status, session_id, model, resume_session_id, options, result, structured_output, last_activity, is_error, exit_code, cost_usd, duration_ms, num_turns, error, created_at, started_at, finished_at, agent, token_usage)
+     VALUES ($id, $instance_id, $prompt, $status, $session_id, $model, $resume_session_id, $options, $result, $structured_output, $last_activity, $is_error, $exit_code, $cost_usd, $duration_ms, $num_turns, $error, $created_at, $started_at, $finished_at, $agent, $token_usage)`
 	).run({
 		$id: row.id,
 		$instance_id: row.instance_id,
@@ -271,7 +280,9 @@ export function insertRun(row: AgentRunRow): void {
 		$error: row.error,
 		$created_at: row.created_at,
 		$started_at: row.started_at,
-		$finished_at: row.finished_at
+		$finished_at: row.finished_at,
+		$agent: row.agent ?? 'claude',
+		$token_usage: row.token_usage ?? null
 	});
 }
 
@@ -313,6 +324,7 @@ const UPDATABLE_RUN_COLUMNS = [
 	'cost_usd',
 	'duration_ms',
 	'num_turns',
+	'token_usage',
 	'error',
 	'started_at',
 	'finished_at'

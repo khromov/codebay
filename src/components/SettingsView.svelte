@@ -1,5 +1,8 @@
 <script lang="ts">
+	import type { AgentSettings as AgentSettingsData } from '../agents.ts';
 	import Container from '@lucide/svelte/icons/container';
+	import AgentSettings from './AgentSettings.svelte';
+	import CredentialSettings from './CredentialSettings.svelte';
 	import AppBar from './AppBar.svelte';
 	import Power from '@lucide/svelte/icons/power';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
@@ -25,6 +28,8 @@
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import Puzzle from '@lucide/svelte/icons/puzzle';
 	import Plug from '@lucide/svelte/icons/plug';
+	import Copy from '@lucide/svelte/icons/copy';
+	import Check from '@lucide/svelte/icons/check';
 	import { Toaster } from 'svelte-french-toast';
 	import { TOAST_OPTIONS } from '../toast.ts';
 	import { flushSync } from 'svelte';
@@ -61,6 +66,7 @@
 	type ActionFailure = { error: string };
 
 	let {
+		agentSettings,
 		pet,
 		defaultMode,
 		claudePermissionMode,
@@ -80,7 +86,6 @@
 		gitIdentityName,
 		gitIdentityEmail,
 		dockerArch,
-		manualTokensEnabled,
 		githubTokenSet,
 		claudeTokenSet,
 		customEndpointEnabled,
@@ -107,6 +112,7 @@
 		advancedBlockingExtInstall,
 		version
 	}: {
+		agentSettings: AgentSettingsData;
 		pet?: AvatarArt;
 		defaultMode: InstanceMode;
 		claudePermissionMode: ClaudePermissionMode;
@@ -126,7 +132,6 @@
 		gitIdentityName: string;
 		gitIdentityEmail: string;
 		dockerArch: string | null;
-		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
 		claudeTokenSet: boolean;
 		customEndpointEnabled: boolean;
@@ -447,6 +452,9 @@
 	const mcpCommand = $derived(
 		`claude mcp add --transport http codebay ${mcpUrl} --header "Authorization: Bearer ${mcpTokenValue}"`
 	);
+	const codexMcpCommand = $derived(
+		`export CODEBAY_MCP_TOKEN="${mcpTokenValue}"\ncodex mcp add codebay --url "${mcpUrl}" --bearer-token-env-var CODEBAY_MCP_TOKEN`
+	);
 
 	async function copyMcp(label: string, text: string) {
 		try {
@@ -580,54 +588,6 @@
 		}
 	});
 
-	// Token values never reach the client; only whether each is set, for the placeholder.
-	// svelte-ignore state_referenced_locally
-	let manualTokens = $state(manualTokensEnabled);
-	let savingManualToggle = $state(false);
-	let manualToggleError = $state<string | null>(null);
-
-	const manualTokensToggleOpts = toggleOpts({
-		set: (v) => (manualTokens = v),
-		setSaving: (v) => (savingManualToggle = v),
-		setError: (v) => (manualToggleError = v)
-	});
-
-	// svelte-ignore state_referenced_locally
-	let ghSaved = $state(githubTokenSet);
-	let githubToken = $state('');
-	let savingGithub = $state(false);
-	let githubMsg = $state<string | null>(null);
-	let githubError = $state<string | null>(null);
-
-	const githubTokenOpts = saveOpts<{ set: boolean }>({
-		setSaving: (v) => (savingGithub = v),
-		setError: (v) => (githubError = v),
-		setMsg: (v) => (githubMsg = v),
-		onSuccess: (data) => {
-			ghSaved = data?.set ?? false;
-			githubToken = '';
-			githubMsg = ghSaved ? 'Saved.' : 'Cleared.';
-		}
-	});
-
-	// svelte-ignore state_referenced_locally
-	let claudeSaved = $state(claudeTokenSet);
-	let claudeToken = $state('');
-	let savingClaude = $state(false);
-	let claudeMsg = $state<string | null>(null);
-	let claudeError = $state<string | null>(null);
-
-	const claudeTokenOpts = saveOpts<{ set: boolean }>({
-		setSaving: (v) => (savingClaude = v),
-		setError: (v) => (claudeError = v),
-		setMsg: (v) => (claudeMsg = v),
-		onSuccess: (data) => {
-			claudeSaved = data?.set ?? false;
-			claudeToken = '';
-			claudeMsg = claudeSaved ? 'Saved.' : 'Cleared.';
-		}
-	});
-
 	// As with manual tokens, the token value never comes back from the server.
 	// svelte-ignore state_referenced_locally
 	let customEndpoint = $state(customEndpointEnabled);
@@ -739,9 +699,7 @@
 	});
 
 	// LiteLLM is incompatible with both manual tokens and the manual model override.
-	let litellmBlocker = $derived(
-		manualTokens ? 'Set tokens manually' : manualModelOverride ? 'Override models manually' : null
-	);
+	let litellmBlocker = $derived(manualModelOverride ? 'Override models manually' : null);
 
 	// Only names round-trip; `hostEnvPresence` is refreshed from each save response so a
 	// newly-added name doesn't read as "missing" until the next full page load.
@@ -957,9 +915,15 @@
 <div class="page">
 	<AppBar>
 		<span class="title">Settings</span>
+		<nav class="settings-nav" aria-label="Settings sections">
+			<a href="#general">General</a><a href="#agents">Agents</a><a href="#git-environment"
+				>Git & environment</a
+			><a href="#mcp">MCP</a><a href="#appearance">Appearance</a><a href="#advanced">Advanced</a>
+		</nav>
 	</AppBar>
 
 	<main class="content">
+		<h2 id="general">General</h2>
 		<section class="card">
 			<form
 				class="row"
@@ -974,8 +938,8 @@
 						<div class="name">Default editor</div>
 						<div class="desc">
 							What new instances start in. <strong>Full IDE</strong> serves browser VS Code;
-							<strong>Terminal</strong> is lighter — just Claude Code in a terminal, no code-server. You
-							can override this per instance when creating one.
+							<strong>Terminal</strong> is lighter — your chosen agent in a terminal, no code-server.
+							You can override this per instance when creating one.
 						</div>
 					</div>
 				</div>
@@ -1009,130 +973,6 @@
 				<div class="sub"><div class="msg error">{modeError}</div></div>
 			{/if}
 		</section>
-
-		<section class="card">
-			<form
-				class="row"
-				method="POST"
-				action="?/claudePermissionMode"
-				bind:this={permissionFormEl}
-				{@attach enhance(permissionModeOpts)}
-			>
-				<div class="label">
-					<ShieldCheck size={20} />
-					<div class="text">
-						<div class="name">Claude permission mode</div>
-						<div class="desc">
-							The mode Claude Code starts in inside new instances. <strong>Default</strong> runs
-							<code>--dangerously-skip-permissions</code>, which never prompts; the other three pass
-							<code>--permission-mode</code> instead, because the skip flag overrides them. Applies on
-							create and rebuild, not to already-running instances.
-						</div>
-					</div>
-				</div>
-				<input type="hidden" name="mode" value={permissionChoice} />
-				<div class="mode-toggle" role="group" aria-label="Claude permission mode">
-					{#each CLAUDE_PERMISSION_MODES as option (option)}
-						<button
-							type="button"
-							class="mode-btn"
-							class:active={permissionChoice === option}
-							aria-pressed={permissionChoice === option}
-							disabled={savingPermission}
-							onclick={() => choosePermissionMode(option)}
-						>
-							{PERMISSION_LABELS[option]}
-						</button>
-					{/each}
-				</div>
-			</form>
-			{#if permissionError}
-				<div class="sub"><div class="msg error">{permissionError}</div></div>
-			{/if}
-		</section>
-
-		<section class="card">
-			<form
-				class="row"
-				method="POST"
-				action="?/claudeEffortLevel"
-				bind:this={effortFormEl}
-				{@attach enhance(effortLevelOpts)}
-			>
-				<div class="label">
-					<Gauge size={20} />
-					<div class="text">
-						<div class="name">Claude effort level</div>
-						<div class="desc">
-							The default reasoning effort Claude Code starts new sessions at inside instances,
-							written to <code>~/.claude/settings.json</code>. Applies on create and rebuild, not to
-							already-running instances.
-						</div>
-					</div>
-				</div>
-				<input type="hidden" name="level" value={effortChoice} />
-				<div class="mode-toggle" role="group" aria-label="Claude effort level">
-					{#each CLAUDE_EFFORT_LEVELS as option (option)}
-						<button
-							type="button"
-							class="mode-btn"
-							class:active={effortChoice === option}
-							aria-pressed={effortChoice === option}
-							disabled={savingEffort}
-							onclick={() => chooseEffort(option)}
-						>
-							{EFFORT_LABELS[option]}
-						</button>
-					{/each}
-				</div>
-			</form>
-			{#if effortError}
-				<div class="sub"><div class="msg error">{effortError}</div></div>
-			{/if}
-		</section>
-
-		<section class="card">
-			<form
-				class="row"
-				method="POST"
-				action="?/claudeOutputStyle"
-				bind:this={outputStyleFormEl}
-				{@attach enhance(outputStyleOpts)}
-			>
-				<div class="label">
-					<MessageSquare size={20} />
-					<div class="text">
-						<div class="name">Claude output style</div>
-						<div class="desc">
-							The output style Claude Code starts new sessions in, written to
-							<code>~/.claude/settings.json</code>. <strong>Default</strong> inherits your host
-							<code>~/.claude/settings.json</code> (including any custom styles);
-							<strong>None</strong>
-							forces it off. Applies on create and rebuild, not to already-running instances.
-						</div>
-					</div>
-				</div>
-				<input type="hidden" name="style" value={outputStyleChoice} />
-				<div class="mode-toggle" role="group" aria-label="Claude output style">
-					{#each CLAUDE_OUTPUT_STYLES as option (option)}
-						<button
-							type="button"
-							class="mode-btn"
-							class:active={outputStyleChoice === option}
-							aria-pressed={outputStyleChoice === option}
-							disabled={savingOutputStyle}
-							onclick={() => chooseOutputStyle(option)}
-						>
-							{OUTPUT_STYLE_LABELS[option]}
-						</button>
-					{/each}
-				</div>
-			</form>
-			{#if outputStyleError}
-				<div class="sub"><div class="msg error">{outputStyleError}</div></div>
-			{/if}
-		</section>
-
 		<section class="card">
 			<form
 				class="row image-row"
@@ -1193,7 +1033,6 @@
 				{/if}
 			</form>
 		</section>
-
 		<section class="card">
 			<form
 				class="row image-row"
@@ -1241,257 +1080,6 @@
 				{/if}
 			</form>
 		</section>
-
-		<section class="card">
-			<form
-				class="row image-row"
-				method="POST"
-				action="?/claudeConfigDir"
-				bind:this={claudeDirFormEl}
-				{@attach enhance(claudeDirOpts)}
-			>
-				<div class="label">
-					<FolderCog size={20} />
-					<div class="text">
-						<div class="name">Claude config directory</div>
-						<div class="desc">
-							Host directory the Claude Code injections read from — credentials, statusLine, output
-							styles, and global skills / <code>CLAUDE.md</code>. Leave blank to use
-							<code>~/.claude</code>. Takes effect for instances created from now on.
-						</div>
-					</div>
-				</div>
-				<div class="image-controls">
-					<input
-						type="text"
-						name="dir"
-						class="image-input"
-						bind:value={claudeDir}
-						spellcheck="false"
-						autocapitalize="off"
-						autocorrect="off"
-						placeholder="~/.claude"
-					/>
-					<Button type="submit" disabled={savingClaudeDir}>Save</Button>
-					<Button
-						type="button"
-						icon={RotateCcw}
-						disabled={savingClaudeDir}
-						onclick={resetClaudeDir}
-						title="Reset to default (~/.claude)"
-						aria-label="Reset to default Claude config directory"
-					/>
-				</div>
-				{#if claudeDirError}
-					<div class="msg error">{claudeDirError}</div>
-				{:else if claudeDirSaved}
-					<div class="msg ok">Saved.</div>
-				{/if}
-			</form>
-		</section>
-
-		<section class="card">
-			<form class="row" method="POST" action="?/mcpToggle" {@attach enhance(mcpToggleOpts)}>
-				<div class="label">
-					<Plug size={20} />
-					<div class="text">
-						<div class="name">MCP server</div>
-						<div class="desc">
-							Expose Codebay to other AI agents over MCP, so they can create sandboxes, run Claude
-							Code in them non-interactively and read back the result. Off by default; the endpoint
-							404s until you turn it on, then authenticates with the bearer token below.
-						</div>
-					</div>
-				</div>
-				<label class="switch">
-					<input
-						type="checkbox"
-						name="enabled"
-						checked={mcp}
-						disabled={savingMcpToggle}
-						onchange={(e) => {
-							mcp = e.currentTarget.checked;
-							e.currentTarget.form?.requestSubmit();
-						}}
-					/>
-					<span class="track"><span class="thumb"></span></span>
-				</label>
-			</form>
-			{#if mcpToggleError}
-				<div class="sub"><div class="msg error">{mcpToggleError}</div></div>
-			{/if}
-
-			{#if mcp}
-				<div class="row divided">
-					<div class="label">
-						<div class="text">
-							<div class="name">Token</div>
-							<div class="desc">
-								Anything holding this token can create containers and run agents with your GitHub
-								and Claude credentials. Treat it like a password.
-							</div>
-						</div>
-					</div>
-					<div class="model-fields">
-						<label class="model-row">
-							<span class="model-label">Bearer</span>
-							<input
-								type="text"
-								class="image-input"
-								value={mcpTokenValue}
-								readonly
-								spellcheck="false"
-								onfocus={(e) => e.currentTarget.select()}
-							/>
-						</label>
-						<div class="mcp-actions">
-							<Button type="button" onclick={() => copyMcp('token', mcpTokenValue)}>
-								{mcpCopied === 'token' ? 'Copied' : 'Copy token'}
-							</Button>
-							<Button type="button" onclick={() => copyMcp('command', mcpCommand)}>
-								{mcpCopied === 'command' ? 'Copied' : 'Copy claude mcp add'}
-							</Button>
-							<form method="POST" action="?/mcpRegenerateToken" {@attach enhance(mcpTokenOpts)}>
-								<Button type="submit" disabled={savingMcpToken}>
-									{savingMcpToken ? 'Regenerating…' : 'Regenerate'}
-								</Button>
-							</form>
-						</div>
-						<code class="mcp-command">{mcpCommand}</code>
-						{#if mcpTokenError}
-							<div class="msg error">{mcpTokenError}</div>
-						{/if}
-					</div>
-				</div>
-
-				<form
-					class="row divided"
-					method="POST"
-					action="?/mcpPrAttributionToggle"
-					{@attach enhance(mcpAttributionOpts)}
-				>
-					<div class="label">
-						<div class="text">
-							<div class="name">Credit Codebay on pull requests</div>
-							<div class="desc">
-								Append a one-line footer to the body of every pull request an agent opens through
-								<code>create_pr</code>. Off by default — an attribution line on your PRs is yours to
-								opt into.
-							</div>
-						</div>
-					</div>
-					<label class="switch">
-						<input
-							type="checkbox"
-							name="enabled"
-							checked={mcpAttribution}
-							disabled={savingMcpAttribution}
-							onchange={(e) => {
-								mcpAttribution = e.currentTarget.checked;
-								e.currentTarget.form?.requestSubmit();
-							}}
-						/>
-						<span class="track"><span class="thumb"></span></span>
-					</label>
-				</form>
-				{#if mcpAttributionError}
-					<div class="sub"><div class="msg error">{mcpAttributionError}</div></div>
-				{/if}
-			{/if}
-		</section>
-
-		<section class="card">
-			<form
-				class="row"
-				method="POST"
-				action="?/gitIdentityToggle"
-				{@attach enhance(gitIdentityToggleOpts)}
-			>
-				<div class="label">
-					<UserCog size={20} />
-					<div class="text">
-						<div class="name">Override git identity</div>
-						<div class="desc">
-							Inject a name and email as <code>git config --global user.name/user.email</code> in every
-							new container, taking precedence over the host's own git config. When off, each container
-							falls back to the host's identity.
-						</div>
-					</div>
-				</div>
-				<label class="switch">
-					<input
-						type="checkbox"
-						name="enabled"
-						checked={gitIdentity}
-						disabled={savingGitToggle}
-						onchange={(e) => {
-							gitIdentity = e.currentTarget.checked;
-							e.currentTarget.form?.requestSubmit();
-						}}
-					/>
-					<span class="track"><span class="thumb"></span></span>
-				</label>
-			</form>
-			{#if gitToggleError}
-				<div class="sub"><div class="msg error">{gitToggleError}</div></div>
-			{/if}
-
-			{#if gitIdentity}
-				<form
-					class="row divided token-row"
-					method="POST"
-					action="?/gitIdentityOverride"
-					{@attach enhance(gitIdentityOpts)}
-				>
-					<div class="label">
-						<div class="text">
-							<div class="name">Identity</div>
-							<div class="desc">
-								Both fields are required — leave either blank and the container falls back to the
-								host's identity.
-							</div>
-						</div>
-					</div>
-					<div class="model-fields">
-						<label class="model-row">
-							<span class="model-label">Name</span>
-							<input
-								type="text"
-								name="name"
-								class="image-input"
-								bind:value={gitName}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								placeholder="Jane Doe"
-							/>
-						</label>
-						<label class="model-row">
-							<span class="model-label">Email</span>
-							<input
-								type="text"
-								name="email"
-								class="image-input"
-								bind:value={gitEmail}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								placeholder="jane@example.com"
-							/>
-						</label>
-						<div class="model-save-row">
-							<Button type="submit" disabled={savingGitIdentity}>Save</Button>
-						</div>
-					</div>
-					{#if gitIdentityError}
-						<div class="msg error">{gitIdentityError}</div>
-					{:else if gitIdentitySaved}
-						<div class="msg ok">Saved.</div>
-					{/if}
-				</form>
-			{/if}
-		</section>
-
 		<section class="card">
 			<form
 				class="row"
@@ -1579,136 +1167,181 @@
 				</Button>
 			</form>
 		</section>
-
-		<section class="card" class:disabled-card={customEndpoint}>
+		<h2 id="agents">Agents</h2>
+		<AgentSettings settings={agentSettings} section="selection" />
+		<h3 id="claude">Claude</h3>
+		<CredentialSettings
+			service="claude"
+			enabled={agentSettings.claudeManualEnabled}
+			saved={claudeTokenSet}
+		/>
+		<section class="card">
 			<form
 				class="row"
 				method="POST"
-				action="?/manualTokensToggle"
-				{@attach enhance(manualTokensToggleOpts)}
+				action="?/claudePermissionMode"
+				bind:this={permissionFormEl}
+				{@attach enhance(permissionModeOpts)}
 			>
 				<div class="label">
-					<KeyRound size={20} />
+					<ShieldCheck size={20} />
 					<div class="text">
-						<div class="name">
-							Set tokens manually
-							{#if customEndpoint}
-								<span class="arch" title="Disabled while LiteLLM + Bedrock mode is on"
-									>disabled</span
-								>
-							{/if}
-						</div>
+						<div class="name">Claude permission mode</div>
 						<div class="desc">
-							{#if customEndpoint}
-								Not available while LiteLLM + Bedrock mode is enabled — Claude credentials are
-								provided by the LiteLLM endpoint instead.
-							{:else}
-								Provide GitHub and Claude Code tokens yourself instead of discovering them from this
-								machine. Useful on a headless server or when signed in as a different identity. A
-								token set here is injected into every new container and overrides host credential
-								discovery.
-							{/if}
+							The mode Claude Code starts in inside new instances. <strong>Default</strong> runs
+							<code>--dangerously-skip-permissions</code>, which never prompts; the other three pass
+							<code>--permission-mode</code> instead, because the skip flag overrides them. Applies on
+							create and rebuild, not to already-running instances.
 						</div>
 					</div>
 				</div>
-				<label class="switch">
-					<input
-						type="checkbox"
-						name="enabled"
-						checked={manualTokens}
-						disabled={savingManualToggle || customEndpoint}
-						onchange={(e) => {
-							manualTokens = e.currentTarget.checked;
-							e.currentTarget.form?.requestSubmit();
-						}}
-					/>
-					<span class="track"><span class="thumb"></span></span>
-				</label>
+				<input type="hidden" name="mode" value={permissionChoice} />
+				<div class="mode-toggle" role="group" aria-label="Claude permission mode">
+					{#each CLAUDE_PERMISSION_MODES as option (option)}
+						<button
+							type="button"
+							class="mode-btn"
+							class:active={permissionChoice === option}
+							aria-pressed={permissionChoice === option}
+							disabled={savingPermission}
+							onclick={() => choosePermissionMode(option)}
+						>
+							{PERMISSION_LABELS[option]}
+						</button>
+					{/each}
+				</div>
 			</form>
-			{#if manualToggleError}
-				<div class="sub"><div class="msg error">{manualToggleError}</div></div>
-			{/if}
-
-			{#if manualTokens && !customEndpoint}
-				<form
-					class="row divided token-row"
-					method="POST"
-					action="?/githubToken"
-					{@attach enhance(githubTokenOpts)}
-				>
-					<div class="label">
-						<div class="text">
-							<div class="name">GitHub token</div>
-							<div class="desc">
-								macOS / Linux: run <code>gh auth token</code> to print your GitHub CLI token, or
-								create a Personal Access Token at
-								<code>github.com/settings/tokens</code> (scopes: <code>repo</code>,
-								<code>read:org</code>). Leave blank and Save to clear.
-							</div>
-						</div>
-					</div>
-					<div class="image-controls">
-						<input
-							type="password"
-							name="githubToken"
-							class="image-input"
-							bind:value={githubToken}
-							spellcheck="false"
-							autocapitalize="off"
-							autocorrect="off"
-							autocomplete="off"
-							placeholder={ghSaved ? '•••••••• (saved)' : 'ghp_… / gho_…'}
-						/>
-						<Button type="submit" disabled={savingGithub}>Save</Button>
-					</div>
-					{#if githubError}
-						<div class="msg error">{githubError}</div>
-					{:else if githubMsg}
-						<div class="msg ok">{githubMsg}</div>
-					{/if}
-				</form>
-
-				<form
-					class="row divided token-row"
-					method="POST"
-					action="?/claudeToken"
-					{@attach enhance(claudeTokenOpts)}
-				>
-					<div class="label">
-						<div class="text">
-							<div class="name">Claude Code token</div>
-							<div class="desc">
-								macOS / Linux: run <code>claude setup-token</code> to mint a long-lived token and
-								paste it here. Copying a live login out of the keychain or
-								<code>~/.claude/.credentials.json</code> works too, but that credential rotates —
-								the first <code>claude</code> to refresh it signs the other one out. Leave blank and Save
-								to clear.
-							</div>
-						</div>
-					</div>
-					<div class="image-controls">
-						<input
-							type="password"
-							name="claudeToken"
-							class="image-input"
-							bind:value={claudeToken}
-							spellcheck="false"
-							autocapitalize="off"
-							autocorrect="off"
-							autocomplete="off"
-							placeholder={claudeSaved ? '•••••••• (saved)' : 'sk-ant-oat…'}
-						/>
-						<Button type="submit" disabled={savingClaude}>Save</Button>
-					</div>
-					{#if claudeError}
-						<div class="msg error">{claudeError}</div>
-					{:else if claudeMsg}
-						<div class="msg ok">{claudeMsg}</div>
-					{/if}
-				</form>
+			{#if permissionError}
+				<div class="sub"><div class="msg error">{permissionError}</div></div>
 			{/if}
 		</section>
-
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/claudeEffortLevel"
+				bind:this={effortFormEl}
+				{@attach enhance(effortLevelOpts)}
+			>
+				<div class="label">
+					<Gauge size={20} />
+					<div class="text">
+						<div class="name">Claude effort level</div>
+						<div class="desc">
+							The default reasoning effort Claude Code starts new sessions at inside instances,
+							written to <code>~/.claude/settings.json</code>. Applies on create and rebuild, not to
+							already-running instances.
+						</div>
+					</div>
+				</div>
+				<input type="hidden" name="level" value={effortChoice} />
+				<div class="mode-toggle" role="group" aria-label="Claude effort level">
+					{#each CLAUDE_EFFORT_LEVELS as option (option)}
+						<button
+							type="button"
+							class="mode-btn"
+							class:active={effortChoice === option}
+							aria-pressed={effortChoice === option}
+							disabled={savingEffort}
+							onclick={() => chooseEffort(option)}
+						>
+							{EFFORT_LABELS[option]}
+						</button>
+					{/each}
+				</div>
+			</form>
+			{#if effortError}
+				<div class="sub"><div class="msg error">{effortError}</div></div>
+			{/if}
+		</section>
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/claudeOutputStyle"
+				bind:this={outputStyleFormEl}
+				{@attach enhance(outputStyleOpts)}
+			>
+				<div class="label">
+					<MessageSquare size={20} />
+					<div class="text">
+						<div class="name">Claude output style</div>
+						<div class="desc">
+							The output style Claude Code starts new sessions in, written to
+							<code>~/.claude/settings.json</code>. <strong>Default</strong> inherits your host
+							<code>~/.claude/settings.json</code> (including any custom styles);
+							<strong>None</strong>
+							forces it off. Applies on create and rebuild, not to already-running instances.
+						</div>
+					</div>
+				</div>
+				<input type="hidden" name="style" value={outputStyleChoice} />
+				<div class="mode-toggle" role="group" aria-label="Claude output style">
+					{#each CLAUDE_OUTPUT_STYLES as option (option)}
+						<button
+							type="button"
+							class="mode-btn"
+							class:active={outputStyleChoice === option}
+							aria-pressed={outputStyleChoice === option}
+							disabled={savingOutputStyle}
+							onclick={() => chooseOutputStyle(option)}
+						>
+							{OUTPUT_STYLE_LABELS[option]}
+						</button>
+					{/each}
+				</div>
+			</form>
+			{#if outputStyleError}
+				<div class="sub"><div class="msg error">{outputStyleError}</div></div>
+			{/if}
+		</section>
+		<section class="card">
+			<form
+				class="row image-row"
+				method="POST"
+				action="?/claudeConfigDir"
+				bind:this={claudeDirFormEl}
+				{@attach enhance(claudeDirOpts)}
+			>
+				<div class="label">
+					<FolderCog size={20} />
+					<div class="text">
+						<div class="name">Claude config directory</div>
+						<div class="desc">
+							Host directory the Claude Code injections read from — credentials, statusLine, output
+							styles, and global skills / <code>CLAUDE.md</code>. Leave blank to use
+							<code>~/.claude</code>. Takes effect for instances created from now on.
+						</div>
+					</div>
+				</div>
+				<div class="image-controls">
+					<input
+						type="text"
+						name="dir"
+						class="image-input"
+						bind:value={claudeDir}
+						spellcheck="false"
+						autocapitalize="off"
+						autocorrect="off"
+						placeholder="~/.claude"
+					/>
+					<Button type="submit" disabled={savingClaudeDir}>Save</Button>
+					<Button
+						type="button"
+						icon={RotateCcw}
+						disabled={savingClaudeDir}
+						onclick={resetClaudeDir}
+						title="Reset to default (~/.claude)"
+						aria-label="Reset to default Claude config directory"
+					/>
+				</div>
+				{#if claudeDirError}
+					<div class="msg error">{claudeDirError}</div>
+				{:else if claudeDirSaved}
+					<div class="msg ok">Saved.</div>
+				{/if}
+			</form>
+		</section>
 		<section class="card" class:disabled-card={litellmBlocker}>
 			<form
 				class="row"
@@ -1732,7 +1365,7 @@
 							{:else}
 								Route <code>claude</code> through a LiteLLM proxy fronting AWS Bedrock instead of Anthropic's
 								default API. When enabled, the Bedrock endpoint variables are injected into every new
-								container, host OAuth credentials are not used, and "Set tokens manually" is disabled.
+								container and replace Claude’s host login or manual token.
 							{/if}
 						</div>
 					</div>
@@ -1922,7 +1555,6 @@
 				</form>
 			{/if}
 		</section>
-
 		<section class="card" class:disabled-card={customEndpoint}>
 			<form
 				class="row"
@@ -2065,7 +1697,105 @@
 				</form>
 			{/if}
 		</section>
+		<h3 id="codex">Codex</h3>
+		<AgentSettings settings={agentSettings} section="codex" />
+		<h2 id="git-environment">Git & environment</h2>
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/gitIdentityToggle"
+				{@attach enhance(gitIdentityToggleOpts)}
+			>
+				<div class="label">
+					<UserCog size={20} />
+					<div class="text">
+						<div class="name">Override git identity</div>
+						<div class="desc">
+							Inject a name and email as <code>git config --global user.name/user.email</code> in every
+							new container, taking precedence over the host's own git config. When off, each container
+							falls back to the host's identity.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={gitIdentity}
+						disabled={savingGitToggle}
+						onchange={(e) => {
+							gitIdentity = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if gitToggleError}
+				<div class="sub"><div class="msg error">{gitToggleError}</div></div>
+			{/if}
 
+			{#if gitIdentity}
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/gitIdentityOverride"
+					{@attach enhance(gitIdentityOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Identity</div>
+							<div class="desc">
+								Both fields are required — leave either blank and the container falls back to the
+								host's identity.
+							</div>
+						</div>
+					</div>
+					<div class="model-fields">
+						<label class="model-row">
+							<span class="model-label">Name</span>
+							<input
+								type="text"
+								name="name"
+								class="image-input"
+								bind:value={gitName}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								placeholder="Jane Doe"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Email</span>
+							<input
+								type="text"
+								name="email"
+								class="image-input"
+								bind:value={gitEmail}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								placeholder="jane@example.com"
+							/>
+						</label>
+						<div class="model-save-row">
+							<Button type="submit" disabled={savingGitIdentity}>Save</Button>
+						</div>
+					</div>
+					{#if gitIdentityError}
+						<div class="msg error">{gitIdentityError}</div>
+					{:else if gitIdentitySaved}
+						<div class="msg ok">Saved.</div>
+					{/if}
+				</form>
+			{/if}
+		</section>
+		<CredentialSettings
+			service="github"
+			enabled={agentSettings.githubManualEnabled}
+			saved={githubTokenSet}
+		/>
 		<section class="card">
 			<form
 				class="row"
@@ -2168,7 +1898,6 @@
 				</div>
 			{/if}
 		</section>
-
 		<section class="card">
 			<form
 				class="row"
@@ -2272,7 +2001,161 @@
 				</div>
 			{/if}
 		</section>
+		<h2 id="mcp">MCP</h2>
+		<section class="card">
+			<form class="row" method="POST" action="?/mcpToggle" {@attach enhance(mcpToggleOpts)}>
+				<div class="label">
+					<Plug size={20} />
+					<div class="text">
+						<div class="name">MCP server</div>
+						<div class="desc">
+							Expose Codebay to other AI agents over MCP, so they can create sandboxes, run coding
+							agents Code in them non-interactively and read back the result. Off by default; the
+							endpoint 404s until you turn it on, then authenticates with the bearer token below.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={mcp}
+						disabled={savingMcpToggle}
+						onchange={(e) => {
+							mcp = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if mcpToggleError}
+				<div class="sub"><div class="msg error">{mcpToggleError}</div></div>
+			{/if}
 
+			{#if mcp}
+				<div class="row divided mcp-token-row">
+					<div class="label">
+						<div class="text">
+							<div class="name">Token</div>
+							<div class="desc">
+								Anything holding this token can create containers and run agents with your GitHub
+								and enabled agent credentials. Treat it like a password.
+							</div>
+						</div>
+					</div>
+					<div class="mcp-fields">
+						<div class="mcp-snippet">
+							<div class="mcp-snippet-head">
+								<span class="mcp-snippet-name">Bearer</span>
+								<div class="mcp-head-actions">
+									<Button
+										type="button"
+										size="sm"
+										ghost
+										icon={mcpCopied === 'token' ? Check : Copy}
+										onclick={() => copyMcp('token', mcpTokenValue)}
+									>
+										{mcpCopied === 'token' ? 'Copied' : 'Copy'}
+									</Button>
+									<form method="POST" action="?/mcpRegenerateToken" {@attach enhance(mcpTokenOpts)}>
+										<Button
+											type="submit"
+											size="sm"
+											ghost
+											icon={RotateCcw}
+											disabled={savingMcpToken}
+										>
+											{savingMcpToken ? 'Regenerating…' : 'Regenerate'}
+										</Button>
+									</form>
+								</div>
+							</div>
+							<input
+								type="text"
+								class="image-input"
+								value={mcpTokenValue}
+								readonly
+								spellcheck="false"
+								aria-label="MCP bearer token"
+								onfocus={(e) => e.currentTarget.select()}
+							/>
+						</div>
+						<div class="mcp-snippet">
+							<div class="mcp-snippet-head">
+								<span class="mcp-snippet-name">Claude Code</span>
+								<Button
+									type="button"
+									size="sm"
+									ghost
+									icon={mcpCopied === 'command' ? Check : Copy}
+									onclick={() => copyMcp('command', mcpCommand)}
+								>
+									{mcpCopied === 'command' ? 'Copied' : 'Copy'}
+								</Button>
+							</div>
+							<code class="mcp-command">{mcpCommand}</code>
+						</div>
+						<div class="mcp-snippet">
+							<div class="mcp-snippet-head">
+								<span class="mcp-snippet-name">Codex</span>
+								<Button
+									type="button"
+									size="sm"
+									ghost
+									icon={mcpCopied === 'codex' ? Check : Copy}
+									onclick={() => copyMcp('codex', codexMcpCommand)}
+								>
+									{mcpCopied === 'codex' ? 'Copied' : 'Copy'}
+								</Button>
+							</div>
+							<code class="mcp-command">{codexMcpCommand}</code>
+							<p class="mcp-note">
+								Keep CODEBAY_MCP_TOKEN in the environment whenever you launch the client.
+							</p>
+						</div>
+						{#if mcpTokenError}
+							<div class="msg error">{mcpTokenError}</div>
+						{/if}
+					</div>
+				</div>
+
+				<form
+					class="row divided"
+					method="POST"
+					action="?/mcpPrAttributionToggle"
+					{@attach enhance(mcpAttributionOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Credit Codebay on pull requests</div>
+							<div class="desc">
+								Append a one-line footer to the body of every pull request an agent opens through
+								<code>create_pr</code>. Off by default — an attribution line on your PRs is yours to
+								opt into.
+							</div>
+						</div>
+					</div>
+					<label class="switch">
+						<input
+							type="checkbox"
+							name="enabled"
+							checked={mcpAttribution}
+							disabled={savingMcpAttribution}
+							onchange={(e) => {
+								mcpAttribution = e.currentTarget.checked;
+								e.currentTarget.form?.requestSubmit();
+							}}
+						/>
+						<span class="track"><span class="thumb"></span></span>
+					</label>
+				</form>
+				{#if mcpAttributionError}
+					<div class="sub"><div class="msg error">{mcpAttributionError}</div></div>
+				{/if}
+			{/if}
+		</section>
+		<h2 id="appearance">Appearance</h2>
 		<section class="card">
 			<div class="row">
 				<div class="label">
@@ -2287,7 +2170,6 @@
 				<ThemePicker />
 			</div>
 		</section>
-
 		<section class="card">
 			<div class="row">
 				<div class="label">
@@ -2309,7 +2191,6 @@
 				</label>
 			</div>
 		</section>
-
 		<section class="card">
 			<div class="row">
 				<div class="label">
@@ -2332,7 +2213,6 @@
 				</label>
 			</div>
 		</section>
-
 		<section class="card">
 			<form class="row" method="POST" action="?/petToggle" {@attach enhance(petToggleOpts)}>
 				<div class="label">
@@ -2377,7 +2257,7 @@
 				</div>
 			{/if}
 		</section>
-
+		<h2 id="advanced">Advanced</h2>
 		<section class="card">
 			<details class="advanced">
 				<summary>
@@ -2465,7 +2345,7 @@
 						<div class="text">
 							<div class="name">Blocking IDE extension install</div>
 							<div class="desc">
-								Install the Claude Code IDE extension before code-server starts, so the first window
+								Install enabled agent IDE extensions before code-server starts, so the first window
 								always has it active. Slower first boot.
 							</div>
 						</div>
@@ -2497,7 +2377,7 @@
 					<div class="label">
 						<Trash2 size={20} />
 						<div class="text">
-							<div class="name">Clear claude-code version cache</div>
+							<div class="name">Clear agent version caches</div>
 							<div class="desc">
 								Forget the cached latest-version check; the next instance boot asks the npm registry
 								again.
@@ -2515,7 +2395,6 @@
 				</form>
 			</details>
 		</section>
-
 		<section class="card danger-card">
 			<form class="row" method="POST" action="?/shutdown" {@attach enhance(shutdownOpts)}>
 				<div class="label">
@@ -2546,6 +2425,64 @@
 <Toaster toastOptions={TOAST_OPTIONS} />
 
 <style>
+	@media (prefers-reduced-motion: no-preference) {
+		:global(html:has(.settings-nav)) {
+			scroll-behavior: smooth;
+		}
+	}
+
+	.settings-nav {
+		display: flex;
+		min-width: 0;
+		overflow-x: auto;
+		border-left: 1px solid var(--rule);
+	}
+	.settings-nav a {
+		display: inline-flex;
+		align-items: center;
+		flex: none;
+		padding: 0 14px;
+		border-right: 1px solid var(--rule);
+		color: var(--ink-soft);
+		font-family: var(--font-mono);
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		text-decoration: none;
+	}
+	.settings-nav a:hover {
+		background: var(--fill);
+		color: var(--fill-ink);
+	}
+	.settings-nav a:focus-visible {
+		outline: 2px solid var(--ink);
+		outline-offset: -3px;
+	}
+	h2,
+	h3 {
+		width: 100%;
+		max-width: 560px;
+		font-family: var(--font-mono);
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		scroll-margin-top: 24px;
+	}
+	h2 {
+		margin: 16px 0 0;
+		padding-bottom: 10px;
+		border-bottom: 1px solid var(--rule);
+		font-size: 12px;
+		color: var(--ink);
+	}
+	h2:first-child {
+		margin-top: 0;
+	}
+	h3 {
+		margin: 8px 0 0;
+		font-size: 11px;
+		color: var(--ink-soft);
+	}
 	.page {
 		display: flex;
 		flex-direction: column;
@@ -2553,6 +2490,7 @@
 	}
 	.title {
 		display: inline-flex;
+		flex: none;
 		align-items: center;
 		padding: 0 14px;
 		font-family: var(--font-mono);
@@ -2863,10 +2801,49 @@
 		flex: 1;
 		min-width: 220px;
 	}
-	.mcp-actions {
+	/* The token, four buttons and two registration lines need the card's full width;
+	   squeezed into the right-hand column they wrapped to one button per line. */
+	.row.mcp-token-row {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 12px;
+	}
+	.mcp-fields {
 		display: flex;
-		flex-wrap: wrap;
+		flex-direction: column;
+		gap: 14px;
+		min-width: 0;
+	}
+	.mcp-head-actions {
+		display: flex;
+		flex: none;
 		gap: 6px;
+	}
+	.mcp-snippet {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		min-width: 0;
+	}
+	.mcp-snippet-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+	.mcp-snippet-name {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--ink-soft);
+	}
+	.mcp-note {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		line-height: 1.4;
+		color: var(--ink-faint);
 	}
 	/* The registration line is long and unbreakable, so it scrolls rather than widening the card. */
 	.mcp-command {

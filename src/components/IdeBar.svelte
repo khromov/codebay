@@ -175,8 +175,8 @@
 									<span
 										class="attn {attention[inst.id]}"
 										aria-label={attention[inst.id] === 'waiting'
-											? 'Claude is waiting for input'
-											: 'Claude finished'}
+											? 'An agent is waiting for input'
+											: 'An agent finished'}
 									></span>
 								{/if}
 							</button>

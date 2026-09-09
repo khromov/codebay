@@ -404,3 +404,70 @@ describe('stopRun', () => {
 test('run mirrors live in the shared logs dir, so they outlive the sandbox', () => {
 	expect(runMirrorPath('abc')).toBe(join(LOGS_DIR, 'run-abc.jsonl'));
 });
+
+describe('Codex agent runs', () => {
+	test('persists the provider and rejects unavailable or provider-specific options', () => {
+		fakeDocker();
+		const inst = seed({ status: 'creating', agent: 'codex', agent_selection: 'both' });
+		created.push(inst.id);
+		expect(() => startRun(inst, 'task', { maxTurns: 3 })).toThrow('Claude-only');
+		expect(() => startRun(inst, 'task', { permissionMode: 'plan' })).toThrow('Claude-only');
+		expect(() =>
+			startRun({ ...inst, agent_selection: 'claude' }, 'task', { agent: 'codex' })
+		).toThrow('not installed');
+		const run = startRun(inst, 'task');
+		expect(getRun(run.id)?.agent).toBe('codex');
+		expect(JSON.parse(getRun(run.id)!.options!).agent).toBe('codex');
+		expect(() => startRun(inst, 'another', { agent: 'claude' })).toThrow(
+			'already has an active run'
+		);
+	});
+	test('launches native exec with stdin and folds usage and structured output', async () => {
+		const stream =
+			line({ type: 'thread.started', thread_id: 'codex-native-session' }) +
+			line({
+				type: 'item.completed',
+				item: { id: 'answer', type: 'agent_message', text: '{"ok":true}' }
+			}) +
+			line({ type: 'turn.completed', usage: { input_tokens: 11, output_tokens: 4 } });
+		const calls = fakeDocker([pollReply({ exit: '0', stream })]);
+		const inst = seed({ agent: 'codex', agent_selection: 'both' });
+		created.push(inst.id);
+		const run = startRun(inst, 'inspect "quoted" files', {
+			model: 'test-model',
+			jsonSchema: '{"type":"object"}'
+		});
+		await pollRunNow(run.id);
+		await pollRunNow(run.id);
+		const script = calls.map(stdinOf).find((value) => value.includes('codex exec'))!;
+		expect(script).toContain('codex exec --json --skip-git-repo-check');
+		expect(script).toContain('--output-schema "$d/schema.json"');
+		expect(script).toContain('- < "$d/prompt.txt"');
+		expect(script).not.toContain('inspect "quoted" files');
+		const result = getRun(run.id)!;
+		expect(result.status).toBe('done');
+		expect(result.session_id).toBe('codex-native-session');
+		expect(result.structured_output).toBe('{"ok":true}');
+		expect(JSON.parse(result.token_usage!)).toEqual({ input_tokens: 11, output_tokens: 4 });
+		expect(result.cost_usd).toBeNull();
+	});
+	test('does not label an empty successful process exit as a completed Codex turn', async () => {
+		fakeDocker([pollReply({ exit: '0' })]);
+		const inst = seed({ agent: 'codex', agent_selection: 'codex' });
+		created.push(inst.id);
+		const run = startRun(inst, 'task');
+		await pollRunNow(run.id);
+		await pollRunNow(run.id);
+		expect(getRun(run.id)?.status).toBe('error');
+	});
+	test('structured Codex runs require an actual JSON answer', async () => {
+		fakeDocker([pollReply({ exit: '0', stream: line({ type: 'turn.completed' }) })]);
+		const inst = seed({ agent: 'codex', agent_selection: 'codex' });
+		created.push(inst.id);
+		const run = startRun(inst, 'task', { jsonSchema: '{"type":"object"}' });
+		await pollRunNow(run.id);
+		await pollRunNow(run.id);
+		expect(getRun(run.id)?.status).toBe('error');
+		expect(getRun(run.id)?.error).toContain('valid structured JSON');
+	});
+});

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { agentsFor, type AgentSelection } from '../agents.ts';
 import {
 	appendFileSync,
 	existsSync,
@@ -38,13 +40,14 @@ interface FetchJob {
  * Lists the transcript + history files with their byte sizes. `find`/`wc -c` (not GNU `-printf`)
  * so it works on busybox containers too; the marker line lets the parser skip login-shell noise.
  */
-function manifestScript(): string {
+function manifestScript(selection: AgentSelection = 'claude'): string {
+	const enabled = agentsFor(selection);
 	return (
 		`h=$(eval echo ~$(id -un)); cfg="\${CLAUDE_CONFIG_DIR:-$h/.claude}"; ` +
 		`printf '%s\\n' '${MANIFEST_MARKER}'; ` +
-		`{ find "$cfg" -maxdepth 1 -type f -name 'history.jsonl' 2>/dev/null; ` +
-		`find "$cfg/projects" -type f -name '*.jsonl' 2>/dev/null; } | ` +
-		`while IFS= read -r f; do printf '%s\\t%s\\n' "$f" "$(wc -c < "$f" | tr -d ' ')"; done; true`
+		`{ ${enabled.includes('claude') ? `find "$cfg" -maxdepth 1 -type f -name 'history.jsonl' 2>/dev/null; find "$cfg/projects" -type f -name '*.jsonl' 2>/dev/null;` : ''} ` +
+		`${enabled.includes('codex') ? `codex_cfg="\${CODEX_HOME:-$h/.codex}"; find "$codex_cfg" -maxdepth 1 -type f -name 'history.jsonl' 2>/dev/null | sed 's|^|codex:|'; find "$codex_cfg/sessions" "$codex_cfg/archived_sessions" -type f -name '*.jsonl' 2>/dev/null | sed 's|^|codex:|';` : ''} } | ` +
+		`while IFS= read -r f; do printf '%s\\t%s\\n' "$f" "$(wc -c < "\${f#codex:}" | tr -d ' ')"; done; true`
 	);
 }
 
@@ -67,7 +70,7 @@ function fetchScript(): string {
 	return (
 		`printf '%s\\n' '${FETCH_MARKER}'; ` +
 		`while [ "$#" -ge 2 ]; do p="$1"; o="$2"; shift 2; ` +
-		`${tailBlockScript('$p', '$o')}; done`
+		`${tailBlockScript('$p', '$o').replace('tail -c "+$o" "$p"', 'tail -c "+$o" "${p#codex:}"')}; done`
 	);
 }
 
@@ -87,6 +90,13 @@ export function parseManifest(stdout: string): ManifestEntry[] {
 
 /** A `/projects/` path is a session transcript; the only other file we list is `history.jsonl`. */
 export function hostFileNameFor(instanceId: string, containerPath: string): string {
+	if (containerPath.startsWith('codex:')) {
+		const path = containerPath.slice(6);
+		const hash = createHash('sha256').update(path).digest('hex').slice(0, 16);
+		return path.endsWith('/history.jsonl')
+			? `codex-history-${instanceId}.jsonl`
+			: `codex-transcript-${instanceId}-${hash}.jsonl`;
+	}
 	const base = containerPath.split('/').pop() ?? containerPath;
 	if (containerPath.includes('/projects/')) {
 		return `transcript-${instanceId}-${base.replace(/\.jsonl$/, '')}.jsonl`;
@@ -190,7 +200,10 @@ export async function runCapturePass(row: InstanceRow, deps: CaptureDeps = {}): 
 	const logsDir = deps.logsDir ?? LOGS_DIR;
 	const target = { containerId: row.container_id, remoteUser: row.remote_user };
 
-	const manifestRes = await exec(target, { script: manifestScript(), capture: true });
+	const manifestRes = await exec(target, {
+		script: manifestScript(row.agent_selection ?? 'claude'),
+		capture: true
+	});
 	if (!manifestRes.ok) return false;
 	const manifest = parseManifest(manifestRes.stdout);
 

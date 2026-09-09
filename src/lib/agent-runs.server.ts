@@ -1,9 +1,18 @@
+import {
+	agentsFor,
+	isAgent,
+	CODEX_PERMISSION_MODES,
+	CODEX_EFFORT_LEVELS,
+	type Agent,
+	type CodexPermissionMode
+} from '../agents.ts';
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { LOGS_DIR } from './config.server.ts';
 import {
 	getInstance,
 	getRun,
+	listRuns,
 	insertRun,
 	openRunFor,
 	openRuns,
@@ -73,6 +82,9 @@ export const PROMPT_MAX_BYTES = EXEC_STDIN_MAX_BYTES;
 const STOP_DRAIN_SECONDS = 5;
 
 export interface StartRunOptions {
+	agent?: Agent;
+	codexPermissionMode?: CodexPermissionMode;
+	reasoningEffort?: string;
 	resumeSessionId?: string;
 	model?: string;
 	maxTurns?: number;
@@ -96,6 +108,7 @@ const mirrorSize = (runId: string) => sizeOnDisk(runMirrorPath(runId));
  * appearance as proof the stream is complete.
  */
 function runScript(runId: string, row: InstanceRow, opts: StartRunOptions): string {
+	const agent = opts.agent ?? 'claude';
 	const flags = [
 		'--output-format stream-json',
 		'--verbose',
@@ -106,6 +119,21 @@ function runScript(runId: string, row: InstanceRow, opts: StartRunOptions): stri
 	if (opts.maxTurns) flags.push(`--max-turns ${opts.maxTurns}`);
 	if (opts.jsonSchema) flags.push('--json-schema "$(cat "$d/schema.json")"');
 
+	const codexFlags = ['--json', '--skip-git-repo-check'];
+	if (!opts.codexPermissionMode || opts.codexPermissionMode === 'full-access')
+		codexFlags.push('--dangerously-bypass-approvals-and-sandbox');
+	else
+		codexFlags.push(
+			`-c approval_policy="never" -c sandbox_mode="${opts.codexPermissionMode === 'workspace' ? 'workspace-write' : 'read-only'}"`
+		);
+	if (opts.model) codexFlags.push(`--model ${quote(opts.model)}`);
+	if (opts.reasoningEffort && opts.reasoningEffort !== 'default')
+		codexFlags.push(`-c ${quote(`model_reasoning_effort="${opts.reasoningEffort}"`)}`);
+	if (opts.jsonSchema) codexFlags.push('--output-schema "$d/schema.json"');
+	const command =
+		agent === 'codex'
+			? `codex exec ${opts.resumeSessionId ? `resume ${quote(opts.resumeSessionId)} ` : ''}${codexFlags.join(' ')} - < "$d/prompt.txt"`
+			: `claude -p "$(cat "$d/prompt.txt")" ${flags.join(' ')} </dev/null`;
 	const cd = row.remote_workspace_folder ? `cd ${quote(row.remote_workspace_folder)}` : 'cd "$h"';
 
 	return (
@@ -131,9 +159,9 @@ function runScript(runId: string, row: InstanceRow, opts: StartRunOptions): stri
 		`${WAIT_FOR_INJECTIONS}\n` +
 		`${cd} || die 127 "workspace folder is missing"\n` +
 		`${SOURCE_INJECTED_ENV}\n` +
-		`i=0; until command -v claude >/dev/null 2>&1 || [ "$i" -ge ${CLAUDE_BINARY_WAIT_SECONDS} ]; do sleep 1; i=$((i + 1)); done\n` +
-		`command -v claude >/dev/null 2>&1 || die 127 "claude is not installed in this container"\n` +
-		`claude -p "$(cat "$d/prompt.txt")" ${flags.join(' ')} </dev/null > "$d/stream.jsonl" 2> "$d/stderr.log"\n` +
+		`i=0; until command -v ${agent} >/dev/null 2>&1 || [ "$i" -ge ${CLAUDE_BINARY_WAIT_SECONDS} ]; do sleep 1; i=$((i + 1)); done\n` +
+		`command -v ${agent} >/dev/null 2>&1 || die 127 "${agent} is not installed in this container"\n` +
+		`${command} > "$d/stream.jsonl" 2> "$d/stderr.log"\n` +
 		`w exit "$?"\n`
 	);
 }
@@ -263,7 +291,10 @@ function mirrorChunk(runId: string, stdout: string): Buffer | null {
 /** The mirror is the record; the cursor is only a cache of it, and can lag it. */
 function stateFromMirror(runId: string, fallback: RunStreamState): RunStreamState {
 	try {
-		return readRunFile(readFileSync(runMirrorPath(runId), 'utf8'));
+		return readRunFile(
+			readFileSync(runMirrorPath(runId), 'utf8'),
+			getRun(runId)?.agent ?? 'claude'
+		);
 	} catch {
 		return fallback;
 	}
@@ -276,7 +307,12 @@ function cursorFor(runId: string): RunCursor {
 		let state = emptyRunState();
 		let carry = '';
 		try {
-			({ state, carry } = readRunChunk(state, '', readFileSync(runMirrorPath(runId), 'utf8')));
+			({ state, carry } = readRunChunk(
+				state,
+				'',
+				readFileSync(runMirrorPath(runId), 'utf8'),
+				getRun(runId)?.agent ?? 'claude'
+			));
 		} catch {
 			// No mirror yet — a run that hasn't produced output.
 		}
@@ -300,6 +336,8 @@ export function setRunChangeHook(hook: (runId: string) => void): void {
 export function runDetail(row: AgentRunRow) {
 	return {
 		id: row.id,
+		agent: row.agent ?? 'claude',
+		token_usage: row.token_usage ? (JSON.parse(row.token_usage) as Record<string, number>) : null,
 		instance_id: row.instance_id,
 		status: row.status,
 		prompt: row.prompt,
@@ -327,7 +365,16 @@ export function runDetail(row: AgentRunRow) {
 export function runSummary(row: AgentRunRow): AgentRunSummary {
 	const { id, instance_id, status, last_activity, started_at, finished_at, is_error } =
 		runDetail(row);
-	return { id, instance_id, status, last_activity, started_at, finished_at, is_error };
+	return {
+		id,
+		instance_id,
+		status,
+		last_activity,
+		started_at,
+		finished_at,
+		is_error,
+		agent: row.agent ?? 'claude'
+	};
 }
 
 /** Seeds a freshly connected socket, the way `currentHealthSnapshots` does for health. */
@@ -414,6 +461,8 @@ export function requestedModel(row: AgentRunRow): string | null {
  * that is still booting and has no container to write into yet.
  */
 async function stage(row: AgentRunRow, instance: InstanceRow): Promise<string | null> {
+	if (!agentsFor(instance.agent_selection ?? 'claude').includes(row.agent ?? 'claude'))
+		return 'The run agent is not installed in this sandbox; rebuild with it enabled';
 	const target = targetFor(instance);
 	const dir = runDirExpr(row.id);
 	const opts = optionsOf(row);
@@ -434,7 +483,11 @@ async function stage(row: AgentRunRow, instance: InstanceRow): Promise<string | 
 	const script = await writeContainerFile(
 		target,
 		{ dir, name: 'run.sh', mode: '700' },
-		runScript(row.id, instance, { ...opts, resumeSessionId: row.resume_session_id ?? undefined })
+		runScript(row.id, instance, {
+			...opts,
+			agent: row.agent ?? 'claude',
+			resumeSessionId: row.resume_session_id ?? undefined
+		})
 	);
 	return script.ok ? null : `could not stage the run script: ${script.error}`;
 }
@@ -505,7 +558,7 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 		const changed = bytes !== null;
 		if (bytes) {
 			const text = cursor.decoder.decode(bytes, { stream: true });
-			const next = readRunChunk(cursor.state, cursor.carry, text);
+			const next = readRunChunk(cursor.state, cursor.carry, text, row.agent ?? 'claude');
 			cursor.state = next.state;
 			cursor.carry = next.carry;
 		}
@@ -522,6 +575,7 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 				model: state.model,
 				last_activity: state.lastActivity,
 				num_turns: state.numTurns,
+				token_usage: state.tokenUsage ? JSON.stringify(state.tokenUsage) : null,
 				cost_usd: state.costUsd
 			});
 			onRunChanged?.(row.id);
@@ -529,7 +583,16 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 
 		if (exitRaw) {
 			const exitCode = Number.parseInt(exitRaw, 10);
-			const failed = state.isError || exitCode !== 0;
+			if (row.agent === 'codex' && optionsOf(row).jsonSchema && !state.isError) {
+				try {
+					state.structuredOutput = JSON.stringify(JSON.parse(state.result ?? ''));
+				} catch {
+					state.isError = true;
+					state.result = 'Codex did not return valid structured JSON';
+				}
+			}
+			const failed =
+				state.isError || exitCode !== 0 || (row.agent === 'codex' && !state.resultSeen);
 			const stderr = markerLine(res.stdout, ERR_MARKER)?.trim();
 			finish(row.id, {
 				status: failed ? 'error' : 'done',
@@ -539,13 +602,16 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 				structured_output: state.structuredOutput,
 				duration_ms: state.durationMs ?? (row.started_at ? Date.now() - row.started_at : null),
 				num_turns: state.numTurns,
+				token_usage: state.tokenUsage ? JSON.stringify(state.tokenUsage) : null,
 				cost_usd: state.costUsd,
 				session_id: state.sessionId,
 				model: state.model,
 				last_activity: state.lastActivity,
 				// The stream's own result text is the better message when claude exited cleanly but
 				// reported a failure; stderr only carries anything when it crashed outright.
-				error: failed ? stderr || state.result || `claude exited ${exitCode}` : null
+				error: failed
+					? stderr || state.result || `${row.agent ?? 'claude'} exited ${exitCode}`
+					: null
 			});
 			return;
 		}
@@ -588,6 +654,36 @@ export function startRun(
 	prompt: string,
 	opts: StartRunOptions = {}
 ): AgentRunRow {
+	const agent = opts.agent ?? instance.agent ?? 'claude';
+	if (!isAgent(agent) || !agentsFor(instance.agent_selection ?? 'claude').includes(agent))
+		throw new Error('Agent is not installed in this sandbox; enable it in Settings and rebuild');
+	if (agent === 'codex' && (opts.maxTurns !== undefined || opts.permissionMode !== undefined))
+		throw new Error(
+			'max_turns and permission_mode are Claude-only; use timeout_minutes and codex_permission_mode for Codex'
+		);
+	if (
+		agent === 'claude' &&
+		(opts.codexPermissionMode !== undefined || opts.reasoningEffort !== undefined)
+	)
+		throw new Error('codex_permission_mode and reasoning_effort are Codex-only');
+	if (
+		opts.codexPermissionMode !== undefined &&
+		!CODEX_PERMISSION_MODES.includes(opts.codexPermissionMode)
+	)
+		throw new Error('Invalid Codex permission mode');
+	if (
+		opts.reasoningEffort !== undefined &&
+		!(CODEX_EFFORT_LEVELS as readonly string[]).includes(opts.reasoningEffort)
+	)
+		throw new Error('Invalid Codex reasoning effort');
+	if (opts.resumeSessionId) {
+		const previous = listRuns(instance.id, 10000).find(
+			(run) => run.session_id === opts.resumeSessionId
+		);
+		if (previous && (previous.agent ?? 'claude') !== agent)
+			throw new Error('Cannot resume a session with a different agent');
+	}
+	opts = { ...opts, agent };
 	if (!prompt.trim()) throw new Error('prompt is required');
 	const promptBytes = Buffer.byteLength(prompt, 'utf8');
 	if (promptBytes > PROMPT_MAX_BYTES) {
@@ -607,6 +703,8 @@ export function startRun(
 		id,
 		instance_id: instance.id,
 		prompt,
+		agent,
+		token_usage: null,
 		status: 'queued',
 		session_id: null,
 		model: null,
@@ -694,6 +792,7 @@ async function drainAfterStop(runId: string, instance: InstanceRow): Promise<voi
 			model: state.model,
 			last_activity: state.lastActivity,
 			num_turns: state.numTurns,
+			token_usage: state.tokenUsage ? JSON.stringify(state.tokenUsage) : null,
 			cost_usd: state.costUsd,
 			result: state.result
 		});
@@ -707,7 +806,10 @@ async function drainAfterStop(runId: string, instance: InstanceRow): Promise<voi
  */
 export function runTimeline(runId: string, limit = 500): RunTimelineEntry[] {
 	try {
-		return parseRunTimeline(readFileSync(runMirrorPath(runId), 'utf8')).slice(-limit);
+		return parseRunTimeline(
+			readFileSync(runMirrorPath(runId), 'utf8'),
+			getRun(runId)?.agent ?? 'claude'
+		).slice(-limit);
 	} catch {
 		return [];
 	}

@@ -1,3 +1,12 @@
+import {
+	agentsFor,
+	AGENT_LABELS,
+	codexPermissionFlags,
+	type Agent,
+	type AgentSelection
+} from '../agents.ts';
+import { getAgentSettings } from './agents.server.ts';
+import { INSTALL_SCRIPT as CODEX_INSTALL_SCRIPT } from '../container-injections/codex-install.ts';
 import { chmod, cp, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { existsSync, lstatSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, sep } from 'node:path';
@@ -116,6 +125,9 @@ const MANAGER_GIT_EXCLUDES = [
 	'/.devcontainer/codebay-tmux/',
 	'/.devcontainer/codebay-ttyd/',
 	'/.devcontainer/codebay-claude/',
+	'/.devcontainer/codebay-codex/',
+	'/.devcontainer/*/codebay-codex/',
+	'/.devcontainer/codebay-agent',
 	'/.devcontainer/codebay-terminal.sh',
 	'/.vscode/tasks.json'
 ];
@@ -153,6 +165,7 @@ export const CODE_SERVER_SETTINGS = {
 };
 
 const TMUX_SESSION = 'codebay';
+export const AGENT_CHOICE_FILE = 'codebay-agent';
 
 /** The split view's right-hand pane: a plain shell, kept apart from the Claude session. */
 const TMUX_SHELL_SESSION = 'codebay-shell';
@@ -213,6 +226,17 @@ export const launchClaude = (permissionMode: ClaudePermissionMode): string =>
 	`else echo "codebay: claude is not installed in this container — check the boot log, then Rebuild"; fi; ` +
 	`fi; `;
 
+export function launchAgent(agent: Agent, permissionMode: ClaudePermissionMode): string {
+	if (agent === 'claude') return launchClaude(permissionMode);
+	return launchClaude(permissionMode)
+		.replaceAll('Claude', 'Codex')
+		.replaceAll('claude', 'codex')
+		.replace(
+			claudePermissionFlags(permissionMode),
+			codexPermissionFlags(getAgentSettings().codexPermissionMode)
+		);
+}
+
 /**
  * claude scans `~/.claude/ide/*.lock` once at startup and never retries, so it must not race
  * the code-server extension host writing that lock — hold it briefly until the bridge appears.
@@ -241,25 +265,56 @@ const TERMINAL_TASK_LABEL = 'Terminal';
  * Runs under tmux so Claude survives the browser closing — code-server reaps the
  * detached PTY, which only kills the tmux client. `-A` doubles as the run-once gate.
  */
-const terminalTask = (permissionMode: ClaudePermissionMode) => ({
+const terminalTaskFor = (permissionMode: ClaudePermissionMode, agent: Agent = 'claude') => ({
 	label: TERMINAL_TASK_LABEL,
 	type: 'shell',
 	command:
 		// `"$SHELL"` must reach tmux unexpanded; VS Code would substitute a `${…}` form first.
-		`if command -v tmux >/dev/null 2>&1; then exec tmux new-session -A -s ${TMUX_SESSION} '${WAIT_FOR_INJECTIONS}${WAIT_FOR_IDE_BRIDGE}${SOURCE_INJECTED_ENV}${launchClaude(permissionMode)}exec "$SHELL" -l'; fi; ` +
+		`if command -v tmux >/dev/null 2>&1; then exec tmux new-session -A -s ${agent === 'claude' ? TMUX_SESSION : 'codebay-codex'} '${WAIT_FOR_INJECTIONS}${agent === 'claude' ? WAIT_FOR_IDE_BRIDGE : ''}${SOURCE_INJECTED_ENV}${launchAgent(agent, permissionMode)}exec "$SHELL" -l'; fi; ` +
 		// Without tmux there's no run-once gate, and folderOpen re-fires on every workspace load.
 		'MARK="$HOME/' +
-		TERMINAL_LAUNCHED_MARKER +
+		(agent === 'claude' ? TERMINAL_LAUNCHED_MARKER : `${TERMINAL_LAUNCHED_MARKER}-codex`) +
 		'"; [ -e "$MARK" ] && exit 0; touch "$MARK"; ' +
 		WAIT_FOR_INJECTIONS +
-		WAIT_FOR_IDE_BRIDGE +
+		(agent === 'claude' ? WAIT_FOR_IDE_BRIDGE : '') +
 		SOURCE_INJECTED_ENV +
-		launchClaude(permissionMode) +
+		launchAgent(agent, permissionMode) +
 		'exec ${env:SHELL} -l',
 	presentation: { reveal: 'always', panel: 'shared', focus: true },
 	runOptions: { runOn: 'folderOpen' },
 	problemMatcher: []
 });
+
+function terminalTasks(
+	permissionMode: ClaudePermissionMode,
+	agent: Agent = 'claude',
+	selection: AgentSelection = 'claude'
+) {
+	if (selection !== 'both') return [terminalTaskFor(permissionMode, agent)];
+	return agentsFor(selection).map((choice) => ({
+		...terminalTaskFor(permissionMode, choice),
+		label: agentTaskLabel(choice),
+		presentation: { reveal: 'always', panel: 'dedicated', focus: true },
+		runOptions: choice === agent ? { runOn: 'folderOpen' } : {}
+	}));
+}
+
+const agentTaskLabel = (agent: Agent) => `${AGENT_LABELS[agent]} (Codebay)`;
+
+export async function writeAgentPreference(workspaceDir: string, agent: Agent, mode: InstanceMode) {
+	if (mode === 'ide') {
+		const path = join(workspaceDir, '.vscode', 'tasks.json');
+		const config = JSON.parse(stripJsonc(await readFile(path, 'utf8')));
+		for (const task of config.tasks ?? []) {
+			if (!agentsFor('both').some((choice) => task?.label === agentTaskLabel(choice))) continue;
+			task.runOptions ??= {};
+			if (task.label === agentTaskLabel(agent)) task.runOptions.runOn = 'folderOpen';
+			else delete task.runOptions.runOn;
+		}
+		await writeFile(path, JSON.stringify(config, null, 2) + '\n');
+	}
+	await writeFile(join(workspaceDir, '.devcontainer', AGENT_CHOICE_FILE), agent + '\n');
+}
 
 const CODE_SERVER_USER_DIR = '~/.local/share/code-server/User';
 
@@ -292,10 +347,27 @@ const CODE_SERVER_INSTALL_EXT_BLOCKING =
 
 // By default the extension installs in the background after launch (the first window may need a
 // reload to activate it; the claude-code-ide-extension injection waits out this install as the fallback).
-function codeServerLaunch(blockingExtInstall: boolean): string {
+function codeServerLaunch(
+	blockingExtInstall: boolean,
+	selection: AgentSelection = 'claude'
+): string {
+	const extensions = agentsFor(selection)
+		.map((agent) => {
+			const id = agent === 'claude' ? CLAUDE_CODE_EXTENSION_ID : 'openai.chatgpt';
+			return CODE_SERVER_INSTALL_EXT_BLOCKING.replaceAll(CLAUDE_CODE_EXTENSION_ID, id);
+		})
+		.join(' ');
+	const install =
+		selection === 'claude'
+			? blockingExtInstall
+				? CODE_SERVER_INSTALL_EXT_BLOCKING
+				: CODE_SERVER_INSTALL_EXT
+			: blockingExtInstall
+				? extensions
+				: `( ${extensions} ) >/tmp/code-server-ext.log 2>&1 </dev/null &`;
 	return (
 		`bash -c "${CODE_SERVER_APPLY_SETTINGS} ` +
-		(blockingExtInstall ? CODE_SERVER_INSTALL_EXT_BLOCKING : '') +
+		(blockingExtInstall ? install : '') +
 		// The bare default image may not export SHELL, which the Terminal task needs.
 		`export SHELL=\\"\${SHELL:-/bin/bash}\\"; ` +
 		// Probes the port rather than the process list: every `pgrep -f` pattern that matches a
@@ -305,7 +377,7 @@ function codeServerLaunch(blockingExtInstall: boolean): string {
 		`(exec 3<>/dev/tcp/127.0.0.1/${CODE_SERVER_PORT}) 2>/dev/null || ` +
 		`nohup code-server --bind-addr 0.0.0.0:${CODE_SERVER_PORT} --auth none ` +
 		`--disable-workspace-trust \\"$PWD\\" >/tmp/code-server.log 2>&1 &` +
-		(blockingExtInstall ? '' : ` ${CODE_SERVER_INSTALL_EXT}`) +
+		(blockingExtInstall ? '' : ` ${install}`) +
 		`"`
 	);
 }
@@ -326,7 +398,10 @@ export const TTYD_SHELL_ARG = 'shell';
  * compare and never an eval. The shell branch sits above the injections wait so the split view's
  * scratch shell opens immediately instead of blocking on Claude's boot sentinel.
  */
-const ttydLaunchScript = (permissionMode: ClaudePermissionMode): string =>
+const ttydLaunchScriptFor = (
+	permissionMode: ClaudePermissionMode,
+	agent: Agent = 'claude'
+): string =>
 	'#!/usr/bin/env bash\n' +
 	'export SHELL="${SHELL:-/bin/bash}"\n' +
 	`if [ "$1" = "${TTYD_SHELL_ARG}" ]; then\n` +
@@ -338,13 +413,29 @@ const ttydLaunchScript = (permissionMode: ClaudePermissionMode): string =>
 	WAIT_FOR_INJECTIONS +
 	'\n' +
 	`if command -v tmux >/dev/null 2>&1; then\n` +
-	`  exec tmux new-session -A -s ${TMUX_SESSION} '${SOURCE_INJECTED_ENV}${launchClaude(permissionMode)}exec "$SHELL" -l'\n` +
+	`  exec tmux new-session -A -s ${agent === 'claude' ? TMUX_SESSION : 'codebay-codex'} '${SOURCE_INJECTED_ENV}${launchAgent(agent, permissionMode)}exec "$SHELL" -l'\n` +
 	'fi\n' +
 	SOURCE_INJECTED_ENV +
 	'\n' +
-	launchClaude(permissionMode) +
+	launchAgent(agent, permissionMode) +
 	'\n' +
 	'exec "$SHELL" -l\n';
+
+function ttydLaunchScript(
+	permissionMode: ClaudePermissionMode,
+	agent: Agent = 'claude',
+	selection: AgentSelection = 'claude'
+): string {
+	if (selection !== 'both') return ttydLaunchScriptFor(permissionMode, agent);
+	return `#!/usr/bin/env bash
+case "$1" in codex) chosen=codex ;; claude|shell) chosen=claude ;; *) chosen=$(cat "$PWD/.devcontainer/${AGENT_CHOICE_FILE}" 2>/dev/null) ;; esac
+if [ "$chosen" = codex ]; then
+${ttydLaunchScriptFor(permissionMode, 'codex')}
+else
+${ttydLaunchScriptFor(permissionMode, 'claude')}
+fi
+`;
+}
 
 // ttyd defaults to read-only, so --writable is required for keyboard input. Guarded by `pgrep -x`
 // (process name) so a folderOpen/rebuild can't stack a second daemon — never `pgrep -f`, whose
@@ -363,10 +454,10 @@ const TTYD_LAUNCH =
  * The launcher `postStartCommand` runs, exposed so a host-side relaunch can reuse the exact
  * string rather than growing a second, driftable copy of "how the served surface is started".
  */
-export function launchCommandFor(mode: InstanceMode): string {
+export function launchCommandFor(mode: InstanceMode, selection: AgentSelection = 'claude'): string {
 	return mode === 'terminal'
 		? TTYD_LAUNCH
-		: codeServerLaunch(getOption('advanced_blocking_ext_install') === '1');
+		: codeServerLaunch(getOption('advanced_blocking_ext_install') === '1', selection);
 }
 
 /**
@@ -594,7 +685,9 @@ export async function writeOverrideConfig(
 	defaultImage: string = DEFAULT_IMAGE,
 	mode: InstanceMode = 'ide',
 	permissionMode: ClaudePermissionMode = 'default',
-	envVars: { name: string; value: string }[] = []
+	envVars: { name: string; value: string }[] = [],
+	selection: AgentSelection = 'claude',
+	agent: Agent = 'claude'
 ): Promise<{ imageSource: string; configPath: string | null; overrideConfigPath: string }> {
 	const isTerminal = mode === 'terminal';
 	const canonical = findDevcontainerConfig(workspaceDir);
@@ -637,18 +730,20 @@ export async function writeOverrideConfig(
 	// Claude Code: the default image needs the upstream features, while terminal mode on a
 	// project-supplied image gets the local one, which installs only what that image lacks — the
 	// upstream Node feature would run nvm, which any image setting NPM_CONFIG_PREFIX breaks on.
-	// IDE mode on a project config stays hands-off: the project owns its tooling.
-	const needsClaude = isTerminal || !hadConfig;
+	// Project images get only the enabled agents and the selected editor surface.
+	const needsClaude = agentsFor(selection).includes('claude');
+	const needsCodex = agentsFor(selection).includes('codex');
 	config.features = {
 		...(config.features ?? {}),
 		...(isTerminal
 			? { [ttydFeatureKey]: {} }
 			: { [CODE_SERVER_FEATURE]: { host: '0.0.0.0', port: CODE_SERVER_PORT, auth: 'none' } }),
 		[tmuxFeatureKey]: {},
-		...(needsClaude ? { [GITHUB_CLI_FEATURE]: {} } : {}),
+		...(isTerminal || !hadConfig ? { [GITHUB_CLI_FEATURE]: {} } : {}),
+		...(needsCodex ? { [featureKey('codebay-codex')]: {} } : {}),
 		...(!hadConfig
-			? { [NODE_FEATURE]: {}, [CLAUDE_CODE_FEATURE]: {} }
-			: isTerminal
+			? { [NODE_FEATURE]: {}, ...(needsClaude ? { [CLAUDE_CODE_FEATURE]: {} } : {}) }
+			: needsClaude
 				? { [claudeFeatureKey]: {} }
 				: {})
 	};
@@ -667,7 +762,7 @@ export async function writeOverrideConfig(
 	runArgs.add(HOST_GATEWAY_ARG);
 	config.runArgs = [...runArgs];
 
-	const launch = launchCommandFor(mode);
+	const launch = launchCommandFor(mode, selection);
 	const existing = config.postStartCommand;
 	config.postStartCommand =
 		typeof existing === 'string' && existing.trim() ? `${existing} && ${launch}` : launch;
@@ -686,7 +781,7 @@ export async function writeOverrideConfig(
 
 	if (isTerminal) {
 		await writeTtydFeature(featureRoot);
-		await writeTerminalLaunchScript(workspaceDir, permissionMode);
+		await writeTerminalLaunchScript(workspaceDir, permissionMode, agent, selection);
 	} else {
 		// Staged next to the config; codeServerLaunch copies it into the user-data dir on first start.
 		await writeFile(
@@ -695,12 +790,28 @@ export async function writeOverrideConfig(
 			'utf8'
 		);
 		// The VS Code Terminal task is code-server-only; ttyd runs its own launcher script instead.
-		await writeTerminalTask(workspaceDir, permissionMode);
+		await writeTerminalTask(workspaceDir, permissionMode, agent, selection);
 	}
 
 	await writeTmuxFeature(featureRoot);
 
-	if (isTerminal && hadConfig) await writeClaudeFeature(featureRoot);
+	if (needsClaude && hadConfig) await writeClaudeFeature(featureRoot);
+	if (needsCodex) {
+		const feature = join(featureRoot, 'codebay-codex');
+		await mkdir(feature, { recursive: true });
+		await writeFile(
+			join(feature, 'devcontainer-feature.json'),
+			JSON.stringify({ id: 'codebay-codex', version: '1.0.0', name: 'Codex (Codebay)' })
+		);
+		await writeFile(
+			join(feature, 'install.sh'),
+			'#!/bin/sh\n(\n' +
+				CODEX_INSTALL_SCRIPT +
+				'\n) || echo "Codex build-time install unavailable; retrying after startup"\nexit 0\n',
+			{ mode: 0o755 }
+		);
+	}
+	await writeFile(join(workspaceDir, '.devcontainer', AGENT_CHOICE_FILE), agent + '\n');
 
 	await writeLocalGitExclude(workspaceDir);
 
@@ -920,17 +1031,21 @@ async function writeTtydFeature(featureRoot: string): Promise<void> {
 /** Staged next to the config; TTYD_LAUNCH runs it as ttyd's command. */
 async function writeTerminalLaunchScript(
 	workspaceDir: string,
-	permissionMode: ClaudePermissionMode
+	permissionMode: ClaudePermissionMode,
+	agent: Agent = 'claude',
+	selection: AgentSelection = 'claude'
 ): Promise<void> {
 	const path = join(workspaceDir, '.devcontainer', TTYD_LAUNCH_SCRIPT_FILE);
-	await writeFile(path, ttydLaunchScript(permissionMode), 'utf8');
+	await writeFile(path, ttydLaunchScript(permissionMode, agent, selection), 'utf8');
 	await chmod(path, 0o755);
 }
 
 /** Replaces the managed task rather than skipping it, so a rebuild picks up command changes. */
 async function writeTerminalTask(
 	workspaceDir: string,
-	permissionMode: ClaudePermissionMode
+	permissionMode: ClaudePermissionMode,
+	agent: Agent = 'claude',
+	selection: AgentSelection = 'claude'
 ): Promise<void> {
 	const tasksPath = join(workspaceDir, '.vscode', 'tasks.json');
 	let config: { version?: string; tasks?: unknown[] } = {};
@@ -949,9 +1064,15 @@ async function writeTerminalTask(
 	const isManagedTask = (t: unknown) =>
 		typeof t === 'object' &&
 		t !== null &&
-		(t as Record<string, unknown>).label === TERMINAL_TASK_LABEL &&
-		((t as Record<string, { runOn?: string }>).runOptions?.runOn ?? '') === 'folderOpen';
-	config.tasks = [...tasks.filter((t) => !isManagedTask(t)), terminalTask(permissionMode)];
+		(agentsFor('both').some(
+			(agent) => (t as Record<string, unknown>).label === agentTaskLabel(agent)
+		) ||
+			((t as Record<string, unknown>).label === TERMINAL_TASK_LABEL &&
+				((t as Record<string, { runOn?: string }>).runOptions?.runOn ?? '') === 'folderOpen'));
+	config.tasks = [
+		...tasks.filter((t) => !isManagedTask(t)),
+		...terminalTasks(permissionMode, agent, selection)
+	];
 
 	await mkdir(join(workspaceDir, '.vscode'), { recursive: true }).catch(() => {});
 	await writeFile(tasksPath, JSON.stringify(config, null, 2) + '\n', 'utf8');

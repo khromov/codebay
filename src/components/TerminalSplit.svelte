@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Agent } from '../agents.ts';
 	import PanelRightOpen from '@lucide/svelte/icons/panel-right-open';
 	import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
 	import TerminalPane from './TerminalPane.svelte';
@@ -6,9 +7,10 @@
 
 	let {
 		id,
+		agent = 'claude',
 		active,
 		initialOpen = false
-	}: { id: string; active: boolean; initialOpen?: boolean } = $props();
+	}: { id: string; agent?: Agent; active: boolean; initialOpen?: boolean } = $props();
 
 	// Seeding from the persisted flag is intentional — from here on the toggle owns the state.
 	// svelte-ignore state_referenced_locally
@@ -60,8 +62,8 @@
 		type="button"
 		onclick={toggle}
 		aria-pressed={open}
-		title={open ? 'Hide the shell pane' : 'Open a shell alongside Claude'}
-		aria-label={open ? 'Hide the shell pane' : 'Open a shell alongside Claude'}
+		title={open ? 'Hide the shell pane' : 'Open a shell alongside the agent'}
+		aria-label={open ? 'Hide the shell pane' : 'Open a shell alongside the agent'}
 	>
 		{#if open}<PanelRightClose size={14} />{:else}<PanelRightOpen size={14} />{/if}
 	</button>
@@ -74,12 +76,15 @@
 		style:flex-basis={open ? `${ratio}%` : '100%'}
 		onpointerdowncapture={() => (focusSide = 'left')}
 	>
-		<TerminalPane
-			{id}
-			{active}
-			focus={active && focusSide === 'left'}
-			actions={open ? undefined : splitToggle}
-		/>
+		{#key agent}
+			<TerminalPane
+				arg={agent}
+				{id}
+				{active}
+				focus={active && focusSide === 'left'}
+				actions={open ? undefined : splitToggle}
+			/>
+		{/key}
 	</div>
 	{#if mounted}
 		<!-- A focusable separator is the ARIA window-splitter pattern; the rule doesn't model it. -->
