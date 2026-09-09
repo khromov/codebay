@@ -28,6 +28,8 @@
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import Puzzle from '@lucide/svelte/icons/puzzle';
 	import Plug from '@lucide/svelte/icons/plug';
+	import Copy from '@lucide/svelte/icons/copy';
+	import Check from '@lucide/svelte/icons/check';
 	import { Toaster } from 'svelte-french-toast';
 	import { TOAST_OPTIONS } from '../toast.ts';
 	import { flushSync } from 'svelte';
@@ -2032,7 +2034,7 @@
 			{/if}
 
 			{#if mcp}
-				<div class="row divided">
+				<div class="row divided mcp-token-row">
 					<div class="label">
 						<div class="text">
 							<div class="name">Token</div>
@@ -2042,39 +2044,76 @@
 							</div>
 						</div>
 					</div>
-					<div class="model-fields">
-						<label class="model-row">
-							<span class="model-label">Bearer</span>
+					<div class="mcp-fields">
+						<div class="mcp-snippet">
+							<div class="mcp-snippet-head">
+								<span class="mcp-snippet-name">Bearer</span>
+								<div class="mcp-head-actions">
+									<Button
+										type="button"
+										size="sm"
+										ghost
+										icon={mcpCopied === 'token' ? Check : Copy}
+										onclick={() => copyMcp('token', mcpTokenValue)}
+									>
+										{mcpCopied === 'token' ? 'Copied' : 'Copy'}
+									</Button>
+									<form method="POST" action="?/mcpRegenerateToken" {@attach enhance(mcpTokenOpts)}>
+										<Button
+											type="submit"
+											size="sm"
+											ghost
+											icon={RotateCcw}
+											disabled={savingMcpToken}
+										>
+											{savingMcpToken ? 'Regenerating…' : 'Regenerate'}
+										</Button>
+									</form>
+								</div>
+							</div>
 							<input
 								type="text"
 								class="image-input"
 								value={mcpTokenValue}
 								readonly
 								spellcheck="false"
+								aria-label="MCP bearer token"
 								onfocus={(e) => e.currentTarget.select()}
 							/>
-						</label>
-						<div class="mcp-actions">
-							<Button type="button" onclick={() => copyMcp('token', mcpTokenValue)}>
-								{mcpCopied === 'token' ? 'Copied' : 'Copy token'}
-							</Button>
-							<Button type="button" onclick={() => copyMcp('command', mcpCommand)}>
-								{mcpCopied === 'command' ? 'Copied' : 'Copy claude mcp add'}
-							</Button>
-							<Button type="button" onclick={() => copyMcp('codex', codexMcpCommand)}>
-								{mcpCopied === 'codex' ? 'Copied' : 'Copy codex mcp add'}
-							</Button>
-							<form method="POST" action="?/mcpRegenerateToken" {@attach enhance(mcpTokenOpts)}>
-								<Button type="submit" disabled={savingMcpToken}>
-									{savingMcpToken ? 'Regenerating…' : 'Regenerate'}
-								</Button>
-							</form>
 						</div>
-						<code class="mcp-command">{mcpCommand}</code>
-						<code class="mcp-command">{codexMcpCommand}</code>
-						<p class="desc">
-							For Codex, keep CODEBAY_MCP_TOKEN in the environment whenever you launch the client.
-						</p>
+						<div class="mcp-snippet">
+							<div class="mcp-snippet-head">
+								<span class="mcp-snippet-name">Claude Code</span>
+								<Button
+									type="button"
+									size="sm"
+									ghost
+									icon={mcpCopied === 'command' ? Check : Copy}
+									onclick={() => copyMcp('command', mcpCommand)}
+								>
+									{mcpCopied === 'command' ? 'Copied' : 'Copy'}
+								</Button>
+							</div>
+							<code class="mcp-command">{mcpCommand}</code>
+						</div>
+						<div class="mcp-snippet">
+							<div class="mcp-snippet-head">
+								<span class="mcp-snippet-name">Codex</span>
+								<Button
+									type="button"
+									size="sm"
+									ghost
+									icon={mcpCopied === 'codex' ? Check : Copy}
+									onclick={() => copyMcp('codex', codexMcpCommand)}
+								>
+									{mcpCopied === 'codex' ? 'Copied' : 'Copy'}
+								</Button>
+							</div>
+							<code class="mcp-command">{codexMcpCommand}</code>
+							<p class="mcp-note">
+								Keep CODEBAY_MCP_TOKEN in the environment whenever you launch the client.
+							</p>
+						</div>
 						{#if mcpTokenError}
 							<div class="msg error">{mcpTokenError}</div>
 						{/if}
@@ -2762,10 +2801,49 @@
 		flex: 1;
 		min-width: 220px;
 	}
-	.mcp-actions {
+	/* The token, four buttons and two registration lines need the card's full width;
+	   squeezed into the right-hand column they wrapped to one button per line. */
+	.row.mcp-token-row {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 12px;
+	}
+	.mcp-fields {
 		display: flex;
-		flex-wrap: wrap;
+		flex-direction: column;
+		gap: 14px;
+		min-width: 0;
+	}
+	.mcp-head-actions {
+		display: flex;
+		flex: none;
 		gap: 6px;
+	}
+	.mcp-snippet {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		min-width: 0;
+	}
+	.mcp-snippet-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+	.mcp-snippet-name {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--ink-soft);
+	}
+	.mcp-note {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		line-height: 1.4;
+		color: var(--ink-faint);
 	}
 	/* The registration line is long and unbreakable, so it scrolls rather than widening the card. */
 	.mcp-command {
