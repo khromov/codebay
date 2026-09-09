@@ -31,13 +31,13 @@
 	] as const);
 
 	// The value word stays uniform because the tick/cross icon already conveys pass vs fail.
-	const checks = $derived.by((): { label: string; ok: boolean; value: string }[] => {
+	const checks = $derived.by((): { id: string; label: string; ok: boolean; value: string }[] => {
 		if (!health) return [];
 		const v = (ok: boolean) => ({ ok, value: ok ? 'OK' : '—' });
 		return [
-			{ label: FIXED_CHECKS[0], ...v(health.containerRunning) },
-			{ label: FIXED_CHECKS[1], ...v(health.codeServerAccessible) },
-			...health.injections.map((i) => ({ label: i.label, ...v(i.ok) }))
+			{ id: 'container-running', label: FIXED_CHECKS[0], ...v(health.containerRunning) },
+			{ id: 'surface-accessible', label: FIXED_CHECKS[1], ...v(health.codeServerAccessible) },
+			...health.injections.map((i) => ({ id: i.id, label: i.label, ...v(i.ok) }))
 		];
 	});
 
@@ -64,7 +64,7 @@
 	<div class="panel-bar">Health</div>
 	<div class="health">
 		{#if health}
-			{#each checks as check (check.label)}
+			{#each checks as check (check.id)}
 				<div class="hrow">
 					<span class="box {check.ok ? 'ok' : 'bad'}">
 						{#if check.ok}<Check size={12} strokeWidth={3} />{:else}<X

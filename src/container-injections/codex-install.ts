@@ -2,18 +2,23 @@ import { execInContainer, checkPresence } from '../lib/exec.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
 import { getOption, setOption } from '../lib/db.server.ts';
 
-// A standalone binary also works in project images without Node or with a root-owned npm prefix.
+export const COMPLETE_INSTALL_TEST = `b=$(command -v codex) && b=$(readlink -f "$b") && p=$(dirname "$(dirname "$b")") &&
+test -s "$p/codex-package.json" && test -x "$p/bin/codex-code-mode-host" &&
+test -x "$p/codex-path/rg" && test -x "$p/codex-resources/bwrap" && test -x "$p/codex-resources/zsh/bin/zsh"`;
+
+// The native package includes sibling helpers and resources that the standalone binary needs.
 export const INSTALL_SCRIPT = `set -e
 u="\${1:-\${_REMOTE_USER:-root}}"
 h="$(getent passwd "$u" | cut -d: -f6)"
 [ -n "$h" ] || h=/root
-if command -v codex >/dev/null 2>&1 && [ "\${CODEBAY_CODEX_UPDATE:-0}" != 1 ]; then exit 0; fi
-if command -v codex >/dev/null 2>&1; then
+complete_install() { ${COMPLETE_INSTALL_TEST}; }
+if complete_install; then
+ if [ "\${CODEBAY_CODEX_UPDATE:-0}" != 1 ]; then exit 0; fi
  current=$(codex --version 2>/dev/null | awk '{print $2}')
  if [ -z "\${CODEBAY_CODEX_VERSION:-}" ] || [ "$current" = "$CODEBAY_CODEX_VERSION" ]; then exit 0; fi
 fi
 case "$(uname -m)" in aarch64|arm64) arch=aarch64 ;; x86_64|amd64) arch=x86_64 ;; *) echo 'Unsupported Codex architecture' >&2; exit 1 ;; esac
-asset="codex-$arch-unknown-linux-musl"
+asset="codex-package-$arch-unknown-linux-musl"
 d=$(mktemp -d)
 trap 'rm -rf "$d"' EXIT
 url="https://github.com/openai/codex/releases/latest/download/$asset.tar.gz"
@@ -22,13 +27,22 @@ if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 10 --max-t
 elif command -v wget >/dev/null 2>&1; then wget -q -T 120 "$url" -O "$d/codex.tar.gz"
 else echo 'curl or wget is required to install Codex' >&2; exit 1; fi
 tar -xzf "$d/codex.tar.gz" -C "$d"
-"$d/$asset" --version
-mkdir -p "$h/.local/bin"
-chown "$u" "$h/.local" "$h/.local/bin"
-install -m 755 "$d/$asset" "$h/.local/bin/codex.next"
+"$d/bin/codex" --version
+test -x "$d/bin/codex-code-mode-host"
+test -s "$d/codex-package.json"
+test -x "$d/codex-path/rg"
+test -x "$d/codex-resources/bwrap"
+test -x "$d/codex-resources/zsh/bin/zsh"
+mkdir -p "$h/.local/bin" "$h/.local/share/codebay/codex"
+chown "$u" "$h/.local" "$h/.local/bin" "$h/.local/share" "$h/.local/share/codebay" "$h/.local/share/codebay/codex"
+package=$(mktemp -d "$h/.local/share/codebay/codex/release.XXXXXX")
+mv "$d/bin" "$d/codex-package.json" "$d/codex-path" "$d/codex-resources" "$package/"
+chown -R "$u" "$package"
+ln -sf "$package/bin/codex-code-mode-host" "$h/.local/bin/codex-code-mode-host"
+ln -sf "$package/bin/codex" "$h/.local/bin/codex.next"
 mv -f "$h/.local/bin/codex.next" "$h/.local/bin/codex"
-chown "$u" "$h/.local/bin/codex"
 ln -sf "$h/.local/bin/codex" /usr/local/bin/codex
+ln -sf "$h/.local/bin/codex-code-mode-host" /usr/local/bin/codex-code-mode-host
 `;
 
 async function latestVersion(): Promise<string | null> {
@@ -74,5 +88,9 @@ export const codexInstall: Injection = {
 				: `⚠ Codex download failed; keeping any installed version: ${result.error}\n`
 		);
 	},
-	check: (target) => checkPresence(target, 'codex --version >/dev/null 2>&1 && echo 1 || echo 0')
+	check: (target) =>
+		checkPresence(
+			target,
+			`{ ${COMPLETE_INSTALL_TEST}; } && codex --version >/dev/null 2>&1 && echo 1 || echo 0`
+		)
 };
