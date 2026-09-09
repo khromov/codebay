@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/khromov/codebay/compare/codebay-v0.14.0...codebay-v0.15.0) (2026-09-08)
+
+
+### Features
+
+* add an MCP server so agents can drive sandboxes ([#206](https://github.com/khromov/codebay/issues/206)) ([de7ae70](https://github.com/khromov/codebay/commit/de7ae70855c88f96fc222c88d3c63b694bd9117d))
+* support Windows with Docker Desktop ([#203](https://github.com/khromov/codebay/issues/203)) ([d7b9c31](https://github.com/khromov/codebay/commit/d7b9c3102d9a4e01fca1e4d6ebd8f292c9cbb4ed))
+
 ## [0.14.0](https://github.com/khromov/codebay/compare/codebay-v0.13.0...codebay-v0.14.0) (2026-09-03)
 
 
