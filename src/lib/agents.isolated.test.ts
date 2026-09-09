@@ -11,7 +11,7 @@ import { codexConfigPatch } from '../container-injections/codex-config.ts';
 import { managedCodexHooks } from '../container-injections/codex-attention-hooks.ts';
 import { hostFileNameFor } from './log-capture.server.ts';
 import { getAttention, setAttention, clearAttention } from './bridge.server.ts';
-import { codexConfigFile } from './codex-settings.server.ts';
+import { codexConfigFile, mergeCodexConfigValues } from './codex-settings.server.ts';
 import { writeFileScript } from './container-files.server.ts';
 
 const changed = new Set<string>();
@@ -132,6 +132,72 @@ test('Codex settings round-trip TOML and do not import host-specific paths or tr
 	expect(parsed.model_providers).toMatchObject({
 		codebay: { wire_api: 'responses', base_url: 'https://example.test/v1' }
 	});
+});
+
+test('persisted Codex overrides reset to host or built-in defaults on rebuild', () => {
+	const defaults = {
+		...getAgentSettings(),
+		codexModel: '',
+		codexEffort: 'default' as const,
+		codexVerbosity: 'default' as const,
+		codexEndpointEnabled: false,
+		codexBaseUrl: 'https://old.example.test/v1'
+	};
+	const unrelated = {
+		model_providers: { other: { name: 'Other', base_url: 'https://other.example.test/v1' } },
+		mcp_servers: { local: { command: 'local-tool' } },
+		projects: { '/other': { trust_level: 'trusted' } }
+	};
+	const persisted = parse(
+		stringify(
+			mergeCodexConfigValues(
+				unrelated,
+				codexConfigPatch(
+					{
+						...defaults,
+						codexModel: 'custom-model',
+						codexEffort: 'high',
+						codexVerbosity: 'high',
+						codexEndpointEnabled: true
+					},
+					{},
+					'/workspace'
+				)
+			)
+		)
+	);
+	expect(persisted.model_provider).toBe('codebay');
+	for (const host of [
+		{},
+		{
+			model: 'host-model',
+			model_reasoning_effort: 'low',
+			model_verbosity: 'low'
+		}
+	]) {
+		for (const settings of [
+			defaults,
+			{ ...defaults, codexEndpointEnabled: true, codexBaseUrl: ' ' }
+		]) {
+			const rebuilt = parse(
+				stringify(mergeCodexConfigValues(persisted, codexConfigPatch(settings, host, '/workspace')))
+			);
+			expect(rebuilt.model_provider).toBeUndefined();
+			expect(rebuilt.model_providers).toEqual(unrelated.model_providers);
+			for (const key of ['model', 'model_reasoning_effort', 'model_verbosity']) {
+				expect(rebuilt[key]).toBe((host as Record<string, string | undefined>)[key]);
+			}
+			expect(rebuilt.mcp_servers).toEqual(unrelated.mcp_servers);
+			expect(rebuilt.projects).toMatchObject(unrelated.projects);
+		}
+	}
+	expect(mergeCodexConfigValues({ model_provider: 'other', ...unrelated }, {})).toMatchObject({
+		model_provider: 'other',
+		...unrelated
+	});
+	expect(
+		mergeCodexConfigValues({ model_provider: 'codebay', model_providers: { codebay: {} } }, {})
+	).toEqual({});
 });
 
 test('custom Codex host directory is used instead of the actual user profile', () => {

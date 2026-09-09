@@ -30,8 +30,15 @@ export function installPopupBackTrap(): () => void {
 	if (!isPopupPage()) return () => {};
 	// A fresh popup tab has one history entry, so back is otherwise a no-op the
 	// browser just disables — push a duplicate so the first back press fires popstate.
-	history.pushState({}, '', location.href);
-	const onPop = () => closeOrGoHome();
+	const marker = `${Date.now()}-${Math.random()}`;
+	const initialState = history.state;
+	history.replaceState({ ...initialState, popupBackTrap: marker }, '', location.href);
+	history.pushState(initialState, '', location.href);
+	// Fragment navigation also fires popstate. Only the entry behind the initial
+	// popup page means the user is leaving; section links and their history stay open.
+	const onPop = (event: PopStateEvent) => {
+		if (event.state?.popupBackTrap === marker) closeOrGoHome();
+	};
 	window.addEventListener('popstate', onPop);
 	return () => window.removeEventListener('popstate', onPop);
 }

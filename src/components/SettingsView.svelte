@@ -913,14 +913,14 @@
 <div class="page">
 	<AppBar>
 		<span class="title">Settings</span>
-	</AppBar>
-
-	<main class="content">
 		<nav class="settings-nav" aria-label="Settings sections">
 			<a href="#general">General</a><a href="#agents">Agents</a><a href="#git-environment"
 				>Git & environment</a
 			><a href="#mcp">MCP</a><a href="#appearance">Appearance</a><a href="#advanced">Advanced</a>
 		</nav>
+	</AppBar>
+
+	<main class="content">
 		<h2 id="general">General</h2>
 		<section class="card">
 			<form
@@ -2386,24 +2386,63 @@
 <Toaster toastOptions={TOAST_OPTIONS} />
 
 <style>
+	@media (prefers-reduced-motion: no-preference) {
+		:global(html:has(.settings-nav)) {
+			scroll-behavior: smooth;
+		}
+	}
+
 	.settings-nav {
 		display: flex;
-		flex-wrap: wrap;
-		gap: 14px;
-		padding: 12px 0;
+		min-width: 0;
+		overflow-x: auto;
+		border-left: 1px solid var(--rule);
 	}
 	.settings-nav a {
-		color: var(--ink);
-		font-size: 12px;
+		display: inline-flex;
+		align-items: center;
+		flex: none;
+		padding: 0 14px;
+		border-right: 1px solid var(--rule);
+		color: var(--ink-soft);
+		font-family: var(--font-mono);
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		text-decoration: none;
+	}
+	.settings-nav a:hover {
+		background: var(--fill);
+		color: var(--fill-ink);
+	}
+	.settings-nav a:focus-visible {
+		outline: 2px solid var(--ink);
+		outline-offset: -3px;
+	}
+	h2,
+	h3 {
+		width: 100%;
+		max-width: 560px;
+		font-family: var(--font-mono);
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		scroll-margin-top: 24px;
 	}
 	h2 {
-		margin: 28px 0 14px;
-		font-size: 18px;
-		scroll-margin-top: 70px;
+		margin: 16px 0 0;
+		padding-bottom: 10px;
+		border-bottom: 1px solid var(--rule);
+		font-size: 12px;
+		color: var(--ink);
+	}
+	h2:first-child {
+		margin-top: 0;
 	}
 	h3 {
-		margin: 24px 0 14px;
-		font-size: 15px;
+		margin: 8px 0 0;
+		font-size: 11px;
+		color: var(--ink-soft);
 	}
 	.page {
 		display: flex;
@@ -2412,6 +2451,7 @@
 	}
 	.title {
 		display: inline-flex;
+		flex: none;
 		align-items: center;
 		padding: 0 14px;
 		font-family: var(--font-mono);
