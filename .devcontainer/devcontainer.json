@@ -10,9 +10,6 @@
 		// container's netns, which is the only place the proxy and health probes look.
 		"ghcr.io/devcontainers/features/docker-in-docker:2": { "moby": false }
 	},
-	// Keyed by devcontainerId so the image cache survives a rebuild without two dev containers
-	// ever pointing a daemon each at the same /var/lib/docker.
-	"mounts": ["source=codebay-dind-${devcontainerId},target=/var/lib/docker,type=volume"],
 	"forwardPorts": [6969],
 	"portsAttributes": {
 		"6969": {
