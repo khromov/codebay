@@ -417,6 +417,11 @@ describe('tmux injection scripts', () => {
 	test('conf binds a key to toggle mouse mode for copy/paste vs. scroll', () => {
 		expect(TMUX_CONF_LINES.some((line) => line.startsWith('bind m set -g mouse'))).toBe(true);
 	});
+
+	test('conf makes a copy reach the browser clipboard on any TERM', () => {
+		expect(TMUX_CONF_LINES).toContain('set -g set-clipboard on');
+		expect(TMUX_CONF_LINES).toContain("set -as terminal-overrides ',*:Ms=\\E]52;%p1%s;%p2%s\\007'");
+	});
 });
 
 describe('claude-code-ide-extension scripts', () => {

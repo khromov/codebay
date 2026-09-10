@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import '@xterm/xterm/css/xterm.css';
-	import type { Terminal } from '@xterm/xterm';
+	import type { IDisposable, Terminal } from '@xterm/xterm';
 	import type { FitAddon } from '@xterm/addon-fit';
 	import RotateCw from '@lucide/svelte/icons/rotate-cw';
+	import { parseOsc52 } from '../lib/osc52.ts';
 
 	let {
 		id,
@@ -26,6 +27,7 @@
 	let term: Terminal | undefined;
 	let fit: FitAddon | undefined;
 	let ws: WebSocket | undefined;
+	let osc52: IDisposable | undefined;
 	let retry: ReturnType<typeof setTimeout> | undefined;
 	let disposed = false;
 	let connected = $state(false);
@@ -140,6 +142,39 @@
 		term.options.theme = { background: bg, foreground: fg, cursor: fg, cursorAccent: bg };
 	}
 
+	/**
+	 * The async Clipboard API only exists in a secure context, and codebay is routinely reached
+	 * over plain http on a LAN address — so the deprecated path is the one that usually runs.
+	 */
+	async function writeClipboard(text: string) {
+		try {
+			if (navigator.clipboard?.writeText) return await navigator.clipboard.writeText(text);
+		} catch {
+			/* denied or unavailable — fall through */
+		}
+		// `execCommand` copies the *document* selection, so it needs a real element to select.
+		const scratch = document.createElement('textarea');
+		scratch.value = text;
+		scratch.setAttribute('readonly', '');
+		scratch.style.position = 'fixed';
+		scratch.style.opacity = '0';
+		const focused = document.activeElement as HTMLElement | null;
+		document.body.appendChild(scratch);
+		scratch.select();
+		let copied = false;
+		try {
+			// Returns false rather than throwing when the browser refuses (no transient user
+			// activation), so the result is the only signal that the copy went nowhere.
+			copied = document.execCommand('copy');
+		} catch {
+			/* nothing left to try */
+		}
+		if (!copied) console.warn('codebay: terminal copy was refused by the browser');
+		scratch.remove();
+		// Selecting the scratch textarea blurred the terminal mid-session; hand the caret back.
+		focused?.focus?.();
+	}
+
 	onMount(() => {
 		let themeObs: MutationObserver | undefined;
 		// In "auto" there is no data-theme attribute to mutate, so the OS preference
@@ -165,6 +200,13 @@
 			term.open(el);
 			applyTheme();
 			fitSafe();
+			// xterm ships no OSC 52 handling, so without this tmux's copy reaches nothing but
+			// tmux's own paste buffer. Always returns handled, or an unanswered query would print.
+			osc52 = term.parser.registerOscHandler(52, (data) => {
+				const text = parseOsc52(data);
+				if (text !== null) void writeClipboard(text);
+				return true;
+			});
 			term.onData((d) => send(CMD_INPUT + d));
 			term.onResize(({ cols, rows }) => send(CMD_RESIZE + JSON.stringify({ columns: cols, rows })));
 			// The theme cookie flips data-theme on <html>; re-derive xterm's colors when it does.
@@ -193,6 +235,7 @@
 			} catch {
 				/* already closing */
 			}
+			osc52?.dispose();
 			term?.dispose();
 		};
 	});

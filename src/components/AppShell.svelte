@@ -393,10 +393,13 @@
 								initialOpen={inst.terminal_split === 1}
 							/>
 						{:else}
+							<!-- code-server answers a terminal's OSC 52 through the Clipboard API, which
+							     Permissions Policy gates per-frame. -->
 							<iframe
 								bind:this={frames[inst.id]}
 								src={ideUrl(inst)}
 								title={inst.name}
+								allow="clipboard-read; clipboard-write"
 								onload={() => loadedFrames.add(inst.id)}
 							></iframe>
 						{/if}
