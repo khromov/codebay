@@ -978,11 +978,12 @@
 					<div class="label">
 						<ClipboardX size={20} />
 						<div class="text">
-							<div class="name">Copying out of a terminal won't work on this address</div>
+							<div class="name">Copying out of a terminal may not work on this address</div>
 							<div class="desc">
 								Browsers hand out clipboard access only on a secure origin, and
-								<code>{insecure.origin}</code> isn't one — so a terminal's copy silently reaches
-								nothing. Either open codebay through <code>localhost</code> (<code
+								<code>{insecure.origin}</code> isn't one — so a copy out of an instance's VS Code
+								terminal reaches nothing (codebay's own terminal falls back to a legacy copy that
+								usually still works). Either open codebay through <code>localhost</code> (<code
 									>{insecure.tunnel}</code
 								>), or allow this exact origin under
 								<code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>.

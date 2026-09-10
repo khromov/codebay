@@ -161,11 +161,15 @@
 		const focused = document.activeElement as HTMLElement | null;
 		document.body.appendChild(scratch);
 		scratch.select();
+		let copied = false;
 		try {
-			document.execCommand('copy');
+			// Returns false rather than throwing when the browser refuses (no transient user
+			// activation), so the result is the only signal that the copy went nowhere.
+			copied = document.execCommand('copy');
 		} catch {
 			/* nothing left to try */
 		}
+		if (!copied) console.warn('codebay: terminal copy was refused by the browser');
 		scratch.remove();
 		// Selecting the scratch textarea blurred the terminal mid-session; hand the caret back.
 		focused?.focus?.();
