@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
 	deleteForward,
+	deleteForwards,
 	deleteInstanceRow,
 	getInstance,
 	insertInstance,
@@ -20,6 +21,7 @@ const g = globalThis as unknown as { __codebayDocker?: Promise<unknown> };
 const TAKEN_HOST_PORT = 9999;
 
 let seq = 0;
+const seeded: string[] = [];
 
 function makeWorkspace(files: { devcontainer?: string; codebay?: string }): string {
 	const dir = mkdtempSync(join(tmpdir(), 'codebay-ports-'));
@@ -53,6 +55,7 @@ function seed(workspacePath: string): InstanceRow {
 		seeded_ports: null
 	};
 	insertInstance(row);
+	seeded.push(row.id);
 	return row;
 }
 
@@ -67,6 +70,11 @@ beforeEach(() => {
 
 afterEach(() => {
 	g.__codebayDocker = undefined;
+	// Nothing cascades off `instances`, so a leaked forward would break another file's usedPorts().
+	for (const id of seeded.splice(0)) {
+		deleteForwards(id);
+		deleteInstanceRow(id);
+	}
 });
 
 describe('seedProjectPorts', () => {
@@ -82,7 +90,6 @@ describe('seedProjectPorts', () => {
 			{ container_port: 5173, label: null },
 			{ container_port: 9229, label: 'debug' }
 		]);
-		deleteInstanceRow(row.id);
 	});
 
 	test('honours a pinned host port and falls back when it is taken', async () => {
@@ -94,7 +101,6 @@ describe('seedProjectPorts', () => {
 		const byPort = new Map(listForwards(row.id).map((f) => [f.container_port, f.host_port]));
 		expect(byPort.get(5173)).toBe(8123);
 		expect(byPort.get(3000)).not.toBe(TAKEN_HOST_PORT);
-		deleteInstanceRow(row.id);
 	});
 
 	test('a re-seed applies a renamed port without duplicating the forward', async () => {
@@ -104,7 +110,6 @@ describe('seedProjectPorts', () => {
 		writeFileSync(join(dir, 'codebay.json'), '{ "ports": { "3000": "api" } }', 'utf8');
 		await seedProjectPorts(getInstance(row.id)!);
 		expect(forwards(row.id)).toEqual([{ container_port: 3000, label: 'api' }]);
-		deleteInstanceRow(row.id);
 	});
 
 	test('a port removed by hand is not resurrected by the next re-seed', async () => {
@@ -114,7 +119,6 @@ describe('seedProjectPorts', () => {
 		deleteForward(row.id, 3000);
 		await seedProjectPorts(getInstance(row.id)!);
 		expect(forwards(row.id)).toEqual([]);
-		deleteInstanceRow(row.id);
 	});
 
 	test('a port newly added to codebay.json still arrives on the next re-seed', async () => {
@@ -131,7 +135,6 @@ describe('seedProjectPorts', () => {
 			{ container_port: 3000, label: 'web' },
 			{ container_port: 5173, label: 'vite' }
 		]);
-		deleteInstanceRow(row.id);
 	});
 
 	test('skips the mode’s reserved surface port', async () => {
@@ -139,6 +142,5 @@ describe('seedProjectPorts', () => {
 		const row = seed(dir);
 		await seedProjectPorts(row);
 		expect(forwards(row.id)).toEqual([]);
-		deleteInstanceRow(row.id);
 	});
 });
