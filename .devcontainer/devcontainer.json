@@ -5,7 +5,10 @@
 		"ghcr.io/shyim/devcontainers-features/bun:0": {},
 		"ghcr.io/devcontainers/features/github-cli:1": {},
 		"ghcr.io/devcontainers/features/node:1": {},
-		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
+		// A nested daemon, not the host's socket: instances booted in here publish into this
+		// container's netns, which is the only place the proxy and health probes look.
+		"ghcr.io/devcontainers/features/docker-in-docker:2": { "moby": false }
 	},
 	"forwardPorts": [6969],
 	"portsAttributes": {
