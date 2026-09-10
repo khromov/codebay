@@ -218,6 +218,7 @@
 				<ul class="port-list">
 					{#each forwards as f (f.container_port)}
 						<li>
+							{#if f.name}<span class="pname">{f.name}</span>{/if}
 							<span class="cp">:{f.container_port}</span>
 							<span class="arr">→</span>
 							<a href={forwardedPortUrl(f.host_port)} target="_blank" rel="noopener"
@@ -450,6 +451,11 @@
 		gap: 8px;
 		font-family: var(--font-mono);
 		font-size: 13px;
+	}
+	.port-list .pname {
+		background: var(--fill);
+		color: var(--fill-ink);
+		padding: 0 5px;
 	}
 	.port-list .cp {
 		font-weight: 600;

@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { PassThrough } from 'node:stream';
-import { deleteInstanceRow, insertInstance, setOption, type InstanceRow } from './db.server.ts';
+import {
+	deleteForwards,
+	deleteInstanceRow,
+	insertForward,
+	insertInstance,
+	setOption,
+	type InstanceRow
+} from './db.server.ts';
+import { registerSecretValue } from './secrets.server.ts';
 import {
 	invalidateSecretValues,
 	listInstances,
@@ -77,6 +85,7 @@ function seed(overrides: Partial<InstanceRow> = {}): InstanceRow {
 		mode: 'terminal',
 		terminal_split: 0,
 		config_migrated: 1,
+		seeded_ports: null,
 		...overrides
 	};
 	insertInstance(row);
@@ -276,6 +285,34 @@ describe('listInstances orphan recovery', () => {
 	});
 });
 
+describe('listInstances port serialization', () => {
+	test('a forward carries its codebay.json name to the client', async () => {
+		fakeDocker();
+		const row = seed();
+		insertForward({
+			instance_id: row.id,
+			container_port: 3000,
+			host_port: 8777,
+			created_at: Date.now(),
+			label: 'web'
+		});
+		insertForward({
+			instance_id: row.id,
+			container_port: 5173,
+			host_port: 8778,
+			created_at: Date.now(),
+			label: null
+		});
+		const listed = (await listInstances()).find((i) => i.id === row.id)!;
+		expect(listed.forwarded_ports).toEqual([
+			{ container_port: 3000, host_port: 8777, name: 'web', open: false },
+			{ container_port: 5173, host_port: 8778, name: null, open: false }
+		]);
+		deleteForwards(row.id);
+		deleteInstanceRow(row.id);
+	});
+});
+
 describe('redactSecrets', () => {
 	beforeEach(() => {
 		setOption('custom_env_vars_enabled', '0');
@@ -306,5 +343,10 @@ describe('redactSecrets', () => {
 		setOption('custom_env_vars', JSON.stringify([{ name: 'SHORT', value: 'ab' }]));
 		invalidateSecretValues();
 		expect(redactSecrets('ab about grab')).toBe('ab about grab');
+	});
+
+	test('masks a value registered at resolve time, such as a codebay.json override', () => {
+		registerSecretValue('resolved-from-host-env');
+		expect(redactSecrets('token=resolved-from-host-env')).toBe('token=••••');
 	});
 });
