@@ -13,6 +13,9 @@ export const PROJECT_CONFIG_FILE = 'codebay.json';
 /** Each maps to the *name* of a host-side variable, never to a value. */
 export type OverrideKey = 'claudeCodeToken' | 'githubToken' | 'gitUserName' | 'gitUserEmail';
 
+/** The two whose resolved value is a credential, so it must be redacted out of the boot log. */
+const SECRET_KEYS = new Set<OverrideKey>(['claudeCodeToken', 'githubToken']);
+
 export const OVERRIDE_KEYS: OverrideKey[] = [
 	'claudeCodeToken',
 	'githubToken',
@@ -106,7 +109,8 @@ function parsePorts(value: unknown, config: ProjectConfig): void {
 			config.warnings.push(`port ${containerPort} is reserved by Codebay; ignored`);
 			continue;
 		}
-		if (typeof name !== 'string' || !sanitizePortName(name)) {
+		const portName = typeof name === 'string' ? sanitizePortName(name) : '';
+		if (!portName) {
 			config.warnings.push(`port "${key}" needs a non-empty name; ignored`);
 			continue;
 		}
@@ -116,7 +120,7 @@ function parsePorts(value: unknown, config: ProjectConfig): void {
 		byContainerPort.set(containerPort, {
 			containerPort,
 			hostPort,
-			name: sanitizePortName(name)
+			name: portName
 		});
 	}
 	config.ports = [...byContainerPort.values()].sort((a, b) => a.containerPort - b.containerPort);
@@ -179,7 +183,9 @@ export async function projectOverride(
 	if (!varName) return null;
 	const value = resolveHostVar(varName);
 	if (!value) return null;
-	registerSecretValue(value);
+	// Only the token slots: registering a name/email would mask it everywhere it legitimately shows,
+	// including the boot line that reports the identity that was injected.
+	if (SECRET_KEYS.has(key)) registerSecretValue(value);
 	return { value, varName };
 }
 

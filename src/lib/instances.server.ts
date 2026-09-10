@@ -463,8 +463,11 @@ async function claimPinnedPort(
 	containerPort: number,
 	pinned: number
 ): Promise<number | null> {
+	// `reservedPorts` too: a concurrent boot may have handed this port out without inserting it yet.
 	const claimedElsewhere =
-		new Set(usedPorts()).has(pinned) || (await hostPortsInUse()).includes(pinned);
+		new Set(usedPorts()).has(pinned) ||
+		reservedPorts.has(pinned) ||
+		(await hostPortsInUse()).includes(pinned);
 	if (claimedElsewhere || !(await isHostPortBindable(pinned))) {
 		appendLog(
 			row.id,
@@ -472,6 +475,7 @@ async function claimPinnedPort(
 		);
 		return null;
 	}
+	reservedPorts.set(pinned, Date.now());
 	return pinned;
 }
 
