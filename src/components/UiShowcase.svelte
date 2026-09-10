@@ -150,6 +150,8 @@
 		Array.from({ length: portCount }, (_, i) => ({
 			container_port: 3000 + i,
 			host_port: 8001 + i,
+			// The first is named, so the chip's codebay.json treatment sits next to a bare one.
+			name: i === 0 ? 'web' : null,
 			open: i < openCount
 		}))
 	);

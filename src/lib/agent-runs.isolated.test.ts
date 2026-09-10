@@ -85,6 +85,7 @@ function seed(overrides: Partial<InstanceRow> = {}): InstanceRow {
 		mode: 'terminal',
 		terminal_split: 0,
 		config_migrated: 1,
+		seeded_ports: null,
 		...overrides
 	};
 	insertInstance(row);

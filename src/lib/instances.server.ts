@@ -24,6 +24,8 @@ import {
 	insertForward,
 	insertInstance,
 	listForwards,
+	setForwardHostPort,
+	setForwardLabel,
 	recordFolder,
 	updateInstance,
 	usedPorts,
@@ -56,14 +58,15 @@ import { writeContainerFile } from './container-files.server.ts';
 import { execInContainer, type ExecTarget } from './exec.server.ts';
 import { clearAttention, getAttention } from './bridge.server.ts';
 import { proxyPathFor } from './proxy.server.ts';
+import { readProjectConfig } from './project-config.server.ts';
+import { redactSecrets } from './secrets.server.ts';
 import { resolveInjectionStages } from './injections.server.ts';
 import { cloneRepo, readGitBranch } from './git.server.ts';
 import { isRepoUrl, parseRepoUrl } from './repo-url.ts';
+// Re-exported from their old home so `routes.ts` and the log tests keep one import path.
+export { invalidateSecretValues, redactSecrets } from './secrets.server.ts';
 import { getClaudePermissionMode } from '../container-injections/claude-permission-mode.ts';
-import {
-	customEnvVarsConfig,
-	customEnvVarValues
-} from '../container-injections/custom-env-vars.ts';
+import { customEnvVarsConfig } from '../container-injections/custom-env-vars.ts';
 import {
 	currentHealthSnapshots,
 	stopHealthMonitor,
@@ -82,6 +85,7 @@ import {
 	type Instance,
 	type InstanceFilter,
 	type InstanceHealth,
+	type PortForward,
 	type Theme
 } from '../types.ts';
 
@@ -93,8 +97,10 @@ const effectiveAvatarName = (row: InstanceRow): string => row.avatar ?? pickAvat
  * browser — every row handed to a route goes through here. Also resolves the avatar name so the
  * client renders by name (`findAvatar`) and never needs a hash function of its own.
  */
-export function sanitizeInstance(row: InstanceRow): Omit<InstanceRow, 'bridge_token'> {
-	const { bridge_token: _token, ...rest } = row;
+export function sanitizeInstance(
+	row: InstanceRow
+): Omit<InstanceRow, 'bridge_token' | 'seeded_ports'> {
+	const { bridge_token: _token, seeded_ports: _seeded, ...rest } = row;
 	return { ...rest, avatar: effectiveAvatarName(row) };
 }
 
@@ -134,34 +140,6 @@ function live(id: string): LiveState {
 		registry.set(id, state);
 	}
 	return state;
-}
-
-/**
- * Cached so the redaction on every log chunk doesn't re-read the DB. Rebuilt lazily after the
- * settings action invalidates it; values shorter than 4 chars are skipped so a trivially short
- * secret can't blank out unrelated log text, and longest-first avoids a short value masking a
- * substring of a longer one.
- */
-let secretValuesCache: string[] | null = null;
-
-function getSecretValues(): string[] {
-	if (secretValuesCache === null) {
-		secretValuesCache = customEnvVarValues()
-			.filter((v) => v.length >= 4)
-			.sort((a, b) => b.length - a.length);
-	}
-	return secretValuesCache;
-}
-
-/** Call after the custom-env-vars setting changes so newly-added values redact from the next boot. */
-export function invalidateSecretValues(): void {
-	secretValuesCache = null;
-}
-
-/** Exported for tests; the boot flow reaches it only through `appendLog`. */
-export function redactSecrets(text: string): string {
-	for (const value of getSecretValues()) text = text.split(value).join('••••');
-	return text;
 }
 
 function appendLog(id: string, chunk: string): void {
@@ -410,7 +388,6 @@ async function boot(row: InstanceRow, opts: { branch?: string } = {}): Promise<v
 			}
 			appendLog(row.id, `⏱ copy: ${elapsed(sourceStart)}\n`);
 		}
-		await seedDeclaredPorts(row);
 	} catch (err) {
 		inFlight.delete(row.id);
 		failInstance(row.id, err);
@@ -419,21 +396,87 @@ async function boot(row: InstanceRow, opts: { branch?: string } = {}): Promise<v
 	await provision(row);
 }
 
-/** Reads the project's own `devcontainer.json`, which the config injection never touches. */
-async function seedDeclaredPorts(row: InstanceRow): Promise<void> {
-	const existing = new Set(listForwards(row.id).map((f) => f.container_port));
-	for (const containerPort of await readDeclaredContainerPorts(row.workspace_path)) {
-		if (existing.has(containerPort)) continue;
-		const hostPort = await allocatePort();
-		insertForward({
-			instance_id: row.id,
-			container_port: containerPort,
-			host_port: hostPort,
-			created_at: Date.now()
-		});
-		existing.add(containerPort);
-		appendLog(row.id, `Forwarding declared port ${containerPort} → localhost:${hostPort}\n`);
+/**
+ * Merges the project's own `devcontainer.json` ports (which the config injection never touches) with
+ * the ones its `codebay.json` names. Runs on every provision, so an edit lands on the next restart.
+ */
+export async function seedProjectPorts(row: InstanceRow): Promise<void> {
+	const project = await readProjectConfig(row.workspace_path);
+	for (const warning of project.warnings) {
+		appendLog(row.id, `⚠ codebay.json ${warning}\n`);
 	}
+
+	const named = new Map(project.ports.map((p) => [p.containerPort, p]));
+	const declared = await readDeclaredContainerPorts(row.workspace_path);
+	const existing = new Map(listForwards(row.id).map((f) => [f.container_port, f]));
+	// Without this a port the user removed by hand would come back on the next restart; a row from
+	// before the column has no record, so treat whatever it already forwards as seeded.
+	const seeded = new Set<number>(
+		row.seeded_ports ? (JSON.parse(row.seeded_ports) as number[]) : [...existing.keys()]
+	);
+	// Republishing the surface port would put the unauthenticated editor/terminal outside the proxy.
+	const reserved = row.mode === 'terminal' ? TTYD_PORT : CODE_SERVER_PORT;
+
+	for (const containerPort of new Set([...declared, ...named.keys()])) {
+		if (containerPort === reserved) continue;
+		const spec = named.get(containerPort) ?? null;
+		const current = existing.get(containerPort);
+
+		if (current) {
+			if (spec?.hostPort && spec.hostPort !== current.host_port) {
+				const hostPort = await claimPinnedPort(row, containerPort, spec.hostPort);
+				if (hostPort !== null) {
+					setForwardHostPort(row.id, containerPort, hostPort);
+					appendLog(row.id, `Port ${containerPort} moved to localhost:${hostPort}\n`);
+				}
+			}
+			const label = spec?.name ?? null;
+			if (label !== current.label) setForwardLabel(row.id, containerPort, label);
+		} else if (!seeded.has(containerPort)) {
+			const pinned = spec?.hostPort
+				? await claimPinnedPort(row, containerPort, spec.hostPort)
+				: null;
+			const hostPort = pinned ?? (await allocatePort());
+			insertForward({
+				instance_id: row.id,
+				container_port: containerPort,
+				host_port: hostPort,
+				created_at: Date.now(),
+				label: spec?.name ?? null
+			});
+			appendLog(
+				row.id,
+				`Forwarding ${spec?.name ? `${spec.name} ` : 'declared '}port ${containerPort} → localhost:${hostPort}\n`
+			);
+		}
+		seeded.add(containerPort);
+	}
+
+	const json = JSON.stringify([...seeded]);
+	updateInstance(row.id, { seeded_ports: json });
+	row.seeded_ports = json;
+}
+
+/** Pinned host ports sit outside the allocator's pool, so a clash falls back rather than failing. */
+async function claimPinnedPort(
+	row: InstanceRow,
+	containerPort: number,
+	pinned: number
+): Promise<number | null> {
+	// `reservedPorts` too: a concurrent boot may have handed this port out without inserting it yet.
+	const claimedElsewhere =
+		new Set(usedPorts()).has(pinned) ||
+		reservedPorts.has(pinned) ||
+		(await hostPortsInUse()).includes(pinned);
+	if (claimedElsewhere || !(await isHostPortBindable(pinned))) {
+		appendLog(
+			row.id,
+			`⚠ codebay.json pins host port ${pinned} for :${containerPort}, but it is unavailable\n`
+		);
+		return null;
+	}
+	reservedPorts.set(pinned, Date.now());
+	return pinned;
 }
 
 const surfaceLabel = (mode: InstanceMode) =>
@@ -487,6 +530,10 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			await runCapturePass(row).catch(() => undefined);
 		}
 		await rescueHijackedPort(row);
+		// Re-read every provision, so editing devcontainer.json or codebay.json lands on a restart.
+		await seedProjectPorts(row).catch((err) =>
+			appendLog(row.id, `⚠ Could not read the project's port config: ${(err as Error).message}\n`)
+		);
 		const forwards = listForwards(row.id).map((f) => ({
 			container_port: f.container_port,
 			host_port: f.host_port
@@ -661,7 +708,8 @@ export async function createInstance(
 		mode: opts.mode ?? getDefaultMode(),
 		terminal_split: 0,
 		// Born under the separate-config scheme, so there is never a legacy injection to undo.
-		config_migrated: 1
+		config_migrated: 1,
+		seeded_ports: null
 	};
 	insertInstance(row);
 	// Strip the de-dup `#2` suffix so the recent-folders list keeps the base name.
@@ -708,15 +756,13 @@ export async function listInstances(): Promise<Instance[]> {
 	}
 	// One query for every sandbox rather than one per row, since this runs on every reconcile tick.
 	const runs = new Map(openRuns().map((run) => [run.instance_id, runSummary(run)]));
-	const forwards = new Map<
-		string,
-		{ container_port: number; host_port: number; open: boolean }[]
-	>();
+	const forwards = new Map<string, PortForward[]>();
 	for (const f of allForwards()) {
 		const list = forwards.get(f.instance_id) ?? [];
 		list.push({
 			container_port: f.container_port,
 			host_port: f.host_port,
+			name: f.label,
 			open: openPorts.get(f.instance_id)?.has(f.container_port) ?? false
 		});
 		forwards.set(f.instance_id, list);
@@ -776,11 +822,15 @@ export async function addForwardedPort(id: string, containerPort: number): Promi
 	if (listForwards(id).some((f) => f.container_port === containerPort)) {
 		throw new Error(`Port ${containerPort} is already forwarded`);
 	}
+	const named = (await readProjectConfig(row.workspace_path)).ports.find(
+		(p) => p.containerPort === containerPort
+	);
 	insertForward({
 		instance_id: id,
 		container_port: containerPort,
 		host_port: await allocatePort(),
-		created_at: Date.now()
+		created_at: Date.now(),
+		label: named?.name ?? null
 	});
 	triggerReconcile();
 	return getInstance(id)!;

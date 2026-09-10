@@ -13,11 +13,16 @@ const POSIX_SHELL_ONLY = process.platform === 'win32';
 import { injections, resolveInjections, resolveInjectionStages } from '../lib/injections.server.ts';
 import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings, hasAttentionHook } from './attention-hooks.ts';
-import { isValid, LIVE_CREDENTIALS_TEST, tokenCredentials } from './claude-code-credentials.ts';
+import {
+	isValid,
+	LIVE_CREDENTIALS_TEST,
+	locateClaudeCredentials,
+	tokenCredentials
+} from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
 import { gitIdentity, gitIdentityEnabled, readGitIdentity } from './git-identity.ts';
 import { manualModelConfig } from './claude-code-models.ts';
-import { ghHostBlock, parseGhHosts } from './github-credentials.ts';
+import { ghHostBlock, parseGhHosts, readGhToken } from './github-credentials.ts';
 import { hostEnvVarPresence, hostEnvVarsConfig, parseHostEnvVarNames } from './host-env-vars.ts';
 import { customEnvVarsConfig, customEnvVarValues, parseCustomEnvVars } from './custom-env-vars.ts';
 import { expandTilde, extractScriptPath } from './claude-statusline.ts';
@@ -1587,5 +1592,91 @@ describe.skipIf(POSIX_SHELL_ONLY)('code-server-dark', () => {
 		} finally {
 			rmSync(tmp, { recursive: true, force: true });
 		}
+	});
+});
+
+/**
+ * Every override names a host variable rather than carrying a value, so these drive the injections
+ * through a throwaway workspace holding a `codebay.json` plus one variable in this process's env.
+ */
+describe('codebay.json credential overrides', () => {
+	const VAR = 'CODEBAY_OVERRIDE_TEST';
+
+	function workspaceWith(overrides: Record<string, string>): string {
+		const dir = mkdtempSync(join(tmpdir(), 'codebay-override-'));
+		writeFileSync(join(dir, 'codebay.json'), JSON.stringify({ overrides }), 'utf8');
+		return dir;
+	}
+
+	beforeEach(() => {
+		setOption('manual_tokens_enabled', '0');
+		setOption('git_identity_enabled', '0');
+		delete Bun.env[VAR];
+	});
+
+	afterEach(() => {
+		setOption('manual_tokens_enabled', '0');
+		setOption('manual_github_token', '');
+		setOption('manual_claude_code_token', '');
+		setOption('git_identity_enabled', '');
+		setOption('git_identity_name', '');
+		setOption('git_identity_email', '');
+		delete Bun.env[VAR];
+	});
+
+	test('the GitHub token override beats the Settings manual token', async () => {
+		setOption('manual_tokens_enabled', '1');
+		setOption('manual_github_token', 'from-settings');
+		Bun.env[VAR] = 'from-repo';
+		const found = await readGhToken('github.com', workspaceWith({ githubToken: VAR }));
+		expect(found).toEqual({ token: 'from-repo', source: `codebay.json — ${VAR}` });
+	});
+
+	test('an override naming an unset variable falls through to the host credential', async () => {
+		setOption('manual_tokens_enabled', '1');
+		setOption('manual_github_token', 'from-settings');
+		const found = await readGhToken('github.com', workspaceWith({ githubToken: VAR }));
+		expect(found?.token).toBe('from-settings');
+	});
+
+	test('the override is scoped to github.com, so an Enterprise host still asks gh', async () => {
+		Bun.env[VAR] = 'from-repo';
+		const dir = workspaceWith({ githubToken: VAR });
+		expect((await readGhToken('ghe.example.com', dir))?.token).not.toBe('from-repo');
+	});
+
+	test('the Claude token override is wrapped as a credentials blob', async () => {
+		setOption('manual_tokens_enabled', '1');
+		setOption('manual_claude_code_token', 'from-settings');
+		Bun.env[VAR] = 'from-repo';
+		const found = await locateClaudeCredentials(workspaceWith({ claudeCodeToken: VAR }));
+		expect(found).toEqual({
+			creds: tokenCredentials('from-repo'),
+			source: `codebay.json — ${VAR}`
+		});
+	});
+
+	test('git name and email override independently of each other', async () => {
+		setOption('git_identity_enabled', '1');
+		setOption('git_identity_name', 'Jane Doe');
+		setOption('git_identity_email', 'jane@example.com');
+		Bun.env[VAR] = 'Mochi Bot';
+		expect(await readGitIdentity(workspaceWith({ gitUserName: VAR }))).toEqual({
+			name: 'Mochi Bot',
+			email: 'jane@example.com'
+		});
+		Bun.env[VAR] = 'bot@mochi.dev';
+		expect(await readGitIdentity(workspaceWith({ gitUserEmail: VAR }))).toEqual({
+			name: 'Jane Doe',
+			email: 'bot@mochi.dev'
+		});
+	});
+
+	test('a workspace with no codebay.json changes nothing', async () => {
+		setOption('git_identity_enabled', '1');
+		setOption('git_identity_name', 'Jane Doe');
+		setOption('git_identity_email', 'jane@example.com');
+		const dir = mkdtempSync(join(tmpdir(), 'codebay-override-'));
+		expect(await readGitIdentity(dir)).toEqual(await readGitIdentity());
 	});
 });
