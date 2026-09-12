@@ -48,11 +48,17 @@ export const APP_VERSION: string = (() => {
 	}
 })();
 
-/** Per-instance working copies live here: <INSTANCES_DIR>/<id>/workspace. */
+/** Per-instance state lives here: <INSTANCES_DIR>/<id>/<repo-or-folder-name> is the working copy. */
 export const INSTANCES_DIR = join(DATA_DIR, 'instances');
 
 /** Extracted Claude Code logs, in one flat folder that outlives the instances they came from. */
 export const LOGS_DIR = join(DATA_DIR, 'logs');
+
+/**
+ * The container's Claude config dir mirrored at its original layout, so it can be mounted back in
+ * after a rebuild. Sibling of the working copy, so it dies with the instance — unlike LOGS_DIR.
+ */
+export const claudeMirrorDir = (id: string): string => join(INSTANCES_DIR, id, 'claude');
 
 export const DB_PATH = join(DATA_DIR, 'app.sqlite');
 

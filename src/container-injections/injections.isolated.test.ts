@@ -1,5 +1,13 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,6 +21,7 @@ const POSIX_SHELL_ONLY = process.platform === 'win32';
 import { injections, resolveInjections, resolveInjectionStages } from '../lib/injections.server.ts';
 import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings, hasAttentionHook } from './attention-hooks.ts';
+import { restoreScript } from './claude-history.ts';
 import { isValid, LIVE_CREDENTIALS_TEST, tokenCredentials } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
 import { gitIdentity, gitIdentityEnabled, readGitIdentity } from './git-identity.ts';
@@ -216,6 +225,7 @@ describe('resolveInjectionStages — clobber safety', () => {
 		'claude-code-credentials': ['claude-credentials', 'claude-json'],
 		'claude-code-custom': ['claude-env-file', 'rc', 'claude-json'],
 		'claude-code-skills': ['claude-md', 'skills-dir'],
+		'claude-history': ['claude-projects-dir', 'claude-history-jsonl'],
 		'claude-code-ide-extension': ['extensions-dir'],
 		'code-server-dark': ['code-server-install', 'code-server-user-settings'],
 		'git-identity': ['gitconfig'],
@@ -416,6 +426,61 @@ describe('tmux injection scripts', () => {
 
 	test('conf binds a key to toggle mouse mode for copy/paste vs. scroll', () => {
 		expect(TMUX_CONF_LINES.some((line) => line.startsWith('bind m set -g mouse'))).toBe(true);
+	});
+});
+
+describe('claude-history restore script', () => {
+	let mount: string;
+	let cfg: string;
+
+	beforeEach(() => {
+		mount = mkdtempSync(join(tmpdir(), 'codebay-mirror-'));
+		cfg = mkdtempSync(join(tmpdir(), 'codebay-cfg-'));
+	});
+	afterEach(() => {
+		rmSync(mount, { recursive: true, force: true });
+		rmSync(cfg, { recursive: true, force: true });
+	});
+
+	function restore(): string {
+		const res = Bun.spawnSync(['bash', '-c', restoreScript(mount)], {
+			env: { ...process.env, CLAUDE_CONFIG_DIR: cfg }
+		});
+		const out = res.stdout.toString();
+		return out.slice(out.lastIndexOf('__CODEBAY_RESTORE__') + '__CODEBAY_RESTORE__'.length).trim();
+	}
+
+	function seed(rel: string, content: string, root = mount): void {
+		mkdirSync(join(root, rel, '..'), { recursive: true });
+		writeFileSync(join(root, rel), content);
+	}
+
+	test.skipIf(POSIX_SHELL_ONLY)('copies the mirrored tree into the config dir', () => {
+		seed('history.jsonl', 'h\n');
+		seed('projects/-workspaces-foo/s1.jsonl', 'line\n');
+		expect(restore()).toBe('2');
+		expect(readFileSync(join(cfg, 'history.jsonl'), 'utf8')).toBe('h\n');
+		expect(readFileSync(join(cfg, 'projects', '-workspaces-foo', 's1.jsonl'), 'utf8')).toBe(
+			'line\n'
+		);
+	});
+
+	test.skipIf(POSIX_SHELL_ONLY)('never clobbers a file the live container already has', () => {
+		seed('projects/enc/s1.jsonl', 'mirrored\n');
+		seed('projects/enc/s1.jsonl', 'live\n', cfg);
+		expect(restore()).toBe('0');
+		expect(readFileSync(join(cfg, 'projects', 'enc', 's1.jsonl'), 'utf8')).toBe('live\n');
+	});
+
+	test.skipIf(POSIX_SHELL_ONLY)('survives a project dir containing spaces', () => {
+		seed('projects/-workspaces-my project/s1.jsonl', 'x\n');
+		expect(restore()).toBe('1');
+		expect(existsSync(join(cfg, 'projects', '-workspaces-my project', 's1.jsonl'))).toBe(true);
+	});
+
+	test.skipIf(POSIX_SHELL_ONLY)('reports nothing restored when the mount is absent', () => {
+		rmSync(mount, { recursive: true, force: true });
+		expect(restore()).toBe('0');
 	});
 });
 
