@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InstanceRow } from './db.server.ts';
@@ -17,13 +17,30 @@ describe('parseManifest', () => {
 		const stdout = [
 			'profile banner',
 			'__CODEBAY_MANIFEST__',
+			'/h/.claude',
 			'/h/.claude/history.jsonl\t42',
 			'/h/.claude/projects/enc/s1.jsonl\t100'
 		].join('\n');
 		expect(parseManifest(stdout)).toEqual([
-			{ path: '/h/.claude/history.jsonl', size: 42 },
-			{ path: '/h/.claude/projects/enc/s1.jsonl', size: 100 }
+			{ path: '/h/.claude/history.jsonl', relPath: 'history.jsonl', size: 42 },
+			{
+				path: '/h/.claude/projects/enc/s1.jsonl',
+				relPath: 'projects/enc/s1.jsonl',
+				size: 100
+			}
 		]);
+	});
+
+	test('honours a CLAUDE_CONFIG_DIR that is not ~/.claude', () => {
+		const stdout = ['__CODEBAY_MANIFEST__', '/cfg/', '/cfg/projects/enc/s1.jsonl\t7'].join('\n');
+		expect(parseManifest(stdout)).toEqual([
+			{ path: '/cfg/projects/enc/s1.jsonl', relPath: 'projects/enc/s1.jsonl', size: 7 }
+		]);
+	});
+
+	test('drops a path outside the reported config dir rather than guessing its layout', () => {
+		const stdout = ['__CODEBAY_MANIFEST__', '/h/.claude', '/elsewhere/s1.jsonl\t7'].join('\n');
+		expect(parseManifest(stdout)).toEqual([]);
 	});
 
 	test('returns nothing when the marker is absent', () => {
@@ -42,16 +59,17 @@ describe('hostFileNameFor', () => {
 
 describe('planFetch', () => {
 	const manifest = [
-		{ path: '/c/.claude/history.jsonl', size: 50 },
-		{ path: '/c/.claude/projects/e/s.jsonl', size: 200 }
+		{ path: '/c/.claude/history.jsonl', relPath: 'history.jsonl', size: 50 },
+		{ path: '/c/.claude/projects/e/s.jsonl', relPath: 'projects/e/s.jsonl', size: 200 }
 	];
 
-	test('appends new bytes from the current host offset', () => {
-		const jobs = planFetch('id', manifest, (name) => (name === 'history-id.jsonl' ? 20 : 200));
+	test('sizes against the layout-preserving mirror, not the flat archive name', () => {
+		const jobs = planFetch('id', manifest, (rel) => (rel === 'history.jsonl' ? 20 : 200));
 		// history grew (append from byte 21); transcript unchanged (skipped).
 		expect(jobs).toEqual([
 			{
 				path: '/c/.claude/history.jsonl',
+				relPath: 'history.jsonl',
 				hostFileName: 'history-id.jsonl',
 				startByte: 21,
 				mode: 'append'
@@ -60,9 +78,10 @@ describe('planFetch', () => {
 	});
 
 	test('re-pulls a file that shrank below the host mirror', () => {
-		const jobs = planFetch('id', manifest, (name) => (name === 'transcript-id-s.jsonl' ? 999 : 50));
+		const jobs = planFetch('id', manifest, (rel) => (rel === 'projects/e/s.jsonl' ? 999 : 50));
 		expect(jobs).toContainEqual({
 			path: '/c/.claude/projects/e/s.jsonl',
+			relPath: 'projects/e/s.jsonl',
 			hostFileName: 'transcript-id-s.jsonl',
 			startByte: 1,
 			mode: 'rollover'
@@ -110,11 +129,13 @@ function row(overrides: Partial<InstanceRow> = {}): InstanceRow {
 	} as InstanceRow;
 }
 
+const CFG = '/home/node/.claude';
+
 /** A fake `execInContainer` backed by an in-memory container filesystem. */
 function fakeExec(files: Map<string, Buffer>): typeof execInContainer {
 	return (async (_target, opts) => {
 		if (opts.script.includes('__CODEBAY_MANIFEST__')) {
-			const lines = ['boot noise', '__CODEBAY_MANIFEST__'];
+			const lines = ['boot noise', '__CODEBAY_MANIFEST__', CFG];
 			for (const [path, buf] of files) lines.push(`${path}\t${buf.length}`);
 			return { ok: true, stdout: lines.join('\n') };
 		}
@@ -135,32 +156,45 @@ function fakeExec(files: Map<string, Buffer>): typeof execInContainer {
 
 describe('runCapturePass', () => {
 	let logsDir: string;
+	let mirrorDir: string;
 	afterEach(() => {
 		if (logsDir) rmSync(logsDir, { recursive: true, force: true });
+		if (mirrorDir) rmSync(mirrorDir, { recursive: true, force: true });
 	});
 
-	const HIST = '/home/node/.claude/history.jsonl';
-	const SESS = '/home/node/.claude/projects/enc/s1.jsonl';
+	function dirs() {
+		logsDir = mkdtempSync(join(tmpdir(), 'codebay-logs-'));
+		mirrorDir = mkdtempSync(join(tmpdir(), 'codebay-mirror-'));
+	}
+
+	const HIST = `${CFG}/history.jsonl`;
+	const SESS = `${CFG}/projects/enc/s1.jsonl`;
 
 	test('mirrors files, appends incrementally, rolls over on shrink, and indexes', async () => {
-		logsDir = mkdtempSync(join(tmpdir(), 'codebay-logs-'));
+		dirs();
 		const files = new Map<string, Buffer>([
 			[HIST, Buffer.from('h1\n')],
 			[SESS, Buffer.from('line1\nline2\n')]
 		]);
-		const deps = { exec: fakeExec(files), logsDir };
+		const deps = { exec: fakeExec(files), logsDir, mirrorDir };
 		const histPath = join(logsDir, 'history-inst1.jsonl');
 		const sessPath = join(logsDir, 'transcript-inst1-s1.jsonl');
+
+		const mirroredSess = join(mirrorDir, 'projects', 'enc', 's1.jsonl');
 
 		// First pass: full copy of both files.
 		await runCapturePass(row(), deps);
 		expect(readFileSync(histPath, 'utf8')).toBe('h1\n');
 		expect(readFileSync(sessPath, 'utf8')).toBe('line1\nline2\n');
+		// The mirror keeps the container's own layout, so it can be mounted straight back in.
+		expect(readFileSync(join(mirrorDir, 'history.jsonl'), 'utf8')).toBe('h1\n');
+		expect(readFileSync(mirroredSess, 'utf8')).toBe('line1\nline2\n');
 
 		// Container transcript grows: only the delta is appended.
 		files.set(SESS, Buffer.from('line1\nline2\nline3\n'));
 		await runCapturePass(row(), deps);
 		expect(readFileSync(sessPath, 'utf8')).toBe('line1\nline2\nline3\n');
+		expect(readFileSync(mirroredSess, 'utf8')).toBe('line1\nline2\nline3\n');
 
 		// Container transcript shrinks (rebuild): the mirror is archived, not overwritten.
 		files.set(SESS, Buffer.from('fresh\n'));
@@ -169,6 +203,9 @@ describe('runCapturePass', () => {
 		expect(readFileSync(join(logsDir, 'transcript-inst1-s1.1.jsonl'), 'utf8')).toBe(
 			'line1\nline2\nline3\n'
 		);
+		// The mirror tracks the container instead, so it is replaced rather than archived.
+		expect(readFileSync(mirroredSess, 'utf8')).toBe('fresh\n');
+		expect(existsSync(join(mirrorDir, 'projects', 'enc', 's1.1.jsonl'))).toBe(false);
 
 		// A second rebuild archives alongside the first rather than clobbering it.
 		files.set(SESS, Buffer.from('r2\n'));
@@ -186,30 +223,32 @@ describe('runCapturePass', () => {
 	});
 
 	test('is a no-op that still indexes when there are no Claude files', async () => {
-		logsDir = mkdtempSync(join(tmpdir(), 'codebay-logs-'));
-		await runCapturePass(row(), { exec: fakeExec(new Map()), logsDir });
+		dirs();
+		await runCapturePass(row(), { exec: fakeExec(new Map()), logsDir, mirrorDir });
 		const index = JSON.parse(readFileSync(join(logsDir, 'index.json'), 'utf8'));
 		expect(index.inst1).toBeDefined();
 	});
 
 	test('does nothing without a container id', async () => {
-		logsDir = mkdtempSync(join(tmpdir(), 'codebay-logs-'));
+		dirs();
 		let called = false;
 		const exec = (async () => {
 			called = true;
 			return { ok: true, stdout: '' };
 		}) as typeof execInContainer;
-		expect(await runCapturePass(row({ container_id: null }), { exec, logsDir })).toBe(false);
+		expect(await runCapturePass(row({ container_id: null }), { exec, logsDir, mirrorDir })).toBe(
+			false
+		);
 		expect(called).toBe(false);
 	});
 
 	test('reports a failed pass so the capture chain can self-terminate', async () => {
-		logsDir = mkdtempSync(join(tmpdir(), 'codebay-logs-'));
+		dirs();
 		const exec = (async () => ({
 			ok: false,
 			stdout: '',
 			error: 'no such container'
 		})) as typeof execInContainer;
-		expect(await runCapturePass(row(), { exec, logsDir })).toBe(false);
+		expect(await runCapturePass(row(), { exec, logsDir, mirrorDir })).toBe(false);
 	});
 });
