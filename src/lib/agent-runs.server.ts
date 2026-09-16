@@ -40,6 +40,7 @@ import {
 	type ClaudePermissionMode
 } from '../types.ts';
 import {
+	STRUCTURED_OUTPUT_FAILED_ERROR,
 	emptyRunState,
 	parseRunTimeline,
 	readRunChunk,
@@ -312,6 +313,9 @@ export function runDetail(row: AgentRunRow) {
 		structured_output: row.structured_output
 			? (JSON.parse(row.structured_output) as unknown)
 			: null,
+		rejected_structured_output: row.rejected_structured_output
+			? (JSON.parse(row.rejected_structured_output) as unknown)
+			: null,
 		is_error: row.is_error === 1,
 		error: row.error,
 		exit_code: row.exit_code,
@@ -537,15 +541,21 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 				is_error: failed ? 1 : 0,
 				result: state.result,
 				structured_output: state.structuredOutput,
+				rejected_structured_output: state.rejectedStructuredOutput,
 				duration_ms: state.durationMs ?? (row.started_at ? Date.now() - row.started_at : null),
 				num_turns: state.numTurns,
 				cost_usd: state.costUsd,
 				session_id: state.sessionId,
 				model: state.model,
 				last_activity: state.lastActivity,
-				// The stream's own result text is the better message when claude exited cleanly but
-				// reported a failure; stderr only carries anything when it crashed outright.
-				error: failed ? stderr || state.result || `claude exited ${exitCode}` : null
+				// A schema failure gets its own marker so a caller can tell "answered but the payload
+				// never validated" (result holds that answer) from "claude crashed"; otherwise the
+				// stream's own result text beats stderr, which only fills in on an outright crash.
+				error: failed
+					? state.structuredOutputFailed
+						? STRUCTURED_OUTPUT_FAILED_ERROR
+						: stderr || state.result || `claude exited ${exitCode}`
+					: null
 			});
 			return;
 		}
@@ -614,6 +624,7 @@ export function startRun(
 		options: JSON.stringify(opts),
 		result: null,
 		structured_output: null,
+		rejected_structured_output: null,
 		last_activity: null,
 		is_error: 0,
 		exit_code: null,

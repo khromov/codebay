@@ -3,6 +3,15 @@
  * Node/Bun APIs so it can be unit-tested on its own.
  */
 
+/** Claude Code's terminal subtype when every `--json-schema` attempt failed validation. */
+const STRUCTURED_OUTPUT_RETRY_SUBTYPE = 'error_max_structured_output_retries';
+
+/** The tool Claude Code calls to hand back a `--json-schema` payload. */
+const STRUCTURED_OUTPUT_TOOL = 'StructuredOutput';
+
+/** A run's `error` when the agent answered but its schema payload never validated. */
+export const STRUCTURED_OUTPUT_FAILED_ERROR = 'structured_output_failed';
+
 /** Everything the run row needs, accumulated across chunks. */
 export interface RunStreamState {
 	sessionId: string | null;
@@ -15,6 +24,14 @@ export interface RunStreamState {
 	result: string | null;
 	/** Serialized `structured_output`, present only when the caller passed a `--json-schema`. */
 	structuredOutput: string | null;
+	/** The last untruncated main-loop text block — the answer to fall back on when the schema fails. */
+	lastAssistantText: string | null;
+	/** Serialized input of the latest `StructuredOutput` call, whether or not it was accepted. */
+	lastStructuredOutputInput: string | null;
+	/** Set on the terminal event: the payload the schema rejected, for a caller to salvage. */
+	rejectedStructuredOutput: string | null;
+	/** True when the run died on `--json-schema` retry exhaustion rather than a crash. */
+	structuredOutputFailed: boolean;
 	isError: boolean;
 	/** True once the terminal `result` event has been seen, whatever its subtype. */
 	resultSeen: boolean;
@@ -30,6 +47,10 @@ export function emptyRunState(): RunStreamState {
 		durationMs: null,
 		result: null,
 		structuredOutput: null,
+		lastAssistantText: null,
+		lastStructuredOutputInput: null,
+		rejectedStructuredOutput: null,
+		structuredOutputFailed: false,
 		isError: false,
 		resultSeen: false
 	};
@@ -123,6 +144,17 @@ function applyEvent(state: RunStreamState, event: StreamEvent): void {
 	if (event.type === 'assistant' && Array.isArray(event.message?.content)) {
 		// Subagent chatter would otherwise drown out what the main loop is doing.
 		if (event.parent_tool_use_id != null) return;
+		for (const block of event.message.content) {
+			if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
+				state.lastAssistantText = block.text.trim();
+			} else if (
+				block.type === 'tool_use' &&
+				block.name === STRUCTURED_OUTPUT_TOOL &&
+				block.input
+			) {
+				state.lastStructuredOutputInput = JSON.stringify(block.input);
+			}
+		}
 		const activity = activityFromBlocks(event.message.content);
 		if (activity) state.lastActivity = activity;
 		return;
@@ -134,6 +166,13 @@ function applyEvent(state: RunStreamState, event: StreamEvent): void {
 		if (typeof event.result === 'string') state.result = event.result;
 		if (event.structured_output !== undefined && event.structured_output !== null) {
 			state.structuredOutput = JSON.stringify(event.structured_output);
+		}
+		if (event.subtype === STRUCTURED_OUTPUT_RETRY_SUBTYPE) {
+			state.structuredOutputFailed = true;
+			// Retries only run out once every attempt was rejected, so the latest one is a rejected one.
+			state.rejectedStructuredOutput = state.lastStructuredOutputInput;
+			// Claude Code leaves `result` empty on this subtype, throwing away an answer it did give.
+			if (!state.result?.trim()) state.result = state.lastAssistantText;
 		}
 		if (typeof event.num_turns === 'number') state.numTurns = event.num_turns;
 		if (typeof event.total_cost_usd === 'number') state.costUsd = event.total_cost_usd;
@@ -213,7 +252,8 @@ function timelineFromEvent(event: StreamEvent): RunTimelineEntry[] {
 		return [
 			{
 				kind: 'result',
-				text: truncate(event.result ?? event.subtype ?? 'finished', TIMELINE_MAX),
+				// A failed subtype often carries an empty `result`, which would render a blank row.
+				text: truncate(event.result?.trim() || event.subtype || 'finished', TIMELINE_MAX),
 				isError
 			}
 		];

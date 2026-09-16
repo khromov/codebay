@@ -14,6 +14,7 @@ import {
 import {
 	PROMPT_MAX_BYTES,
 	pollRunNow,
+	runDetail,
 	runMirrorPath,
 	startRun,
 	stopRun
@@ -305,6 +306,45 @@ describe('polling', () => {
 		expect(done?.status).toBe('error');
 		expect(done?.is_error).toBe(1);
 		expect(done?.error).toContain('claude: not found');
+		rmSync(runMirrorPath(run.id), { force: true });
+	});
+
+	test('a schema failure keeps the answer and gets its own error, not the exit code', async () => {
+		// The reported run: claude answers in plain text, every StructuredOutput call is refused, and
+		// claude exits 1 with an empty result — which used to reach the caller as "claude exited 1".
+		const rejected = { branch: 'main', what_i_was_doing: 'Added the embed.</what_i_was_doing>' };
+		const stream =
+			line({
+				type: 'assistant',
+				message: { content: [{ type: 'text', text: 'Nothing to wrap up.' }] }
+			}) +
+			line({
+				type: 'assistant',
+				message: { content: [{ type: 'tool_use', name: 'StructuredOutput', input: rejected }] }
+			}) +
+			line({
+				type: 'result',
+				subtype: 'error_max_structured_output_retries',
+				is_error: true,
+				result: '',
+				num_turns: 8,
+				total_cost_usd: 0.75
+			});
+		fakeDocker([pollReply({ exit: '1', alive: '0', stream })]);
+		const inst = seed();
+		created.push(inst.id);
+		const run = startRun(inst, 'go');
+		await pollRunNow(run.id);
+
+		const done = await pollRunNow(run.id);
+		expect(done?.status).toBe('error');
+		expect(done?.is_error).toBe(1);
+		expect(done?.exit_code).toBe(1);
+		expect(done?.error).toBe('structured_output_failed');
+		expect(done?.result).toBe('Nothing to wrap up.');
+		expect(done?.structured_output).toBeNull();
+		expect(JSON.parse(done!.rejected_structured_output!)).toEqual(rejected);
+		expect(runDetail(done!).rejected_structured_output).toEqual(rejected);
 		rmSync(runMirrorPath(run.id), { force: true });
 	});
 
