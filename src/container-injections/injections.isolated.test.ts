@@ -409,13 +409,16 @@ describe('tmux injection scripts', () => {
 		}
 	});
 
-	test('conf leaves the mouse to the browser so drag-select copies natively, and hides the status bar', () => {
-		expect(TMUX_CONF_LINES).toContain('set -g mouse off');
-		expect(TMUX_CONF_LINES).not.toContain('set -g mouse on');
+	test('conf enables mouse scrollback and hides the status bar', () => {
+		expect(TMUX_CONF_LINES).toContain('set -g mouse on');
 		expect(TMUX_CONF_LINES).toContain('set -g status off');
 	});
 
-	test('conf binds a key to toggle mouse mode on for wheel-scroll', () => {
+	test('conf sends copies to the host clipboard via OSC 52, which TerminalPane decodes', () => {
+		expect(TMUX_CONF_LINES).toContain('set -g set-clipboard on');
+	});
+
+	test('conf binds a key to toggle mouse mode for copy/paste vs. scroll', () => {
 		expect(TMUX_CONF_LINES.some((line) => line.startsWith('bind m set -g mouse'))).toBe(true);
 	});
 });
