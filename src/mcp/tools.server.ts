@@ -2,13 +2,27 @@ import * as v from 'valibot';
 import type { McpServer } from 'tmcp';
 import { tool } from 'tmcp/utils';
 import {
+	addForwardedPort,
 	createInstance,
 	deleteInstance,
 	listInstances,
+	rebuildInstance,
+	removeForwardedPort,
+	renameInstance,
 	sanitizeInstance,
+	startInstance,
+	stopInstance,
 	subscribeLogs
 } from '../lib/instances.server.ts';
-import { getInstance, getRun, listRuns, type AgentRunRow } from '../lib/db.server.ts';
+import {
+	getInstance,
+	getRun,
+	listForwards,
+	listRuns,
+	openRunFor,
+	type AgentRunRow,
+	type InstanceRow
+} from '../lib/db.server.ts';
 import {
 	PROMPT_MAX_BYTES,
 	pollRunNow,
@@ -36,21 +50,34 @@ const MAX_WAIT_SECONDS = 60;
 
 const sandboxId = v.pipe(v.string(), v.minLength(1), v.description('The sandbox id.'));
 
+const containerPort = v.pipe(
+	v.number(),
+	v.integer(),
+	v.minValue(1),
+	v.maxValue(65535),
+	v.description('The port inside the container.')
+);
+
 function requireInstance(id: string) {
 	const row = getInstance(id);
 	if (!row) throw new Error(`No sandbox with id ${id}`);
 	return row;
 }
 
+/** A boot owns its row until the last injection lands, so nothing else may move it before then. */
+function requireSettled(id: string) {
+	const row = requireInstance(id);
+	if (row.status === 'creating') {
+		throw new Error('the sandbox is still building — poll get_sandbox until status is "running"');
+	}
+	return row;
+}
+
 /** Every tool that touches the container needs one that is actually up. */
 function requireRunning(id: string) {
-	const row = requireInstance(id);
+	const row = requireSettled(id);
 	if (!row.container_id || row.status !== 'running') {
-		throw new Error(
-			row.status === 'creating'
-				? 'the sandbox is still building — poll get_sandbox until status is "running"'
-				: `the sandbox is ${row.status}, not running`
-		);
+		throw new Error(`the sandbox is ${row.status}, not running`);
 	}
 	return row;
 }
@@ -58,14 +85,31 @@ function requireRunning(id: string) {
 /** The IDE link is what makes a sandbox inspectable by a human, so every sandbox payload carries it. */
 const ideUrl = (id: string) => `${PUBLIC_ORIGIN}${proxyPathFor(id)}`;
 
-function sandboxPayload(row: ReturnType<typeof requireInstance>) {
-	return { ...sanitizeInstance(row), ide_url: ideUrl(row.id) };
+const healthFor = (id: string) => currentHealthSnapshots().find((s) => s.id === id)?.health ?? null;
+
+/** Forwards ride along because add/remove_port_forward hand back the sandbox as their receipt. */
+function sandboxPayload(row: InstanceRow) {
+	const open = new Set(healthFor(row.id)?.openPorts ?? []);
+	return {
+		...sanitizeInstance(row),
+		ide_url: ideUrl(row.id),
+		forwarded_ports: listForwards(row.id).map((f) => ({
+			container_port: f.container_port,
+			host_port: f.host_port,
+			open: open.has(f.container_port)
+		}))
+	};
 }
 
 /** The prompt is left out: the caller wrote it, and it can be as large as the carrier allows. */
 function runPayload(run: AgentRunRow) {
 	const { id, instance_id, prompt: _prompt, ...detail } = runDetail(run);
 	return { run_id: id, sandbox_id: instance_id, ...detail };
+}
+
+/** The run a stop/rebuild settled, re-read after the fact so the caller sees it as cancelled. */
+function cancelledRun(open: AgentRunRow | null) {
+	return open ? runPayload(getRun(open.id)!) : null;
 }
 
 /**
@@ -224,11 +268,10 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 		},
 		async (input) => {
 			const row = requireInstance(input.sandbox_id);
-			const health = currentHealthSnapshots().find((s) => s.id === row.id)?.health ?? null;
 			const runs = listRuns(row.id, 5);
 			return {
 				sandbox: sandboxPayload(row),
-				health,
+				health: healthFor(row.id),
 				runs: runs.map(runPayload)
 			};
 		}
@@ -246,6 +289,125 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			requireInstance(input.sandbox_id);
 			await deleteInstance(input.sandbox_id);
 			return { deleted: input.sandbox_id };
+		}
+	);
+
+	define(
+		{
+			name: 'stop_sandbox',
+			description:
+				'Stop a sandbox’s container without destroying it: the workspace, its files and its run ' +
+				'history are kept, and start_sandbox brings it back. Any active run is cancelled first, ' +
+				'the same way the dashboard’s Stop does, and comes back as cancelled_run so the ' +
+				'cancellation is never silent. Synchronous: the returned sandbox already has its new ' +
+				'status ("stopped", or "error" with the reason if Docker refused).',
+			schema: v.object({ sandbox_id: sandboxId })
+		},
+		async (input) => {
+			const row = requireSettled(input.sandbox_id);
+			if (!row.container_id) throw new Error('the sandbox has no container to stop');
+			const open = openRunFor(row.id);
+			const sandbox = sandboxPayload(await stopInstance(row.id));
+			return { sandbox, cancelled_run: cancelledRun(open) };
+		}
+	);
+
+	define(
+		{
+			name: 'start_sandbox',
+			description:
+				'Start a stopped sandbox’s container again. Synchronous, unlike create_sandbox: it ' +
+				'returns once Docker has started the container, with status already "running" (or ' +
+				'"error", with the reason in `error`), so there is nothing to poll for the status itself. ' +
+				'The editor surface inside takes a few more seconds to come up; get_sandbox’s ' +
+				'health.codeServerAccessible reports when it has. run_agent, exec_command and the file ' +
+				'tools work as soon as status is "running".',
+			schema: v.object({ sandbox_id: sandboxId })
+		},
+		async (input) => {
+			requireSettled(input.sandbox_id);
+			return { sandbox: sandboxPayload(await startInstance(input.sandbox_id)) };
+		}
+	);
+
+	define(
+		{
+			name: 'rebuild_sandbox',
+			description:
+				'Recreate a sandbox’s container from its devcontainer config while keeping the workspace ' +
+				'copy, so files edited inside survive. This is what applies add_port_forward / ' +
+				'remove_port_forward and re-runs the Codebay injections (credentials, hooks). Any active ' +
+				'run is cancelled and comes back as cancelled_run. Returns immediately with status ' +
+				'"creating" while the build runs in the background; poll get_sandbox until status is ' +
+				'"running" (or "error" — get_logs kind "boot" says why).',
+			schema: v.object({
+				sandbox_id: sandboxId,
+				no_cache: v.optional(
+					v.pipe(v.boolean(), v.description('Rebuild the image without Docker’s build cache.'))
+				)
+			})
+		},
+		(input) => {
+			const row = requireSettled(input.sandbox_id);
+			const open = openRunFor(row.id);
+			const sandbox = sandboxPayload(rebuildInstance(row.id, { noCache: input.no_cache }));
+			return {
+				sandbox,
+				cancelled_run: cancelledRun(open),
+				note: 'The sandbox is rebuilding. Poll get_sandbox until status is "running".'
+			};
+		}
+	);
+
+	define(
+		{
+			name: 'rename_sandbox',
+			description:
+				'Rename a sandbox. Names are unique, so a clash gets a " #2"-style suffix; the returned ' +
+				'sandbox carries the name actually applied.',
+			schema: v.object({ sandbox_id: sandboxId, name: v.pipe(v.string(), v.minLength(1)) })
+		},
+		(input) => {
+			requireInstance(input.sandbox_id);
+			return { sandbox: sandboxPayload(renameInstance(input.sandbox_id, input.name)) };
+		}
+	);
+
+	define(
+		{
+			name: 'add_port_forward',
+			description:
+				'Publish a port inside the sandbox (e.g. a dev server an agent started) on a host port of ' +
+				'the Codebay host, so a human can open it; Codebay picks the host port. Only persisted ' +
+				'here: the mapping goes live on the next rebuild_sandbox, and forwarded_ports[].open on ' +
+				'get_sandbox shows once something is listening behind it.',
+			schema: v.object({ sandbox_id: sandboxId, port: containerPort })
+		},
+		async (input) => {
+			requireInstance(input.sandbox_id);
+			const sandbox = sandboxPayload(await addForwardedPort(input.sandbox_id, input.port));
+			return {
+				sandbox,
+				forward: sandbox.forwarded_ports.find((f) => f.container_port === input.port) ?? null,
+				note: 'Forwards are applied by rebuild_sandbox; the port is not published until then.'
+			};
+		}
+	);
+
+	define(
+		{
+			name: 'remove_port_forward',
+			description:
+				'Drop a forwarded port. Like add_port_forward this only updates the persisted set; the ' +
+				'mapping is actually unpublished by the next rebuild_sandbox.',
+			schema: v.object({ sandbox_id: sandboxId, port: containerPort })
+		},
+		(input) => {
+			requireInstance(input.sandbox_id);
+			return {
+				sandbox: sandboxPayload(removeForwardedPort(input.sandbox_id, input.port)),
+				note: 'Forwards are applied by rebuild_sandbox; the port stays published until then.'
+			};
 		}
 	);
 
