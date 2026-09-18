@@ -45,8 +45,11 @@ it is the one place that does not use `BASIC_AUTH_PASSWORD` — MCP clients send
 
 The tools cover the whole loop: `create_sandbox`, `run_agent`, `get_run`, `list_runs`, `stop_run`,
 `get_diff`, `read_file`, `write_file`, `exec_command`, `git_push`, `create_pr`, `get_logs`,
-`list_sandboxes`, `get_sandbox` and `delete_sandbox`. Runs are asynchronous — `run_agent` hands back
-a run id and the work continues in the background, surviving a manager restart.
+`list_sandboxes`, `get_sandbox`, `rename_sandbox`, `stop_sandbox`, `start_sandbox`,
+`rebuild_sandbox`, `add_port_forward`, `remove_port_forward` and `delete_sandbox`. Runs are
+asynchronous — `run_agent` hands back a run id and the work continues in the background, surviving a
+manager restart. `stop_sandbox` / `start_sandbox` cycle the container without losing the workspace,
+and `rebuild_sandbox` recreates it (which is what applies a port forward).
 
 Sandboxes created this way are ordinary instances: they show up on the dashboard with a live
 "agent running" line, and you can open the IDE to watch. They persist until an agent (or you)

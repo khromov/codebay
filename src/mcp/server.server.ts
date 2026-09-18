@@ -12,7 +12,10 @@ The normal flow is: create_sandbox (from a Git URL or a local folder) → poll g
 status is "running" → run_agent with a prompt → poll get_run until it is done → get_diff to see what
 changed → git_push / create_pr to land it.
 
-Sandboxes are persistent and cost real resources, so delete_sandbox when you are finished with one.
+Sandboxes are persistent and cost real resources: stop_sandbox one you will come back to (its
+workspace and run history stay; start_sandbox brings it back) and delete_sandbox one you are finished
+with. rebuild_sandbox recreates the container from the devcontainer config, keeping the workspace —
+it is what applies add_port_forward / remove_port_forward.
 A sandbox runs one agent at a time. Runs are asynchronous: run_agent returns a handle immediately and
 the work continues in the background, so never assume a run has finished without checking get_run.`;
 
