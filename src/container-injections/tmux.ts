@@ -15,8 +15,9 @@ export const INSTALL_SCRIPT =
 	'command -v tmux >/dev/null 2>&1';
 
 /**
- * `mouse on` buys wheel-scroll at the cost of code-server's native drag-select, since tmux
- * takes the mouse — hence `bind m` to toggle it, shadowing mark-pane, unused in a single pane.
+ * `mouse on` buys wheel-scroll and makes tmux — not the browser — own the drag, which is what
+ * survives Claude's screen repaints; `set-clipboard on` then hands the copy to the host via OSC 52,
+ * which `TerminalPane` decodes. `bind m` shadows mark-pane, unused in a single pane.
  */
 export const TMUX_CONF_LINES = [
 	'set -g mouse on',

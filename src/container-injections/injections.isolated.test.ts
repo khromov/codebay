@@ -414,6 +414,10 @@ describe('tmux injection scripts', () => {
 		expect(TMUX_CONF_LINES).toContain('set -g status off');
 	});
 
+	test('conf sends copies to the host clipboard via OSC 52, which TerminalPane decodes', () => {
+		expect(TMUX_CONF_LINES).toContain('set -g set-clipboard on');
+	});
+
 	test('conf binds a key to toggle mouse mode for copy/paste vs. scroll', () => {
 		expect(TMUX_CONF_LINES.some((line) => line.startsWith('bind m set -g mouse'))).toBe(true);
 	});
