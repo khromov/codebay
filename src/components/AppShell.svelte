@@ -56,6 +56,22 @@
 	let editingId = $state<string | null>(null);
 	let editingName = $state('');
 
+	// The tab only vanishes once the stream drops the instance from `running`, so the
+	// button stays disabled across the round-trip rather than flickering back to armed.
+	const stopping = new SvelteSet<string>();
+
+	async function stopTab(id: string) {
+		if (stopping.has(id)) return;
+		stopping.add(id);
+		try {
+			await apiPost(`/api/instances/${id}/stop`, undefined, 'Failed to stop instance');
+			// The live stream removes the tab once the container is down.
+		} catch (err) {
+			toast.error((err as Error).message);
+			stopping.delete(id);
+		}
+	}
+
 	function startRename(instance: Instance) {
 		editingId = instance.id;
 		editingName = instance.name;
@@ -301,6 +317,7 @@
 				for (const id of [...everReady]) if (!live.has(id)) everReady.delete(id);
 				for (const id of [...forced]) if (!live.has(id)) forced.delete(id);
 				for (const id of [...loadedFrames]) if (!live.has(id)) loadedFrames.delete(id);
+				for (const id of [...stopping]) if (!live.has(id)) stopping.delete(id);
 				const nextAttention: Record<string, 'done' | 'waiting' | null> = {};
 				for (const inst of next) nextAttention[inst.id] = inst.attention;
 				if (primed) {
@@ -356,10 +373,12 @@
 			{attention}
 			{editingId}
 			bind:editingName
+			stopping={[...stopping]}
 			onreload={activeInstance && activeInstance.mode !== 'terminal' && mountable(active)
 				? reloadActive
 				: undefined}
 			onselect={(id) => navigate(`/ide/${id}`)}
+			onstop={stopTab}
 			onstartrename={startRename}
 			oncommitrename={commitRename}
 			oncancelrename={cancelRename}
