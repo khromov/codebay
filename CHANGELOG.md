@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.0](https://github.com/khromov/codebay/compare/codebay-v0.15.0...codebay-v0.16.0) (2026-09-18)
+
+
+### Features
+
+* **devcontainer:** run a nested Docker daemon so codebay works inside its own devcontainer ([#210](https://github.com/khromov/codebay/issues/210)) ([2e331d4](https://github.com/khromov/codebay/commit/2e331d4ba32f9948976f3b2d110e58cef80639f3))
+
+
+### Bug Fixes
+
+* **avatars:** unfill stray pixel in dog sprite ([#213](https://github.com/khromov/codebay/issues/213)) ([53a85f9](https://github.com/khromov/codebay/commit/53a85f94156c05d0249db68167c3e1137270926a))
+* **marketing:** sync rocket sprite in avatar carousel ([#220](https://github.com/khromov/codebay/issues/220)) ([de31e78](https://github.com/khromov/codebay/commit/de31e783b002ab4c8a2041d4ddf98be6462d314f))
+
 ## [0.15.0](https://github.com/khromov/codebay/compare/codebay-v0.14.0...codebay-v0.15.0) (2026-09-08)
 
 
