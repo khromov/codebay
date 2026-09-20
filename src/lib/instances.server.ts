@@ -74,6 +74,7 @@ import { runCapturePass, stopLogCapture, syncLogCapture } from './log-capture.se
 import { currentRunSummaries, runSummary, setRunChangeHook, stopRun } from './agent-runs.server.ts';
 import { isHostPortBindable, pickBindablePort } from './ports.server.ts';
 import { pickAvatar, pickUniqueAvatar } from '../avatars/pick.server.ts';
+import { uploadEnabled } from './uploads.server.ts';
 import type { ServerWebSocket } from 'bun';
 import {
 	isInstanceFilter,
@@ -203,7 +204,9 @@ export type StreamEvent =
 	// The global default editor surface, so the picker's toggle follows a settings change.
 	| { type: 'default-mode'; data: { mode: InstanceMode } }
 	// The colour scheme, so a change in the settings popup repaints the window behind it.
-	| { type: 'theme'; data: { value: Theme } };
+	| { type: 'theme'; data: { value: Theme } }
+	// Arms/disarms the drop zones on every open page when the setting flips.
+	| { type: 'upload-enabled'; data: { enabled: boolean } };
 
 interface StreamHub {
 	sockets: Set<ServerWebSocket<unknown>>;
@@ -277,6 +280,11 @@ export function broadcastTheme(value: Theme): void {
 	broadcast({ type: 'theme', data: { value } });
 }
 
+/** Settings opens in its own popup, so every open dashboard/IDE tab needs the new toggle pushed. */
+export function broadcastUploadEnabled(enabled: boolean): void {
+	broadcast({ type: 'upload-enabled', data: { enabled } });
+}
+
 async function reconcileInstances(force = false): Promise<void> {
 	const list = await listInstances();
 	const listJson = JSON.stringify(list);
@@ -327,6 +335,8 @@ export function streamOpen(ws: ServerWebSocket<unknown>): void {
 	});
 	// Same, for the default mode the picker's toggle seeds from.
 	sendTo(ws, { type: 'default-mode', data: { mode: getDefaultMode() } });
+	// Same, for the upload toggle, so a reconnecting client's drop zones match the current setting.
+	sendTo(ws, { type: 'upload-enabled', data: { enabled: uploadEnabled() } });
 }
 
 export function streamClose(ws: ServerWebSocket<unknown>): void {
