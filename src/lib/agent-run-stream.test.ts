@@ -20,6 +20,68 @@ const result = line({
 	duration_ms: 84_000
 });
 
+const PLAIN_ANSWER =
+	'Nothing left to wrap up. Everything is on the remote. The last commit is pushed to origin/main.';
+
+const assistantText = (text: string) =>
+	line({
+		type: 'assistant',
+		parent_tool_use_id: null,
+		message: { content: [{ type: 'text', text }] }
+	});
+
+/** The reported sequence: a plain-text answer, five refused StructuredOutput calls, then the error. */
+function structuredOutputFailure(attempts = 5): string {
+	let text = assistantText(PLAIN_ANSWER);
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		text += line({
+			type: 'assistant',
+			parent_tool_use_id: null,
+			message: {
+				content: [
+					{
+						type: 'tool_use',
+						name: 'StructuredOutput',
+						// The malformation as reported: the trailing required keys swallowed into the last
+						// string as XML-ish closing tags, so validation refuses it every time.
+						input: {
+							needs_wrapup: false,
+							branch: 'main',
+							all_pushed: true,
+							attempt,
+							what_i_was_doing:
+								'Added a YouTube demo video embed.</what_i_was_doing>\n<pending_items">[]</pending_items>\n</invoke>\n'
+						}
+					}
+				]
+			}
+		});
+		text += line({
+			type: 'user',
+			message: {
+				content: [
+					{
+						type: 'tool_result',
+						content:
+							"Output does not match required schema: root: must have required property 'pending_items'"
+					}
+				]
+			}
+		});
+	}
+	return (
+		text +
+		line({
+			type: 'result',
+			subtype: 'error_max_structured_output_retries',
+			is_error: true,
+			result: '',
+			num_turns: 8,
+			total_cost_usd: 0.75
+		})
+	);
+}
+
 describe('readRunChunk', () => {
 	test('pulls the session id out of the init event', () => {
 		expect(readRunFile(init).sessionId).toBe('sess-1');
@@ -80,6 +142,41 @@ describe('readRunChunk', () => {
 			structured_output: { functions: ['a', 'b'] }
 		});
 		expect(readRunFile(structured).structuredOutput).toBe('{"functions":["a","b"]}');
+	});
+
+	test('falls back to the last assistant answer when the schema rejected every attempt', () => {
+		// Verbatim shape of the reported failure: a complete plain-text answer, then five identical
+		// StructuredOutput calls the schema refuses, then a result event with no text of its own.
+		const state = readRunFile(init + structuredOutputFailure());
+		expect(state.result).toBe(PLAIN_ANSWER);
+		expect(state.structuredOutputFailed).toBe(true);
+		expect(state.isError).toBe(true);
+		expect(state.structuredOutput).toBeNull();
+		expect(state.costUsd).toBe(0.75);
+	});
+
+	test('keeps the last rejected StructuredOutput input so a caller can salvage it', () => {
+		const rejected = readRunFile(structuredOutputFailure()).rejectedStructuredOutput;
+		expect(JSON.parse(rejected!)).toMatchObject({ branch: 'main', attempt: 5 });
+	});
+
+	test('leaves a real result text alone rather than overwriting it with the fallback', () => {
+		const withText = readRunFile(
+			assistantText('an earlier answer') +
+				line({
+					type: 'result',
+					subtype: 'error_max_structured_output_retries',
+					is_error: true,
+					result: 'what claude actually said'
+				})
+		);
+		expect(withText.result).toBe('what claude actually said');
+	});
+
+	test('never invents a rejected payload for a run that ended any other way', () => {
+		const state = readRunFile(init + toolUse + result);
+		expect(state.structuredOutputFailed).toBe(false);
+		expect(state.rejectedStructuredOutput).toBeNull();
 	});
 
 	test('carries an incomplete trailing line to the next chunk', () => {
@@ -150,6 +247,17 @@ describe('parseRunTimeline', () => {
 	test('flags a failed result so the panel can show a cross', () => {
 		const rows = parseRunTimeline(line({ type: 'result', subtype: 'error_max_turns' }));
 		expect(rows[0]).toMatchObject({ kind: 'result', isError: true });
+	});
+
+	test('names the failure subtype rather than rendering a blank row for an empty result', () => {
+		const rows = parseRunTimeline(
+			line({ type: 'result', subtype: 'error_max_structured_output_retries', result: '' })
+		);
+		expect(rows[0]).toMatchObject({
+			kind: 'result',
+			isError: true,
+			text: 'error_max_structured_output_retries'
+		});
 	});
 
 	test('splits a multi-block message into one row per block', () => {
