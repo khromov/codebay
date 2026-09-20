@@ -522,6 +522,12 @@ describe('writeOverrideConfig local git excludes', () => {
 		expect(text).toContain('/.vscode/tasks.json');
 	});
 
+	test('excludes codebay-inbox (the upload feature drop folder)', async () => {
+		mkdirSync(join(dir, '.git'), { recursive: true });
+		await writeOverrideConfig(dir, 8001);
+		expect(readExclude()).toContain('/codebay-inbox/');
+	});
+
 	test('is idempotent — the manager block appears once across reruns', async () => {
 		mkdirSync(join(dir, '.git'), { recursive: true });
 		await writeOverrideConfig(dir, 8001);

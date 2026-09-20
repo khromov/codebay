@@ -14,8 +14,18 @@
 	import { onBackLinkClick, installPopupBackTrap } from '../lib/popup-nav.ts';
 	import { syncTheme } from '../theme.ts';
 	import { tick } from 'svelte';
+	import toast from 'svelte-french-toast';
+	import { filesFrom, uploadFile } from '../lib/upload.ts';
 
-	let { id, injectionChecks = 0 }: { id: string; injectionChecks?: number } = $props();
+	let {
+		id,
+		injectionChecks = 0,
+		uploadEnabled = false
+	}: { id: string; injectionChecks?: number; uploadEnabled?: boolean } = $props();
+
+	// DB-backed, so it initializes from the prop; the stream keeps it current across a Settings change.
+	// svelte-ignore state_referenced_locally
+	let uploadArmed = $state(uploadEnabled);
 
 	let instance = $state<Instance | null>(null);
 	let health = $state<InstanceHealth | null>(null);
@@ -70,6 +80,8 @@
 				runBump += 1;
 			} else if (msg.type === 'theme') {
 				syncTheme(msg.data.value);
+			} else if (msg.type === 'upload-enabled') {
+				uploadArmed = msg.data.enabled;
 			}
 		})
 	);
@@ -146,6 +158,42 @@
 		clearTimeout(copyTimer);
 		copyTimer = setTimeout(() => (copied = false), 2000);
 	}
+
+	// Sequential, so the toast order matches the drop order.
+	async function handleUpload(files: File[]) {
+		for (const file of files) {
+			try {
+				const saved = await uploadFile(id, file);
+				toast.success(`Saved ${saved.containerPath}`);
+				void navigator.clipboard.writeText(saved.containerPath).catch(() => {});
+			} catch (err) {
+				toast.error((err as Error).message);
+			}
+		}
+	}
+
+	let dropping = $state(false);
+
+	function onDragEnter(e: DragEvent) {
+		if (!uploadArmed || !e.dataTransfer?.types.includes('Files')) return;
+		e.preventDefault();
+		dropping = true;
+	}
+
+	function onDragOver(e: DragEvent) {
+		if (dropping) e.preventDefault();
+	}
+
+	function onDragLeave(e: DragEvent) {
+		if (e.relatedTarget === null) dropping = false;
+	}
+
+	function onDrop(e: DragEvent) {
+		if (!dropping) return;
+		e.preventDefault();
+		dropping = false;
+		void handleUpload(filesFrom(e.dataTransfer));
+	}
 </script>
 
 <header class="topbar">
@@ -171,7 +219,16 @@
 </header>
 {#if restartError}<p class="restart-err">{restartError}</p>{/if}
 
-<main class="stage">
+<main
+	class="stage"
+	ondragenter={onDragEnter}
+	ondragover={onDragOver}
+	ondragleave={onDragLeave}
+	ondrop={onDrop}
+>
+	{#if dropping}
+		<div class="dropzone" role="presentation">Drop to save into codebay-inbox/</div>
+	{/if}
 	<div class="meta">
 		<span class="k">Source</span>
 		{#if instance}<code>{instance.source_path}</code>{:else}<Skeleton variant="wide" />{/if}
@@ -374,9 +431,27 @@
 		color: var(--danger);
 	}
 	.stage {
+		position: relative;
 		max-width: 1200px;
 		margin: 0 auto;
 		padding: 20px 24px 40px;
+	}
+	.dropzone {
+		position: absolute;
+		inset: 0;
+		z-index: 5;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--fill);
+		color: var(--fill-ink);
+		border: 2px dashed var(--fill-ink);
+		font-family: var(--font-mono);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		font-size: 13px;
+		pointer-events: none;
 	}
 	.meta {
 		display: grid;

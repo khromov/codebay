@@ -15,6 +15,7 @@
 	import { syncTheme } from '../theme.ts';
 	import toast, { Toaster } from 'svelte-french-toast';
 	import { TOAST_OPTIONS } from '../toast.ts';
+	import { filesFrom, uploadFile } from '../lib/upload.ts';
 
 	// `snapshot` seeds the live state so neither view renders a loading flash first.
 	let {
@@ -250,6 +251,65 @@
 		};
 	});
 
+	// Sequential, so the response order (and the toast order) matches the drop order.
+	async function handleUpload(files: File[]) {
+		if (!active) return;
+		for (const file of files) {
+			try {
+				const saved = await uploadFile(active, file);
+				toast.success(`Saved ${saved.containerPath}`);
+				void navigator.clipboard.writeText(saved.containerPath).catch(() => {});
+			} catch (err) {
+				toast.error((err as Error).message);
+			}
+		}
+	}
+
+	let dropping = $state(false);
+
+	function onDrop(e: DragEvent) {
+		e.preventDefault();
+		dropping = false;
+		void handleUpload(filesFrom(e.dataTransfer));
+	}
+
+	// The code-server iframe swallows drag/drop and paste, so the parent document has to raise an
+	// overlay on `dragenter` and take the drop itself — a plain listener on the pane never fires.
+	$effect(() => {
+		if (!livePreflight.uploadEnabled || !onIde) return;
+		const enter = (e: DragEvent) => {
+			if (e.dataTransfer?.types.includes('Files')) {
+				e.preventDefault();
+				dropping = true;
+			}
+		};
+		const over = (e: DragEvent) => {
+			if (dropping) e.preventDefault();
+		};
+		const leave = (e: DragEvent) => {
+			if (e.relatedTarget === null) dropping = false;
+		};
+		// Capture phase: only fires for events that originate in the parent document (xterm's
+		// textarea, the tab bar) — paste inside the iframe never reaches here.
+		const paste = (e: ClipboardEvent) => {
+			const files = filesFrom(e.clipboardData);
+			if (files.length) {
+				e.preventDefault();
+				void handleUpload(files);
+			}
+		};
+		window.addEventListener('dragenter', enter);
+		window.addEventListener('dragover', over);
+		window.addEventListener('dragleave', leave);
+		window.addEventListener('paste', paste, true);
+		return () => {
+			window.removeEventListener('dragenter', enter);
+			window.removeEventListener('dragover', over);
+			window.removeEventListener('dragleave', leave);
+			window.removeEventListener('paste', paste, true);
+		};
+	});
+
 	$effect(() => {
 		// The re-seed after a reconnect is a baseline, not a change — otherwise it replays chimes.
 		let primed = false;
@@ -269,6 +329,10 @@
 				}
 				if (msg.type === 'default-mode') {
 					livePreflight = { ...livePreflight, defaultMode: msg.data.mode };
+					return;
+				}
+				if (msg.type === 'upload-enabled') {
+					livePreflight = { ...livePreflight, uploadEnabled: msg.data.enabled };
 					return;
 				}
 				if (msg.type === 'theme') {
@@ -413,6 +477,16 @@
 					{:else if inst.mode !== 'terminal' && !loadedFrames.has(inst.id)}
 						<IdeLoader />
 					{/if}
+					{#if dropping && inst.id === active}
+						<div
+							class="dropzone"
+							role="presentation"
+							ondragover={(e) => e.preventDefault()}
+							ondrop={onDrop}
+						>
+							Drop to save into codebay-inbox/
+						</div>
+					{/if}
 				</div>
 			{/if}
 		{/each}
@@ -467,5 +541,23 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		font-size: 13px;
+	}
+	/* pointer-events: auto so the overlay (not the iframe beneath it) takes the drop. */
+	.dropzone {
+		position: absolute;
+		inset: 0;
+		z-index: 5;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--fill);
+		color: var(--fill-ink);
+		border: 2px dashed var(--fill-ink);
+		font-family: var(--font-mono);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		font-size: 13px;
+		pointer-events: auto;
 	}
 </style>

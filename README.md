@@ -56,6 +56,12 @@ deletes them.
 > credentials, with permission prompts bypassed inside the container.** Treat it like a password, and
 > regenerate it from Settings if it leaks.
 
+## Workspace uploads
+
+Turn on Settings → **Drop files into the workspace** to drag-and-drop or paste files/images onto an
+instance and save them under `codebay-inbox/` in its workspace (git-excluded), so Claude Code inside
+can `Read` them. Off by default.
+
 ## Troubleshooting
 
 - `403 Cross-site POST form submissions are forbidden` when clicking anything that saves — codebay is being reached at an origin other than `http://localhost:<PORT>`. Set `PUBLIC_ORIGIN` to the URL in your browser's address bar and restart (see Configuration).
