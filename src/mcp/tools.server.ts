@@ -103,7 +103,10 @@ const runOptions = {
 		v.pipe(
 			v.string(),
 			v.description(
-				'A JSON Schema (as a string). When set, the run’s structured_output matches it.'
+				'A JSON Schema (as a string). When set, the run’s structured_output matches it. If no ' +
+					'payload ever validates the run fails with error "structured_output_failed", and its ' +
+					'result holds Claude’s plain-text answer with rejected_structured_output the last ' +
+					'payload the schema refused.'
 			)
 		)
 	),
