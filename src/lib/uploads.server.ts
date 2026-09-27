@@ -1,4 +1,5 @@
-import { existsSync, lstatSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { open, unlink, type FileHandle } from 'node:fs/promises';
 import { basename, join, posix, resolve, sep } from 'node:path';
 import { Mochi, apiError, json, type MochiRouteValue } from 'mochi-framework';
 import { getInstance, getOption, type InstanceRow } from './db.server.ts';
@@ -40,23 +41,52 @@ export function safeUploadName(raw: string): string {
 	return candidate;
 }
 
-/** Picks `name`, then `name-1.ext`, `name-2.ext`… so nothing already in the inbox is ever overwritten. */
-export function uniqueName(dir: string, name: string): string {
-	if (!existsSync(join(dir, name))) return name;
+/** `name`, then `name-1.ext`, `name-2.ext`… — the candidates `openUnique` tries in order. */
+function* candidateNames(name: string): Generator<string> {
+	yield name;
 	const dot = name.lastIndexOf('.');
 	const stem = dot > 0 ? name.slice(0, dot) : name;
 	const ext = dot > 0 ? name.slice(dot) : '';
-	for (let n = 1; ; n++) {
-		const candidate = `${stem}-${n}${ext}`;
-		if (!existsSync(join(dir, candidate))) return candidate;
-	}
+	for (let n = 1; ; n++) yield `${stem}-${n}${ext}`;
 }
+
+/**
+ * Claims the first free candidate with an exclusive create, so nothing already in the inbox is ever
+ * overwritten. `wx` (O_CREAT|O_EXCL) also refuses to follow a symlink — even a dangling one, which
+ * an `existsSync` probe would report as free and a plain write would follow outside the workspace.
+ */
+export async function openUnique(
+	dir: string,
+	name: string
+): Promise<{ name: string; path: string; file: FileHandle }> {
+	for (const candidate of candidateNames(name)) {
+		const path = join(dir, candidate);
+		try {
+			return { name: candidate, path, file: await open(path, 'wx') };
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+		}
+	}
+	throw new Error('unreachable');
+}
+
+const INBOX_GITIGNORE = '*\n';
+// Earlier builds seeded this, whose negation left the folder itself showing in `git status`.
+const LEGACY_INBOX_GITIGNORE = '*\n!.gitignore\n';
 
 /** Self-excluding, so the inbox needs no entry in `MANAGER_GIT_EXCLUDES`-derived `.git/info/exclude`. */
 function seedInboxGitignore(inbox: string): void {
 	const path = join(inbox, '.gitignore');
-	if (existsSync(path)) return;
-	writeFileSync(path, '*\n!.gitignore\n');
+	const st = lstatSync(path, { throwIfNoEntry: false });
+	if (!st) {
+		try {
+			writeFileSync(path, INBOX_GITIGNORE, { flag: 'wx' });
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+		}
+	} else if (st.isFile() && readFileSync(path, 'utf8') === LEGACY_INBOX_GITIGNORE) {
+		writeFileSync(path, INBOX_GITIGNORE);
+	}
 }
 
 export interface SavedUpload {
@@ -75,19 +105,32 @@ export async function saveUpload(
 	if (!existsSync(row.workspace_path)) throw new Error('Workspace folder is not on disk yet');
 	if (!row.remote_workspace_folder) throw new Error('Instance has not booted yet');
 	const inbox = join(row.workspace_path, INBOX_DIR);
-	// A symlinked inbox could redirect the write outside the workspace, so refuse anything but a real dir.
-	if (existsSync(inbox) && !lstatSync(inbox).isDirectory()) {
-		throw new Error(`${INBOX_DIR} is not a directory`);
-	}
+	// A symlinked inbox could redirect the write outside the workspace, so refuse anything but a real
+	// dir — `lstat`, not `existsSync`, which reports a dangling link as absent.
+	const st = lstatSync(inbox, { throwIfNoEntry: false });
+	if (st && !st.isDirectory()) throw new Error(`${INBOX_DIR} is not a directory`);
 	mkdirSync(inbox, { recursive: true });
 	seedInboxGitignore(inbox);
-	const name = uniqueName(inbox, safeUploadName(rawName));
-	const dest = resolve(inbox, name);
-	if (!dest.startsWith(inbox + sep)) throw new Error('invalid file name'); // belt and braces
-	// Streamed to disk; the body never has to fit in memory. Kept as two calls rather than one with
-	// a `Blob | Response` argument — Bun's overloads don't resolve against that union.
-	const written =
-		body instanceof Blob ? await Bun.write(dest, body) : await Bun.write(dest, new Response(body));
+	const safe = safeUploadName(rawName);
+	if (!resolve(inbox, safe).startsWith(inbox + sep)) throw new Error('invalid file name'); // belt and braces
+	const { name, path: dest, file } = await openUnique(inbox, safe);
+	// Streamed to disk chunk by chunk, so the body never has to fit in memory.
+	let written = 0;
+	try {
+		const stream = body instanceof Blob ? body.stream() : body;
+		for await (const chunk of stream) {
+			for (let off = 0; off < chunk.byteLength;) {
+				off += (await file.write(chunk, off)).bytesWritten;
+			}
+			written += chunk.byteLength;
+		}
+	} catch (err) {
+		// An aborted or over-cap body would otherwise leave a truncated file that looks complete.
+		await file.close();
+		await unlink(dest);
+		throw err;
+	}
+	await file.close();
 	return {
 		name,
 		hostPath: dest,
