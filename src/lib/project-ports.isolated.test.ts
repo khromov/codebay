@@ -137,6 +137,19 @@ describe('seedProjectPorts', () => {
 		]);
 	});
 
+	test('two boots pinning the same host port can’t both claim it', async () => {
+		// A slow daemon widens the window between the availability check and the reservation.
+		g.__codebayDocker = Promise.resolve({
+			listContainers: () => new Promise((r) => setTimeout(() => r([]), 20))
+		});
+		const codebay = '{ "ports": { "8124:3000": "web" } }';
+		const a = seed(makeWorkspace({ codebay }));
+		const b = seed(makeWorkspace({ codebay }));
+		await Promise.all([seedProjectPorts(a), seedProjectPorts(b)]);
+		const hostPorts = [...listForwards(a.id), ...listForwards(b.id)].map((f) => f.host_port);
+		expect(hostPorts.filter((p) => p === 8124)).toHaveLength(1);
+	});
+
 	test('skips the mode’s reserved surface port', async () => {
 		const dir = makeWorkspace({ codebay: '{ "ports": { "8080": "editor" } }' });
 		const row = seed(dir);

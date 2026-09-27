@@ -475,19 +475,22 @@ async function claimPinnedPort(
 	containerPort: number,
 	pinned: number
 ): Promise<number | null> {
-	// `reservedPorts` too: a concurrent boot may have handed this port out without inserting it yet.
-	const claimedElsewhere =
-		new Set(usedPorts()).has(pinned) ||
-		reservedPorts.has(pinned) ||
-		(await hostPortsInUse()).includes(pinned);
-	if (claimedElsewhere || !(await isHostPortBindable(pinned))) {
+	const warn = () =>
 		appendLog(
 			row.id,
 			`⚠ codebay.json pins host port ${pinned} for :${containerPort}, but it is unavailable\n`
 		);
+	// Reserve before the first await, so a concurrent boot pinning the same port sees it as taken.
+	if (new Set(usedPorts()).has(pinned) || reservedPorts.has(pinned)) {
+		warn();
 		return null;
 	}
 	reservedPorts.set(pinned, Date.now());
+	if ((await hostPortsInUse()).includes(pinned) || !(await isHostPortBindable(pinned))) {
+		reservedPorts.delete(pinned);
+		warn();
+		return null;
+	}
 	return pinned;
 }
 
