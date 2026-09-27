@@ -43,13 +43,41 @@ claude mcp add --transport http codebay http://localhost:6969/mcp \
 The endpoint is `/mcp`. It returns `404` while disabled and `401` without a valid bearer token, and
 it is the one place that does not use `BASIC_AUTH_PASSWORD` — MCP clients send the token instead.
 
-The tools cover the whole loop: `create_sandbox`, `run_agent`, `get_run`, `list_runs`, `stop_run`,
+The tools cover the whole loop: `create_sandbox`, `run_agent`, `get_run`, `wait_for`, `list_runs`, `stop_run`,
 `get_diff`, `read_file`, `write_file`, `exec_command`, `git_push`, `create_pr`, `get_logs`,
 `list_sandboxes`, `get_sandbox`, `rename_sandbox`, `stop_sandbox`, `start_sandbox`,
 `rebuild_sandbox`, `add_port_forward`, `remove_port_forward` and `delete_sandbox`. Runs are
 asynchronous — `run_agent` hands back a run id and the work continues in the background, surviving a
 manager restart. `stop_sandbox` / `start_sandbox` cycle the container without losing the workspace,
 and `rebuild_sandbox` recreates it (which is what applies a port forward).
+
+### Being told when a run finishes
+
+Callers don't have to poll `get_run`. There are three ways to find out that a run is done (or has
+failed or been cancelled), or that a sandbox has finished building:
+
+- **`wait_for`** blocks until the given runs/sandboxes settle and returns their final state. Pass
+  several run ids with `mode: "any"` to handle parallel runs one at a time as they land. Codebay
+  streams progress and SSE keepalives while it waits, so a long wait isn't cut off. In an
+  interactive Claude Code session, a call that runs past about two minutes moves to the background
+  and the model is told when it returns.
+- **A background `curl`.** `run_agent`, `create_sandbox` and `rebuild_sandbox` return
+  `wait.command`, a `curl` that blocks on `GET /mcp/wait` and prints the final JSON. The agent starts
+  it with Bash `run_in_background` and gets notified when it exits. The URL carries an HMAC signature
+  scoped to those ids, not the bearer token, and `--retry-all-errors` carries it through a manager
+  restart. This works with any stock client that has a background shell.
+- **A Claude Code channel (opt-in, research preview).** Codebay advertises the `claude/channel`
+  capability and pushes a `<channel source="codebay">` event into the session that started or waited
+  on a run, even while that session is idle. Claude Code only accepts it in an interactive session
+  launched like this:
+
+  ```sh
+  MCP_PROTOCOL_NEGOTIATION=legacy claude --dangerously-load-development-channels server:codebay
+  ```
+
+  The environment variable matters: over HTTP, Claude Code otherwise negotiates the 2026-07-28
+  protocol, which has no session to push to, and drops the channel. Channels also require
+  claude.ai or Console authentication (not Bedrock or Vertex), and they don't work in `-p` mode.
 
 Sandboxes created this way are ordinary instances: they show up on the dashboard with a live
 "agent running" line, and you can open the IDE to watch. They persist until an agent (or you)
