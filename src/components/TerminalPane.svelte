@@ -4,6 +4,7 @@
 	import type { Terminal } from '@xterm/xterm';
 	import type { FitAddon } from '@xterm/addon-fit';
 	import RotateCw from '@lucide/svelte/icons/rotate-cw';
+	import { decodeOsc52 } from '../lib/osc52.ts';
 
 	let {
 		id,
@@ -118,6 +119,40 @@
 		}
 	}
 
+	/**
+	 * The Clipboard API is the only path to the *host* clipboard, but it needs a secure context and
+	 * (outside a user gesture) can still reject — hence the legacy textarea fallback behind it.
+	 */
+	async function toClipboard(text: string) {
+		if (!text) return;
+		try {
+			await navigator.clipboard.writeText(text);
+			return;
+		} catch {
+			/* no Clipboard API, or a write the browser refused — fall through */
+		}
+		const ta = document.createElement('textarea');
+		ta.value = text;
+		ta.setAttribute('aria-hidden', 'true');
+		ta.style.position = 'fixed';
+		ta.style.opacity = '0';
+		document.body.appendChild(ta);
+		ta.select();
+		try {
+			document.execCommand('copy');
+		} catch {
+			/* nothing left to try */
+		}
+		ta.remove();
+		if (active && focus) term?.focus();
+	}
+
+	/** A finished drag is both the moment the selection exists and the gesture the clipboard needs. */
+	function copySelection() {
+		const sel = term?.getSelection();
+		if (sel) void toClipboard(sel);
+	}
+
 	function fitSafe() {
 		// A hidden pane (display:none) has no size, so fitting there would throw or size to 0.
 		if (el?.clientWidth > 0 && el?.clientHeight > 0) {
@@ -165,6 +200,21 @@
 			term.open(el);
 			applyTheme();
 			fitSafe();
+			// Without this, tmux's `set-clipboard on` writes land in a handler xterm doesn't have.
+			term.parser.registerOscHandler(52, (data) => {
+				const text = decodeOsc52(data);
+				if (text !== null) void toClipboard(text);
+				return true;
+			});
+			// Chrome keeps Ctrl+Shift+C for devtools, so a browser terminal needs its own copy key.
+			term.attachCustomKeyEventHandler((e) => {
+				if (e.type !== 'keydown' || !term?.hasSelection()) return true;
+				const isCopy =
+					e.ctrlKey && (e.key === 'Insert' || (e.altKey && e.key.toLowerCase() === 'c'));
+				if (!isCopy) return true;
+				copySelection();
+				return false;
+			});
 			term.onData((d) => send(CMD_INPUT + d));
 			term.onResize(({ cols, rows }) => send(CMD_RESIZE + JSON.stringify({ columns: cols, rows })));
 			// The theme cookie flips data-theme on <html>; re-derive xterm's colors when it does.
@@ -182,8 +232,12 @@
 		const sizeObs = new ResizeObserver(() => fitSafe());
 		sizeObs.observe(el);
 
+		// Shift+drag selects in xterm even while tmux owns the mouse; copy it before a repaint clears it.
+		el.addEventListener('mouseup', copySelection);
+
 		return () => {
 			disposed = true;
+			el.removeEventListener('mouseup', copySelection);
 			sizeObs.disconnect();
 			themeObs?.disconnect();
 			scheme.removeEventListener('change', onScheme);
