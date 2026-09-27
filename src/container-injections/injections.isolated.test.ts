@@ -1771,6 +1771,24 @@ describe('codebay.json credential overrides', () => {
 		});
 	});
 
+	test('a git override fills in the half the host is missing', async () => {
+		const gitconfig = join(mkdtempSync(join(tmpdir(), 'codebay-gitconfig-')), 'config');
+		writeFileSync(gitconfig, '[user]\n\temail = host@example.com\n', 'utf8');
+		const previous = process.env.GIT_CONFIG_GLOBAL;
+		process.env.GIT_CONFIG_GLOBAL = gitconfig;
+		try {
+			Bun.env[VAR] = 'Mochi Bot';
+			expect(await readGitIdentity(workspaceWith({ gitUserName: VAR }))).toEqual({
+				name: 'Mochi Bot',
+				email: 'host@example.com'
+			});
+			expect(await readGitIdentity()).toBeNull();
+		} finally {
+			if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+			else process.env.GIT_CONFIG_GLOBAL = previous;
+		}
+	});
+
 	test('a workspace with no codebay.json changes nothing', async () => {
 		setOption('git_identity_enabled', '1');
 		setOption('git_identity_name', 'Jane Doe');
