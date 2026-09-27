@@ -14,7 +14,8 @@
 	import { onBackLinkClick, installPopupBackTrap } from '../lib/popup-nav.ts';
 	import { syncTheme } from '../theme.ts';
 	import { tick } from 'svelte';
-	import toast from 'svelte-french-toast';
+	import toast, { Toaster } from 'svelte-french-toast';
+	import { TOAST_OPTIONS } from '../toast.ts';
 	import { filesFrom, uploadFile } from '../lib/upload.ts';
 
 	let {
@@ -192,9 +193,22 @@
 		if (!dropping) return;
 		e.preventDefault();
 		dropping = false;
-		void handleUpload(filesFrom(e.dataTransfer));
+		if (uploadArmed) void handleUpload(filesFrom(e.dataTransfer));
+	}
+
+	// Only claims pastes that carry files, so text pasted into the page's inputs is untouched.
+	function onPaste(e: ClipboardEvent) {
+		if (!uploadArmed) return;
+		const files = filesFrom(e.clipboardData);
+		if (!files.length) return;
+		e.preventDefault();
+		void handleUpload(files);
 	}
 </script>
+
+<svelte:window onpaste={onPaste} />
+<!-- Instance renders outside AppShell, which hosts the app-wide Toaster. -->
+<Toaster toastOptions={TOAST_OPTIONS} />
 
 <header class="topbar">
 	<a class="back" href="/" onclick={onBackLinkClick}><ArrowLeft size={15} /> All instances</a>
