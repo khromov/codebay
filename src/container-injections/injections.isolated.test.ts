@@ -1809,6 +1809,48 @@ describe('claude-code-skills synced-skill exclusion', () => {
 		]);
 	});
 
+	test('reads the real manifest shape, where anthropic-example skills carry creatorType anthropic', async () => {
+		seedBucket(
+			JSON.stringify({
+				lastUpdated: 1,
+				skills: [
+					{
+						skillId: 'docx',
+						name: 'docx',
+						description: 'd',
+						source: 'anthropic',
+						updatedAt: '2026-09-23T04:00:28.352014Z',
+						creatorType: 'anthropic'
+					},
+					{
+						skillId: 'docs',
+						name: 'docs',
+						description: 'd',
+						source: 'anthropic-example',
+						updatedAt: '2026-09-16T00:10:45.680014Z',
+						creatorType: 'anthropic'
+					},
+					{
+						skillId: 'skill_01abc',
+						name: 'team-style',
+						description: 't',
+						source: 'custom',
+						updatedAt: '2026-09-20T00:00:00Z',
+						creatorType: 'user'
+					}
+				]
+			})
+		);
+		writeSkill(bucketDir(), 'docs');
+		const b = `skills/synced/${BUCKET}`;
+		expect(await rels()).toEqual([
+			`skills/synced/.bucket-${BUCKET}`,
+			`${b}/manifest.json`,
+			`${b}/team-style/SKILL.md`,
+			`${b}/team-style/scripts/run.py`
+		]);
+	});
+
 	test('matches a skill to the dir Claude Code sanitized its name into', async () => {
 		seedBucket(
 			JSON.stringify({ skills: [{ skillId: 'skill_01x', name: 'Q&A: notes.', source: 'custom' }] })
@@ -1857,7 +1899,7 @@ describe('claude-code-skills synced-skill exclusion', () => {
 		expect(out).toContain(`skills/synced/.bucket-${BUCKET}`);
 	});
 
-	test('isAnthropicSkill prefers creatorType and falls back to source on older manifests', () => {
+	test('isAnthropicSkill prefers creatorType and falls back to source when it is absent', () => {
 		expect(isAnthropicSkill({ creatorType: 'anthropic', source: 'org' })).toBe(true);
 		expect(isAnthropicSkill({ creatorType: 'user', source: 'anthropic' })).toBe(false);
 		expect(isAnthropicSkill({ source: 'anthropic-example' })).toBe(true);

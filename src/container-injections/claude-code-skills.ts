@@ -68,7 +68,7 @@ interface SyncedSkillEntry {
 	creatorType?: unknown;
 }
 
-/** Claude Code 2.1.283's manifests carry only `source`; `creatorType` is honoured if one ever appears. */
+/** `creatorType` is the authorship signal; manifests without it fall back to `source`. */
 export function isAnthropicSkill(entry: SyncedSkillEntry): boolean {
 	if (entry.creatorType !== undefined) return entry.creatorType === 'anthropic';
 	return typeof entry.source === 'string' && entry.source.startsWith('anthropic');
