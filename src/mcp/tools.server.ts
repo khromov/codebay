@@ -325,8 +325,9 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			schema: v.object({ sandbox_id: sandboxId })
 		},
 		async (input) => {
-			requireSettled(input.sandbox_id);
-			return { sandbox: sandboxPayload(await startInstance(input.sandbox_id)) };
+			const row = requireSettled(input.sandbox_id);
+			if (!row.container_id) throw new Error('the sandbox has no container to start');
+			return { sandbox: sandboxPayload(await startInstance(row.id)) };
 		}
 	);
 
@@ -380,7 +381,7 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 				'Publish a port inside the sandbox (e.g. a dev server an agent started) on a host port of ' +
 				'the Codebay host, so a human can open it; Codebay picks the host port. Only persisted ' +
 				'here: the mapping goes live on the next rebuild_sandbox, and forwarded_ports[].open on ' +
-				'get_sandbox shows once something is listening behind it.',
+				'get_sandbox shows once the mapping is published (after a rebuild).',
 			schema: v.object({ sandbox_id: sandboxId, port: containerPort })
 		},
 		async (input) => {

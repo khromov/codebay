@@ -351,7 +351,9 @@ describe('the sandbox lifecycle tools', () => {
 		fakeDocker();
 		const row = seed({ status: 'error', container_id: null });
 		const { error } = await callTool(await session(), 'stop_sandbox', { sandbox_id: row.id });
-		expect(error).toContain('no container');
+		// Exact, because this surface says "sandbox" — an unguarded call would leak
+		// `startInstance`/`stopInstance`'s internal "Instance …" wording to the model.
+		expect(error).toBe('the sandbox has no container to stop');
 	});
 
 	test('start_sandbox starts the container, relaunches the surface and is already running', async () => {
@@ -386,8 +388,8 @@ describe('the sandbox lifecycle tools', () => {
 			'still building'
 		);
 		const bare = seed({ status: 'error', container_id: null });
-		expect((await callTool(headers, 'start_sandbox', { sandbox_id: bare.id })).error).toContain(
-			'no container'
+		expect((await callTool(headers, 'start_sandbox', { sandbox_id: bare.id })).error).toBe(
+			'the sandbox has no container to start'
 		);
 	});
 
