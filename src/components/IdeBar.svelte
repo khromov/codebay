@@ -46,13 +46,8 @@
 
 	const isStopping = (id: string) => stopping.includes(id);
 
-	const activeIndex = $derived(running.findIndex((i) => i.id === active));
-	// Falls back to the first tab so the strip always offers exactly one tab stop,
-	// even when `active` names an instance that has since stopped.
-	const focusIndex = $derived(activeIndex >= 0 ? activeIndex : 0);
-
 	let viewport = $state<HTMLDivElement | null>(null);
-	let content = $state<HTMLDivElement | null>(null);
+	let content = $state<HTMLElement | null>(null);
 	let atStart = $state(true);
 	let atEnd = $state(true);
 	// `$state` rather than a plain object so `bind:this` into it is a tracked write —
@@ -76,8 +71,9 @@
 		tabEls[inst.id]?.focus();
 	}
 
-	function onTabKeydown(e: KeyboardEvent) {
-		const next = nextTabIndex(activeIndex, e.key, running.length);
+	// Relative to the focused tab, not the active one: every tab is in the Tab order now.
+	function onTabKeydown(e: KeyboardEvent, index: number) {
+		const next = nextTabIndex(index, e.key, running.length);
 		if (next === null) return;
 		e.preventDefault();
 		select(next);
@@ -124,11 +120,13 @@
 				>
 			{/if}
 			<div class="viewport" bind:this={viewport}>
-				<div class="tabs" role="tablist" aria-label="Instances" bind:this={content}>
+				<!-- A nav of buttons rather than a tablist: a tablist may only own tabs, so the
+				     stop buttons beside them fail ARIA, and each tab switches the route anyway. -->
+				<nav class="tabs" aria-label="Instances" bind:this={content}>
 					{#each running as inst, i (inst.id)}
 						<!-- The slot, not the tab button, carries the chrome: a stop button nested inside
 						     a <button> would be invalid markup. -->
-						<div class="tab-slot" class:active={inst.id === active} role="presentation">
+						<div class="tab-slot" class:active={inst.id === active}>
 							{#if editingId === inst.id}
 								<div class="tab editing">
 									<Avatar
@@ -156,12 +154,10 @@
 									class="tab"
 									class:active={inst.id === active}
 									id="tab-{inst.id}"
-									role="tab"
-									aria-selected={inst.id === active}
-									tabindex={i === focusIndex ? 0 : -1}
+									aria-current={inst.id === active ? 'page' : undefined}
 									onclick={() => onselect(inst.id)}
 									ondblclick={() => onstartrename(inst)}
-									onkeydown={onTabKeydown}
+									onkeydown={(e) => onTabKeydown(e, i)}
 									title={inst.name}
 								>
 									<Avatar
@@ -196,7 +192,6 @@
 									<button
 										type="button"
 										class="tab-stop"
-										tabindex={i === focusIndex ? 0 : -1}
 										disabled={isStopping(inst.id)}
 										onclick={(e) => {
 											e.stopPropagation();
@@ -211,7 +206,7 @@
 							{/if}
 						</div>
 					{/each}
-				</div>
+				</nav>
 			</div>
 			{#if overflowing}
 				<button

@@ -401,7 +401,7 @@
 				<div
 					class="pane"
 					class:active={inst.id === active}
-					role="tabpanel"
+					role="region"
 					aria-labelledby="tab-{inst.id}"
 				>
 					{#if mountable(inst.id)}
