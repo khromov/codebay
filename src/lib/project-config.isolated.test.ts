@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setOption } from './db.server.ts';
 import {
+	PROJECT_CONFIG_MAX_BYTES,
 	parseProjectConfig,
 	projectOverride,
 	readProjectConfig,
@@ -104,6 +105,11 @@ describe('parseProjectConfig — malformed input', () => {
 		expect(config.warnings[0]).toContain('could not be parsed');
 	});
 
+	test('a parse failure never quotes the file back into the boot log', () => {
+		const config = parseProjectConfig('AKIASECRETKEY123 trailing');
+		expect(config.warnings.join('\n')).not.toContain('AKIASECRETKEY123');
+	});
+
 	test('a non-object root warns', () => {
 		expect(parseProjectConfig('[]').warnings[0]).toContain('JSON object');
 	});
@@ -124,6 +130,36 @@ describe('readProjectConfig', () => {
 	test('reads the file at the workspace root', async () => {
 		const dir = workspaceWith('{ "overrides": { "githubToken": "BOT_TOKEN" } }');
 		expect((await readProjectConfig(dir)).overrides.githubToken).toBe('BOT_TOKEN');
+	});
+
+	// Symlinks need Developer Mode on Windows, and there's no O_NOFOLLOW or mkfifo to exercise there.
+	const posixOnly = test.skipIf(process.platform === 'win32');
+
+	posixOnly('refuses a symlink rather than reading whatever it points at', async () => {
+		const secret = join(mkdtempSync(join(tmpdir(), 'codebay-secret-')), 'creds');
+		writeFileSync(secret, 'AKIASECRETKEY123', 'utf8');
+		const dir = workspaceWith(null);
+		symlinkSync(secret, join(dir, 'codebay.json'));
+		const config = await readProjectConfig(dir);
+		expect(config.warnings).toEqual(['is a symlink; ignored']);
+		expect(config.warnings.join('\n')).not.toContain('AKIASECRETKEY123');
+	});
+
+	posixOnly('a symlink to an endless device returns instead of hanging', async () => {
+		const dir = workspaceWith(null);
+		symlinkSync('/dev/zero', join(dir, 'codebay.json'));
+		expect((await readProjectConfig(dir)).warnings).toEqual(['is a symlink; ignored']);
+	});
+
+	posixOnly('a FIFO is refused without blocking on its open', async () => {
+		const dir = workspaceWith(null);
+		expect(Bun.spawnSync(['mkfifo', join(dir, 'codebay.json')]).exitCode).toBe(0);
+		expect((await readProjectConfig(dir)).warnings).toEqual(['is not a regular file; ignored']);
+	});
+
+	test('an oversized file is refused before it is parsed', async () => {
+		const dir = workspaceWith(`{ "x": "${'a'.repeat(PROJECT_CONFIG_MAX_BYTES)}" }`);
+		expect((await readProjectConfig(dir)).warnings[0]).toContain('larger than');
 	});
 });
 

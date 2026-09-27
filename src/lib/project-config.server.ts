@@ -1,5 +1,5 @@
-import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { open } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { join } from 'node:path';
 import { CODE_SERVER_PORT, TTYD_PORT } from './config.server.ts';
 import { getOption } from './db.server.ts';
@@ -9,6 +9,9 @@ import { parseCustomEnvVars } from '../container-injections/custom-env-vars.ts';
 
 /** Shipped by the project itself, so it sits at the workspace root rather than in `.devcontainer/`. */
 export const PROJECT_CONFIG_FILE = 'codebay.json';
+
+/** A real config is a few hundred bytes; anything near this is a mistake or an attack. */
+export const PROJECT_CONFIG_MAX_BYTES = 64 * 1024;
 
 /** Each maps to the *name* of a host-side variable, never to a value. */
 export type OverrideKey = 'claudeCodeToken' | 'githubToken' | 'gitUserName' | 'gitUserEmail';
@@ -132,8 +135,9 @@ export function parseProjectConfig(raw: string): ProjectConfig {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(stripJsonc(raw));
-	} catch (err) {
-		config.warnings.push(`could not be parsed: ${(err as Error).message}`);
+	} catch {
+		// The parser's message quotes the offending token, which may be a secret the repo pointed us at.
+		config.warnings.push('could not be parsed as JSON');
 		return config;
 	}
 	if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
@@ -147,14 +151,47 @@ export function parseProjectConfig(raw: string): ProjectConfig {
 }
 
 export async function readProjectConfig(workspaceDir: string): Promise<ProjectConfig> {
-	const file = join(workspaceDir, PROJECT_CONFIG_FILE);
-	if (!existsSync(file)) return emptyConfig();
+	const config = emptyConfig();
+	let handle;
 	try {
-		return parseProjectConfig(await readFile(file, 'utf8'));
+		// O_NOFOLLOW refuses a symlink (e.g. to /dev/zero or a host secret) and O_NONBLOCK keeps a FIFO
+		// from blocking the open; fstat on the same handle leaves no TOCTOU gap.
+		handle = await open(
+			join(workspaceDir, PROJECT_CONFIG_FILE),
+			constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+		);
 	} catch (err) {
-		const config = emptyConfig();
+		if ((err as NodeJS.ErrnoException).code === 'ENOENT') return config;
+		config.warnings.push(
+			(err as NodeJS.ErrnoException).code === 'ELOOP'
+				? 'is a symlink; ignored'
+				: `could not be read: ${(err as Error).message}`
+		);
+		return config;
+	}
+	try {
+		const info = await handle.stat();
+		if (!info.isFile()) {
+			config.warnings.push('is not a regular file; ignored');
+			return config;
+		}
+		if (info.size > PROJECT_CONFIG_MAX_BYTES) {
+			config.warnings.push(`is larger than ${PROJECT_CONFIG_MAX_BYTES} bytes; ignored`);
+			return config;
+		}
+		// Read one byte past the cap so a file that grew after the fstat is still caught.
+		const buf = Buffer.alloc(PROJECT_CONFIG_MAX_BYTES + 1);
+		const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+		if (bytesRead > PROJECT_CONFIG_MAX_BYTES) {
+			config.warnings.push(`is larger than ${PROJECT_CONFIG_MAX_BYTES} bytes; ignored`);
+			return config;
+		}
+		return parseProjectConfig(buf.subarray(0, bytesRead).toString('utf8'));
+	} catch (err) {
 		config.warnings.push(`could not be read: ${(err as Error).message}`);
 		return config;
+	} finally {
+		await handle.close();
 	}
 }
 
