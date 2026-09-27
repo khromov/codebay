@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.16.0](https://github.com/khromov/codebay/compare/codebay-v0.15.0...codebay-v0.16.0) (2026-09-27)
+
+
+### Features
+
+* add start_sandbox, stop_sandbox and other missing MCP tools ([#216](https://github.com/khromov/codebay/issues/216)) ([1dcdf2f](https://github.com/khromov/codebay/commit/1dcdf2f4a0c3a8b91c45eac12993d24a82b86332))
+* **devcontainer:** run a nested Docker daemon so codebay works inside its own devcontainer ([#210](https://github.com/khromov/codebay/issues/210)) ([2e331d4](https://github.com/khromov/codebay/commit/2e331d4ba32f9948976f3b2d110e58cef80639f3))
+* **instances:** restore Claude Code history across rebuilds ([#214](https://github.com/khromov/codebay/issues/214)) ([6b59f3e](https://github.com/khromov/codebay/commit/6b59f3e5c25a1b5ab6bd0a549f58511fa6c1e36a))
+
+
+### Bug Fixes
+
+* **agent-runs:** keep the answer when structured output fails validation ([#215](https://github.com/khromov/codebay/issues/215)) ([baee7e4](https://github.com/khromov/codebay/commit/baee7e4ac2c1988d73a170d5d78dc91e38ebd19f))
+* **avatars:** unfill stray pixel in dog sprite ([#213](https://github.com/khromov/codebay/issues/213)) ([53a85f9](https://github.com/khromov/codebay/commit/53a85f94156c05d0249db68167c3e1137270926a))
+* **marketing:** sync rocket sprite in avatar carousel ([#220](https://github.com/khromov/codebay/issues/220)) ([de31e78](https://github.com/khromov/codebay/commit/de31e783b002ab4c8a2041d4ddf98be6462d314f))
+* **terminal:** make tmux drag-copy reach the browser clipboard ([#212](https://github.com/khromov/codebay/issues/212)) ([6575f10](https://github.com/khromov/codebay/commit/6575f1035dc2339314c57ed571d0ecee6d914eed))
+
 ## [0.15.0](https://github.com/khromov/codebay/compare/codebay-v0.14.0...codebay-v0.15.0) (2026-09-08)
 
 
