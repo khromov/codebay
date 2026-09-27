@@ -197,7 +197,7 @@
 										title={isStopping(inst.id) ? 'Stopping…' : `Stop ${inst.name}`}
 										aria-label={isStopping(inst.id) ? 'Stopping…' : `Stop ${inst.name}`}
 									>
-										<CircleStop size={14} />
+										<CircleStop size={20} />
 									</button>
 								{/if}
 							{/if}
@@ -393,10 +393,9 @@
 		align-items: center;
 		justify-content: center;
 		flex: none;
-		width: 26px;
 		appearance: none;
 		margin: 0;
-		padding: 0;
+		padding: 0 10px 0 0;
 		border: 0;
 		background: transparent;
 		color: inherit;
