@@ -193,10 +193,7 @@
 										type="button"
 										class="tab-stop"
 										disabled={isStopping(inst.id)}
-										onclick={(e) => {
-											e.stopPropagation();
-											onstop(inst.id);
-										}}
+										onclick={() => onstop(inst.id)}
 										title={isStopping(inst.id) ? 'Stopping…' : `Stop ${inst.name}`}
 										aria-label={isStopping(inst.id) ? 'Stopping…' : `Stop ${inst.name}`}
 									>
