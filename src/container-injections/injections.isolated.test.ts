@@ -369,6 +369,15 @@ describe('resolveInjections — mode filtering', () => {
 		expect(resolveInjections('ide').map((i) => i.id)).not.toContain('claude-code-install');
 	});
 
+	test('health-row labels are unique within each mode', () => {
+		for (const mode of ['ide', 'terminal'] as const) {
+			const labels = resolveInjections(mode)
+				.filter((i) => i.check)
+				.map((i) => i.label);
+			expect(labels).toEqual([...new Set(labels)]);
+		}
+	});
+
 	test('mode-agnostic (no argument) keeps every injection', () => {
 		const ids = resolveInjections().map((i) => i.id);
 		expect(ids).toContain('ttyd');
