@@ -14,6 +14,7 @@
 	import SettingsCog from './SettingsCog.svelte';
 	import TopBar from './TopBar.svelte';
 	import IdeLoader from './IdeLoader.svelte';
+	import DropZone from './DropZone.svelte';
 	import HealthBox from './HealthBox.svelte';
 	import BranchBox from './BranchBox.svelte';
 	import PortsBox from './PortsBox.svelte';
@@ -465,6 +466,15 @@
 			{/snippet}
 		</ComponentDemo>
 
+		<ComponentDemo
+			title="DropZone"
+			note="Shown while a file drag is over an instance; the page decides when."
+		>
+			<div class="loader-stage">
+				<DropZone />
+			</div>
+		</ComponentDemo>
+
 		<ComponentDemo title="HealthBox">
 			<HealthBox
 				health={demoHealth}
@@ -562,6 +572,7 @@
 						tabStopping = [...tabStopping, id];
 						toast(`Stop ${id} (demo)`);
 					}}
+					ondropfiles={(id, files) => toast(`Drop ${files.length} file(s) on ${id} (demo)`)}
 					onstartrename={(inst) => {
 						tabEditingId = inst.id;
 						tabEditingName = inst.name;
@@ -684,7 +695,7 @@
 	.showcase :global(.fields input[type='checkbox']) {
 		accent-color: var(--ink);
 	}
-	/* IdeLoader is an inset:0 overlay, so give it a sized, positioned stage. */
+	/* IdeLoader and DropZone are inset:0 overlays, so give them a sized, positioned stage. */
 	.loader-stage {
 		position: relative;
 		width: 100%;

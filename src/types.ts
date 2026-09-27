@@ -144,6 +144,8 @@ export interface Preflight {
 	auth: AuthProvider[];
 	/** Global default the picker's mode toggle starts on; per-instance override wins. */
 	defaultMode: InstanceMode;
+	/** Whether the drop/paste upload zones are armed; the stream keeps it current. */
+	uploadEnabled: boolean;
 }
 
 /** Same-origin so the app's Basic Auth covers the editor too. */

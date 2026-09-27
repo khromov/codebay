@@ -6,6 +6,7 @@
 	import AgentLogBox from './AgentLogBox.svelte';
 	import StatusBadge from './StatusBadge.svelte';
 	import Skeleton from './Skeleton.svelte';
+	import DropZone from './DropZone.svelte';
 	import { forwardedPortUrl } from '../lib/links.ts';
 	import { liveSocket, liveStream } from '../live.ts';
 	import { apiPost, apiDelete } from '../api.ts';
@@ -14,8 +15,19 @@
 	import { onBackLinkClick, installPopupBackTrap } from '../lib/popup-nav.ts';
 	import { syncTheme } from '../theme.ts';
 	import { tick } from 'svelte';
+	import toast, { Toaster } from 'svelte-french-toast';
+	import { TOAST_OPTIONS } from '../toast.ts';
+	import { filesFrom, uploadFile } from '../lib/upload.ts';
 
-	let { id, injectionChecks = 0 }: { id: string; injectionChecks?: number } = $props();
+	let {
+		id,
+		injectionChecks = 0,
+		uploadEnabled = false
+	}: { id: string; injectionChecks?: number; uploadEnabled?: boolean } = $props();
+
+	// DB-backed, so it initializes from the prop; the stream keeps it current across a Settings change.
+	// svelte-ignore state_referenced_locally
+	let uploadArmed = $state(uploadEnabled);
 
 	let instance = $state<Instance | null>(null);
 	let health = $state<InstanceHealth | null>(null);
@@ -70,6 +82,8 @@
 				runBump += 1;
 			} else if (msg.type === 'theme') {
 				syncTheme(msg.data.value);
+			} else if (msg.type === 'upload-enabled') {
+				uploadArmed = msg.data.enabled;
 			}
 		})
 	);
@@ -146,7 +160,56 @@
 		clearTimeout(copyTimer);
 		copyTimer = setTimeout(() => (copied = false), 2000);
 	}
+
+	// Sequential, so the toast order matches the drop order.
+	async function handleUpload(files: File[]) {
+		for (const file of files) {
+			try {
+				const saved = await uploadFile(id, file);
+				toast.success(`Saved ${saved.containerPath}`);
+				void navigator.clipboard.writeText(saved.containerPath).catch(() => {});
+			} catch (err) {
+				toast.error((err as Error).message);
+			}
+		}
+	}
+
+	let dropping = $state(false);
+
+	function onDragEnter(e: DragEvent) {
+		if (!uploadArmed || !e.dataTransfer?.types.includes('Files')) return;
+		e.preventDefault();
+		dropping = true;
+	}
+
+	function onDragOver(e: DragEvent) {
+		if (dropping) e.preventDefault();
+	}
+
+	function onDragLeave(e: DragEvent) {
+		if (e.relatedTarget === null) dropping = false;
+	}
+
+	function onDrop(e: DragEvent) {
+		if (!dropping) return;
+		e.preventDefault();
+		dropping = false;
+		if (uploadArmed) void handleUpload(filesFrom(e.dataTransfer));
+	}
+
+	// Only claims pastes that carry files, so text pasted into the page's inputs is untouched.
+	function onPaste(e: ClipboardEvent) {
+		if (!uploadArmed) return;
+		const files = filesFrom(e.clipboardData);
+		if (!files.length) return;
+		e.preventDefault();
+		void handleUpload(files);
+	}
 </script>
+
+<svelte:window onpaste={onPaste} />
+<!-- Instance renders outside AppShell, which hosts the app-wide Toaster. -->
+<Toaster toastOptions={TOAST_OPTIONS} />
 
 <header class="topbar">
 	<a class="back" href="/" onclick={onBackLinkClick}><ArrowLeft size={15} /> All instances</a>
@@ -171,7 +234,16 @@
 </header>
 {#if restartError}<p class="restart-err">{restartError}</p>{/if}
 
-<main class="stage">
+<main
+	class="stage"
+	ondragenter={onDragEnter}
+	ondragover={onDragOver}
+	ondragleave={onDragLeave}
+	ondrop={onDrop}
+>
+	{#if dropping}
+		<DropZone />
+	{/if}
 	<div class="meta">
 		<span class="k">Source</span>
 		{#if instance}<code>{instance.source_path}</code>{:else}<Skeleton variant="wide" />{/if}
@@ -374,6 +446,7 @@
 		color: var(--danger);
 	}
 	.stage {
+		position: relative;
 		max-width: 1200px;
 		margin: 0 auto;
 		padding: 20px 24px 40px;

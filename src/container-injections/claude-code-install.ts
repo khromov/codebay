@@ -49,7 +49,7 @@ const CHECK_SCRIPT = 'command -v claude >/dev/null 2>&1 && echo 1 || echo 0';
  */
 export const claudeCodeInstall: Injection = {
 	id: 'claude-code-install',
-	label: 'Claude Code',
+	label: 'Claude Code installed',
 	modes: ['terminal'],
 
 	async apply(target, log) {

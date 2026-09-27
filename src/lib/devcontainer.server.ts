@@ -117,7 +117,10 @@ const MANAGER_GIT_EXCLUDES = [
 	'/.devcontainer/codebay-ttyd/',
 	'/.devcontainer/codebay-claude/',
 	'/.devcontainer/codebay-terminal.sh',
-	'/.vscode/tasks.json'
+	'/.vscode/tasks.json',
+	// Self-excluding on top of this (see uploads.server.ts), so an already-running instance whose
+	// info/exclude predates the upload feature still hides the folder until its next rebuild.
+	'/codebay-inbox/'
 ];
 
 /** Bound the manager-owned block so a rebuild can replace it without touching the user's own lines. */
