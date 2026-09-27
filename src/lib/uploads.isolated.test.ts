@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { $ } from 'bun';
-import { insertInstance, setOption, type InstanceRow } from './db.server.ts';
+import { deleteInstanceRow, insertInstance, setOption, type InstanceRow } from './db.server.ts';
 import {
 	UPLOAD_ENABLED_KEY,
 	UPLOAD_MAX_BYTES,
@@ -24,7 +24,16 @@ import {
 	uploadRoutes
 } from './uploads.server.ts';
 
-afterEach(() => setOption(UPLOAD_ENABLED_KEY, '0'));
+// The DB is shared across test files, so seeded rows must not outlive the test (they'd leak into
+// db.isolated.test.ts's exact usedPorts() assertion).
+const seeded: string[] = [];
+afterEach(() => {
+	setOption(UPLOAD_ENABLED_KEY, '0');
+	for (const id of seeded.splice(0)) deleteInstanceRow(id);
+});
+
+// A dangling *file* symlink fixture needs Developer Mode on Windows, and doesn't behave like one without it.
+const posixOnly = test.skipIf(process.platform === 'win32');
 
 let seq = 0;
 function seed(overrides: Partial<InstanceRow> = {}): InstanceRow {
@@ -50,6 +59,7 @@ function seed(overrides: Partial<InstanceRow> = {}): InstanceRow {
 		...overrides
 	};
 	insertInstance(row);
+	seeded.push(row.id);
 	return row;
 }
 
@@ -86,7 +96,7 @@ describe('openUnique', () => {
 		expect(readFileSync(join(dir, 'photo.png'), 'utf8')).toBe('first');
 	});
 
-	test('treats a dangling symlink as taken rather than following it', async () => {
+	posixOnly('treats a dangling symlink as taken rather than following it', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'codebay-unique-'));
 		const target = join(mkdtempSync(join(tmpdir(), 'codebay-outside-')), 'authorized_keys');
 		symlinkSync(target, join(dir, 'photo.png'));
@@ -146,7 +156,7 @@ describe('saveUpload', () => {
 		rmSync(row.workspace_path, { recursive: true, force: true });
 	});
 
-	test('never follows a dangling symlink inside the inbox out of the workspace', async () => {
+	posixOnly('never follows a dangling symlink inside the inbox out of the workspace', async () => {
 		const row = seed();
 		const outside = mkdtempSync(join(tmpdir(), 'codebay-outside-'));
 		const inbox = join(row.workspace_path, 'codebay-inbox');
