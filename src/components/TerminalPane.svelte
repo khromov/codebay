@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import '@xterm/xterm/css/xterm.css';
-	import type { IDisposable, Terminal } from '@xterm/xterm';
+	import type { Terminal } from '@xterm/xterm';
 	import type { FitAddon } from '@xterm/addon-fit';
 	import RotateCw from '@lucide/svelte/icons/rotate-cw';
-	import { parseOsc52 } from '../lib/osc52.ts';
+	import { decodeOsc52 } from '../lib/osc52.ts';
 
 	let {
 		id,
@@ -27,7 +27,6 @@
 	let term: Terminal | undefined;
 	let fit: FitAddon | undefined;
 	let ws: WebSocket | undefined;
-	let osc52: IDisposable | undefined;
 	let retry: ReturnType<typeof setTimeout> | undefined;
 	let disposed = false;
 	let connected = $state(false);
@@ -120,6 +119,40 @@
 		}
 	}
 
+	/**
+	 * The Clipboard API is the only path to the *host* clipboard, but it needs a secure context and
+	 * (outside a user gesture) can still reject — hence the legacy textarea fallback behind it.
+	 */
+	async function toClipboard(text: string) {
+		if (!text) return;
+		try {
+			await navigator.clipboard.writeText(text);
+			return;
+		} catch {
+			/* no Clipboard API, or a write the browser refused — fall through */
+		}
+		const ta = document.createElement('textarea');
+		ta.value = text;
+		ta.setAttribute('aria-hidden', 'true');
+		ta.style.position = 'fixed';
+		ta.style.opacity = '0';
+		document.body.appendChild(ta);
+		ta.select();
+		try {
+			document.execCommand('copy');
+		} catch {
+			/* nothing left to try */
+		}
+		ta.remove();
+		if (active && focus) term?.focus();
+	}
+
+	/** A finished drag is both the moment the selection exists and the gesture the clipboard needs. */
+	function copySelection() {
+		const sel = term?.getSelection();
+		if (sel) void toClipboard(sel);
+	}
+
 	function fitSafe() {
 		// A hidden pane (display:none) has no size, so fitting there would throw or size to 0.
 		if (el?.clientWidth > 0 && el?.clientHeight > 0) {
@@ -140,39 +173,6 @@
 		const bg = cs.backgroundColor || '#0d0e0a';
 		const fg = cs.color || '#d8d9cf';
 		term.options.theme = { background: bg, foreground: fg, cursor: fg, cursorAccent: bg };
-	}
-
-	/**
-	 * The async Clipboard API only exists in a secure context, and codebay is routinely reached
-	 * over plain http on a LAN address — so the deprecated path is the one that usually runs.
-	 */
-	async function writeClipboard(text: string) {
-		try {
-			if (navigator.clipboard?.writeText) return await navigator.clipboard.writeText(text);
-		} catch {
-			/* denied or unavailable — fall through */
-		}
-		// `execCommand` copies the *document* selection, so it needs a real element to select.
-		const scratch = document.createElement('textarea');
-		scratch.value = text;
-		scratch.setAttribute('readonly', '');
-		scratch.style.position = 'fixed';
-		scratch.style.opacity = '0';
-		const focused = document.activeElement as HTMLElement | null;
-		document.body.appendChild(scratch);
-		scratch.select();
-		let copied = false;
-		try {
-			// Returns false rather than throwing when the browser refuses (no transient user
-			// activation), so the result is the only signal that the copy went nowhere.
-			copied = document.execCommand('copy');
-		} catch {
-			/* nothing left to try */
-		}
-		if (!copied) console.warn('codebay: terminal copy was refused by the browser');
-		scratch.remove();
-		// Selecting the scratch textarea blurred the terminal mid-session; hand the caret back.
-		focused?.focus?.();
 	}
 
 	onMount(() => {
@@ -200,12 +200,20 @@
 			term.open(el);
 			applyTheme();
 			fitSafe();
-			// xterm ships no OSC 52 handling, so without this tmux's copy reaches nothing but
-			// tmux's own paste buffer. Always returns handled, or an unanswered query would print.
-			osc52 = term.parser.registerOscHandler(52, (data) => {
-				const text = parseOsc52(data);
-				if (text !== null) void writeClipboard(text);
+			// Without this, tmux's `set-clipboard on` writes land in a handler xterm doesn't have.
+			term.parser.registerOscHandler(52, (data) => {
+				const text = decodeOsc52(data);
+				if (text !== null) void toClipboard(text);
 				return true;
+			});
+			// Chrome keeps Ctrl+Shift+C for devtools, so a browser terminal needs its own copy key.
+			term.attachCustomKeyEventHandler((e) => {
+				if (e.type !== 'keydown' || !term?.hasSelection()) return true;
+				const isCopy =
+					e.ctrlKey && (e.key === 'Insert' || (e.altKey && e.key.toLowerCase() === 'c'));
+				if (!isCopy) return true;
+				copySelection();
+				return false;
 			});
 			term.onData((d) => send(CMD_INPUT + d));
 			term.onResize(({ cols, rows }) => send(CMD_RESIZE + JSON.stringify({ columns: cols, rows })));
@@ -224,8 +232,12 @@
 		const sizeObs = new ResizeObserver(() => fitSafe());
 		sizeObs.observe(el);
 
+		// Shift+drag selects in xterm even while tmux owns the mouse; copy it before a repaint clears it.
+		el.addEventListener('mouseup', copySelection);
+
 		return () => {
 			disposed = true;
+			el.removeEventListener('mouseup', copySelection);
 			sizeObs.disconnect();
 			themeObs?.disconnect();
 			scheme.removeEventListener('change', onScheme);
@@ -235,7 +247,6 @@
 			} catch {
 				/* already closing */
 			}
-			osc52?.dispose();
 			term?.dispose();
 		};
 	});

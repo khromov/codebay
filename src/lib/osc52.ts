@@ -1,18 +1,17 @@
 /**
- * Decodes an OSC 52 clipboard-write payload into the text it carries, or null when there is
- * nothing to copy. The `data` is everything xterm hands the handler after the `52;`.
+ * OSC 52 is how a program inside the container asks the *outer* terminal to put text on the host
+ * clipboard — what tmux's `set-clipboard on` emits on copy. xterm.js ships no handler for it, so
+ * every such write was silently dropped and copy out of an instance was impossible.
  */
-export function parseOsc52(data: string): string | null {
+export function decodeOsc52(data: string): string | null {
 	const sep = data.indexOf(';');
 	if (sep === -1) return null;
-	// tmux leaves the selection field empty (`OSC 52 ; ; …`), and a browser has one clipboard
-	// anyway, so which selection was named never changes where the text goes.
-	const payload = data.slice(sep + 1);
-	// `?` asks the terminal to report its clipboard back, which we never answer.
+	const payload = data.slice(sep + 1).replace(/\s+/g, '');
+	// `?` is a read request; answering it would hand the host clipboard to the container.
 	if (payload === '' || payload === '?') return null;
 	try {
-		const binary = atob(payload);
-		return new TextDecoder().decode(Uint8Array.from(binary, (ch) => ch.charCodeAt(0)));
+		const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
+		return new TextDecoder().decode(bytes);
 	} catch {
 		return null;
 	}

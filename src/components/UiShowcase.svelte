@@ -213,6 +213,8 @@
 	let tabEditingName = $state('');
 	// Renames are applied for real, so the inline editor is inspectable end to end.
 	let tabRenames = $state<Record<string, string>>({});
+	// No container behind the demo, so a stopped tab just stays disabled.
+	let tabStopping = $state<string[]>([]);
 
 	const demoTabs = $derived(
 		Array.from({ length: tabCount }, (_, i): Instance => {
@@ -555,6 +557,11 @@
 					bind:editingName={tabEditingName}
 					onreload={() => toast('Reload editor (demo)')}
 					onselect={(id) => (tabActive = demoTabs.findIndex((t) => t.id === id))}
+					stopping={tabStopping}
+					onstop={(id) => {
+						tabStopping = [...tabStopping, id];
+						toast(`Stop ${id} (demo)`);
+					}}
 					onstartrename={(inst) => {
 						tabEditingId = inst.id;
 						tabEditingName = inst.name;

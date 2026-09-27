@@ -1,34 +1,34 @@
 import { describe, expect, test } from 'bun:test';
-import { parseOsc52 } from './osc52.ts';
+import { decodeOsc52 } from './osc52.ts';
 
 const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64');
 
-describe('parseOsc52', () => {
-	test('decodes the clipboard selection', () => {
-		expect(parseOsc52(`c;${b64('hello')}`)).toBe('hello');
+describe('decodeOsc52', () => {
+	test('decodes the clipboard selection tmux sends', () => {
+		expect(decodeOsc52(`c;${b64('hello from tmux')}`)).toBe('hello from tmux');
 	});
 
-	test('decodes tmux’s empty selection field', () => {
-		expect(parseOsc52(`;${b64('echo HELLOWORLD')}`)).toBe('echo HELLOWORLD');
+	test('accepts any selection target, not just c', () => {
+		expect(decodeOsc52(`p;${b64('primary')}`)).toBe('primary');
+		expect(decodeOsc52(`;${b64('default')}`)).toBe('default');
 	});
 
-	test('round-trips multi-byte text', () => {
-		expect(parseOsc52(`c;${b64('café — テスト')}`)).toBe('café — テスト');
+	test('round-trips multi-line and non-ASCII payloads', () => {
+		const text = 'line one\nline twö — ✓\n';
+		expect(decodeOsc52(`c;${b64(text)}`)).toBe(text);
 	});
 
-	test('ignores the report form', () => {
-		expect(parseOsc52('c;?')).toBeNull();
+	test('tolerates base64 split across the sequence', () => {
+		expect(decodeOsc52(`c;${b64('wrapped')}\n \t`)).toBe('wrapped');
 	});
 
-	test('ignores an empty payload', () => {
-		expect(parseOsc52('c;')).toBeNull();
+	test('refuses a read request so the host clipboard never leaks into the container', () => {
+		expect(decodeOsc52('c;?')).toBeNull();
 	});
 
-	test('ignores a payload with no selection separator', () => {
-		expect(parseOsc52(b64('hello'))).toBeNull();
-	});
-
-	test('ignores malformed base64', () => {
-		expect(parseOsc52('c;not base64!!')).toBeNull();
+	test('returns null for malformed input rather than throwing', () => {
+		expect(decodeOsc52('c;not base64!!')).toBeNull();
+		expect(decodeOsc52('no-separator')).toBeNull();
+		expect(decodeOsc52('c;')).toBeNull();
 	});
 });

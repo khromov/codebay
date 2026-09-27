@@ -15,6 +15,7 @@ import { join, sep } from 'node:path';
 import { PUBLISH_HOST } from './config.server.ts';
 import { setOption } from './db.server.ts';
 import {
+	CLAUDE_RESTORE_MOUNT,
 	devcontainerUpArgs,
 	devcontainerUpEnv,
 	launchCommandFor,
@@ -1037,6 +1038,67 @@ describe('writeOverrideConfig containerEnv', () => {
 			{ name: 'FOO', value: 'new' }
 		]);
 		expect(readDevcontainer().containerEnv).toEqual({ KEEP: 'me', FOO: 'new' });
+	});
+});
+
+describe('writeOverrideConfig claude restore mount', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-mount-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	const readDevcontainer = () =>
+		JSON.parse(readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8'));
+
+	const write = (dirArg = '/data/instances/x/claude') =>
+		writeOverrideConfig(dir, 8001, [], undefined, 'ide', 'default', [], dirArg);
+
+	test('mounts the mirror read-only so a rebuilt container can restore from it', async () => {
+		await write();
+		expect(readDevcontainer().mounts).toEqual([
+			`source=/data/instances/x/claude,target=${CLAUDE_RESTORE_MOUNT},type=bind,readonly`
+		]);
+	});
+
+	test('adds no mounts key when no restore dir is given', async () => {
+		await writeOverrideConfig(dir, 8001);
+		expect(readDevcontainer().mounts).toBeUndefined();
+	});
+
+	test("keeps the project's own mounts, in both string and object form", async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({
+				image: 'ships/own:1',
+				mounts: [
+					'source=/host/cache,target=/cache,type=bind',
+					{ source: 'named-vol', target: '/var/lib/docker', type: 'volume' }
+				]
+			})
+		);
+		await write();
+		const mounts = readDevcontainer().mounts;
+		expect(mounts).toHaveLength(3);
+		expect(mounts[0]).toBe('source=/host/cache,target=/cache,type=bind');
+		expect(mounts[1]).toEqual({ source: 'named-vol', target: '/var/lib/docker', type: 'volume' });
+	});
+
+	test('re-renders its own entry rather than accumulating one per rebuild', async () => {
+		await write('/data/instances/x/claude');
+		await write('/data/instances/moved/claude');
+		const mounts = readDevcontainer().mounts;
+		expect(mounts).toHaveLength(1);
+		expect(mounts[0]).toContain('source=/data/instances/moved/claude,');
+	});
+
+	test('normalizes a Windows source path to forward slashes', async () => {
+		await write('C:\\Users\\me\\.codebay\\instances\\x\\claude');
+		expect(readDevcontainer().mounts[0]).toBe(
+			`source=C:/Users/me/.codebay/instances/x/claude,target=${CLAUDE_RESTORE_MOUNT},type=bind,readonly`
+		);
 	});
 });
 

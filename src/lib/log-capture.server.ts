@@ -7,8 +7,8 @@ import {
 	statSync,
 	writeFileSync
 } from 'node:fs';
-import { join } from 'node:path';
-import { LOGS_DIR } from './config.server.ts';
+import { dirname, join } from 'node:path';
+import { claudeMirrorDir, LOGS_DIR } from './config.server.ts';
 import { getInstance, type InstanceRow } from './db.server.ts';
 import { isRunning } from './docker.server.ts';
 import { execInContainer } from './exec.server.ts';
@@ -23,25 +23,30 @@ const END_MARKER = '__CODEBAY_END__';
 
 export interface ManifestEntry {
 	path: string;
+	/** Path relative to the container's Claude config dir, e.g. `projects/-workspaces-foo/x.jsonl`. */
+	relPath: string;
 	size: number;
 }
 
 interface FetchJob {
 	path: string;
+	relPath: string;
 	hostFileName: string;
 	/** 1-indexed byte to `tail -c +N` from; 1 re-pulls the whole file. */
 	startByte: number;
-	mode: 'append' | 'rollover';
 }
 
 /**
- * Lists the transcript + history files with their byte sizes. `find`/`wc -c` (not GNU `-printf`)
- * so it works on busybox containers too; the marker line lets the parser skip login-shell noise.
+ * Lists the transcript + history files with their byte sizes, led by the config dir itself so the
+ * parser can derive each file's layout-preserving relative path rather than guess at the encoding.
+ * `find`/`wc -c` (not GNU `-printf`) so it works on busybox containers too; the marker line lets
+ * the parser skip login-shell noise.
  */
-function manifestScript(): string {
+export function manifestScript(): string {
 	return (
 		`h=$(eval echo ~$(id -un)); cfg="\${CLAUDE_CONFIG_DIR:-$h/.claude}"; ` +
 		`printf '%s\\n' '${MANIFEST_MARKER}'; ` +
+		`printf '%s\\n' "$cfg"; ` +
 		`{ find "$cfg" -maxdepth 1 -type f -name 'history.jsonl' 2>/dev/null; ` +
 		`find "$cfg/projects" -type f -name '*.jsonl' 2>/dev/null; } | ` +
 		`while IFS= read -r f; do printf '%s\\t%s\\n' "$f" "$(wc -c < "$f" | tr -d ' ')"; done; true`
@@ -74,13 +79,21 @@ function fetchScript(): string {
 export function parseManifest(stdout: string): ManifestEntry[] {
 	const at = stdout.indexOf(MANIFEST_MARKER);
 	if (at === -1) return [];
+	const [, cfgLine, ...lines] = stdout.slice(at + MANIFEST_MARKER.length).split('\n');
+	// Trailing slashes would leave the relative path leading with one, breaking the host join.
+	const cfg = (cfgLine ?? '').trim().replace(/\/+$/, '');
+	if (!cfg) return [];
 	const out: ManifestEntry[] = [];
-	for (const line of stdout.slice(at + MANIFEST_MARKER.length).split('\n')) {
+	for (const line of lines) {
 		const tab = line.indexOf('\t');
 		if (tab === -1) continue;
 		const path = line.slice(0, tab);
 		const size = Number(line.slice(tab + 1).trim());
-		if (path && Number.isFinite(size)) out.push({ path, size });
+		if (!path || !Number.isFinite(size) || !path.startsWith(`${cfg}/`)) continue;
+		const relPath = path.slice(cfg.length + 1);
+		// `find` can't emit `..` today, but this gets joined onto a host dir, so don't rely on that.
+		if (relPath.split('/').includes('..')) continue;
+		out.push({ path, relPath, size });
 	}
 	return out;
 }
@@ -94,19 +107,22 @@ export function hostFileNameFor(instanceId: string, containerPath: string): stri
 	return `history-${instanceId}.jsonl`;
 }
 
-/** Diffs container sizes against the host mirrors: append new bytes, or re-pull a file that shrank. */
+/**
+ * Diffs container sizes against the host mirrors: append new bytes, or re-pull a file that shrank.
+ * Sized against the layout-preserving mirror, not the flat archive, because that one tracks the
+ * container 1:1 — it's what gets mounted back in, so it must stay a byte-exact copy.
+ */
 export function planFetch(
 	instanceId: string,
 	manifest: ManifestEntry[],
-	hostSize: (hostFileName: string) => number
+	hostSize: (relPath: string) => number
 ): FetchJob[] {
 	const jobs: FetchJob[] = [];
-	for (const { path, size } of manifest) {
+	for (const { path, relPath, size } of manifest) {
 		const hostFileName = hostFileNameFor(instanceId, path);
-		const existing = hostSize(hostFileName);
+		const existing = hostSize(relPath);
 		if (size === existing) continue;
-		if (size < existing) jobs.push({ path, hostFileName, startByte: 1, mode: 'rollover' });
-		else jobs.push({ path, hostFileName, startByte: existing + 1, mode: 'append' });
+		jobs.push({ path, relPath, hostFileName, startByte: size < existing ? 1 : existing + 1 });
 	}
 	return jobs;
 }
@@ -178,6 +194,7 @@ function updateIndex(logsDir: string, row: InstanceRow): void {
 interface CaptureDeps {
 	exec?: typeof execInContainer;
 	logsDir?: string;
+	mirrorDir?: string;
 }
 
 /**
@@ -188,6 +205,7 @@ export async function runCapturePass(row: InstanceRow, deps: CaptureDeps = {}): 
 	if (!row.container_id) return false;
 	const exec = deps.exec ?? execInContainer;
 	const logsDir = deps.logsDir ?? LOGS_DIR;
+	const mirrorDir = deps.mirrorDir ?? claudeMirrorDir(row.id);
 	const target = { containerId: row.container_id, remoteUser: row.remote_user };
 
 	const manifestRes = await exec(target, { script: manifestScript(), capture: true });
@@ -195,7 +213,7 @@ export async function runCapturePass(row: InstanceRow, deps: CaptureDeps = {}): 
 	const manifest = parseManifest(manifestRes.stdout);
 
 	mkdirSync(logsDir, { recursive: true });
-	const jobs = planFetch(row.id, manifest, (name) => sizeOnDisk(join(logsDir, name)));
+	const jobs = planFetch(row.id, manifest, (rel) => sizeOnDisk(join(mirrorDir, rel)));
 
 	if (jobs.length) {
 		const args = ['fetch'];
@@ -207,9 +225,19 @@ export async function runCapturePass(row: InstanceRow, deps: CaptureDeps = {}): 
 				const job = byPath.get(block.path);
 				if (!job) continue;
 				const bytes = Buffer.from(block.base64, 'base64');
-				const dest = join(logsDir, job.hostFileName);
-				if (job.mode === 'rollover') rollOver(dest);
-				appendFileSync(dest, bytes);
+				const archive = join(logsDir, job.hostFileName);
+				const mirror = join(mirrorDir, job.relPath);
+				mkdirSync(dirname(mirror), { recursive: true });
+				// The archive keeps every generation; the mirror only ever holds what the container
+				// holds, since it gets mounted back in and a stale byte would resurface as history.
+				// Any whole-file pull rolls, since a pre-mirror instance's archive would otherwise double.
+				if (job.startByte === 1) {
+					rollOver(archive);
+					writeFileSync(mirror, bytes);
+				} else {
+					appendFileSync(mirror, bytes);
+				}
+				appendFileSync(archive, bytes);
 			}
 		}
 	}
