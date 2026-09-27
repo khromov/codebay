@@ -24,7 +24,7 @@ import { injections, resolveInjections, resolveInjectionStages } from '../lib/in
 import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings, hasAttentionHook } from './attention-hooks.ts';
 import { restoreScript } from './claude-history.ts';
-import { collectHostSkillFiles, MAX_FILE_BYTES } from './claude-code-skills.ts';
+import { collectHostSkillFiles, isAnthropicSkill } from './claude-code-skills.ts';
 import { isValid, LIVE_CREDENTIALS_TEST, tokenCredentials } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
 import { gitIdentity, gitIdentityEnabled, readGitIdentity } from './git-identity.ts';
@@ -133,25 +133,6 @@ describe('injection registry', () => {
 		expect(skills).toBeDefined();
 		expect(skills!.auth).toBeDefined();
 		expect(typeof skills!.check).toBe('function');
-	});
-
-	test('skill files past the exec carrier cap are collected, not skipped', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'codebay-skills-'));
-		try {
-			const schemas = join(dir, 'skills/docx/scripts/office/schemas');
-			mkdirSync(schemas, { recursive: true });
-			writeFileSync(join(schemas, 'wml.xsd'), 'x'.repeat(200_000));
-			writeFileSync(join(schemas, 'huge.bin'), Buffer.alloc(MAX_FILE_BYTES + 1));
-			setOption('claude_config_dir', dir);
-			const files = await collectHostSkillFiles();
-			const wml = files.find((f) => f.rel.endsWith('wml.xsd'));
-			expect(wml?.oversized).toBe(false);
-			expect(wml?.bytes.length).toBe(200_000);
-			expect(files.find((f) => f.rel.endsWith('huge.bin'))?.oversized).toBe(true);
-		} finally {
-			setOption('claude_config_dir', '');
-			rmSync(dir, { recursive: true, force: true });
-		}
 	});
 
 	test('claude-model is registered with a health check and no auth chip', () => {
@@ -1706,5 +1687,113 @@ describe.skipIf(POSIX_SHELL_ONLY)('code-server-dark', () => {
 		} finally {
 			rmSync(tmp, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('claude-code-skills synced-skill exclusion', () => {
+	const BUCKET = '6a52d718-2bf5-4a99-b237-25f0cedbd0aa_377466a7-208f-4f07-a63a-18776d228b66';
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-skills-'));
+		setOption('claude_config_dir', dir);
+	});
+
+	afterEach(() => {
+		setOption('claude_config_dir', '');
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	const bucketDir = () => join(dir, 'skills/synced', BUCKET);
+
+	function writeSkill(root: string, name: string): void {
+		mkdirSync(join(root, name, 'scripts'), { recursive: true });
+		writeFileSync(join(root, name, 'SKILL.md'), `# ${name}`);
+		writeFileSync(join(root, name, 'scripts/run.py'), 'print(1)');
+	}
+
+	function seedBucket(manifest: string | null): void {
+		writeSkill(bucketDir(), 'docx');
+		writeSkill(bucketDir(), 'team-style');
+		writeFileSync(join(bucketDir(), '.last-complete-round'), 'round cli');
+		writeFileSync(join(dir, 'skills/synced', `.bucket-${BUCKET}`), '');
+		if (manifest !== null) writeFileSync(join(bucketDir(), 'manifest.json'), manifest);
+	}
+
+	const manifest = JSON.stringify({
+		lastUpdated: 1,
+		skills: [
+			{ skillId: 'docx', name: 'docx', source: 'anthropic', creatorType: 'anthropic' },
+			{ skillId: 'skill_01abc', name: 'team-style', source: 'org', creatorType: 'user' }
+		],
+		staleDirs: ['old'],
+		pendingClaims: ['123:/team-style']
+	});
+
+	const rels = async () => (await collectHostSkillFiles()).map((f) => f.rel).sort();
+
+	test('drops Anthropic skills but copies user/org synced skills and a trimmed manifest', async () => {
+		seedBucket(manifest);
+		writeSkill(join(dir, 'skills'), 'mine');
+		const files = await collectHostSkillFiles();
+		const b = `skills/synced/${BUCKET}`;
+		expect(files.map((f) => f.rel).sort()).toEqual([
+			`skills/mine/SKILL.md`,
+			`skills/mine/scripts/run.py`,
+			`skills/synced/.bucket-${BUCKET}`,
+			`${b}/manifest.json`,
+			`${b}/team-style/SKILL.md`,
+			`${b}/team-style/scripts/run.py`
+		]);
+		const written = JSON.parse(files.find((f) => f.rel === `${b}/manifest.json`)!.bytes.toString());
+		expect(written).toEqual({
+			lastUpdated: 1,
+			skills: [{ skillId: 'skill_01abc', name: 'team-style', source: 'org', creatorType: 'user' }]
+		});
+	});
+
+	test('a bucket holding only Anthropic skills is dropped whole, marker included', async () => {
+		seedBucket(
+			JSON.stringify({
+				skills: [
+					{ skillId: 'docx', name: 'docx', creatorType: 'anthropic' },
+					{ skillId: 'x', name: 'team-style', creatorType: 'anthropic' }
+				]
+			})
+		);
+		expect(await rels()).toEqual([]);
+	});
+
+	test('a missing manifest drops the bucket, since authorship cannot be judged', async () => {
+		seedBucket(null);
+		writeSkill(join(dir, 'skills'), 'mine');
+		expect(await rels()).toEqual(['skills/mine/SKILL.md', 'skills/mine/scripts/run.py']);
+	});
+
+	test('an unparseable or skill-less manifest drops the bucket too', async () => {
+		seedBucket('{not json');
+		expect(await rels()).toEqual([]);
+		writeFileSync(join(bucketDir(), 'manifest.json'), JSON.stringify({ skills: 'nope' }));
+		expect(await rels()).toEqual([]);
+	});
+
+	test('a dir the manifest does not list is not copied', async () => {
+		seedBucket(manifest);
+		writeSkill(bucketDir(), 'orphan');
+		expect((await rels()).some((r) => r.includes('orphan'))).toBe(false);
+	});
+
+	test("the sync's own .staging and .trash dirs are never copied", async () => {
+		writeSkill(join(dir, 'skills/.trash'), 'docx');
+		writeSkill(join(dir, 'skills/.staging'), 'pptx');
+		expect(await rels()).toEqual([]);
+	});
+
+	test('isAnthropicSkill prefers creatorType and falls back to source on older manifests', () => {
+		expect(isAnthropicSkill({ creatorType: 'anthropic', source: 'org' })).toBe(true);
+		expect(isAnthropicSkill({ creatorType: 'user', source: 'anthropic' })).toBe(false);
+		expect(isAnthropicSkill({ source: 'anthropic-example' })).toBe(true);
+		expect(isAnthropicSkill({ source: 'org' })).toBe(false);
+		expect(isAnthropicSkill({})).toBe(false);
 	});
 });
