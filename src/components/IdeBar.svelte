@@ -12,6 +12,7 @@
 	import AppBar from './AppBar.svelte';
 	import { withPopupMarker } from '../lib/popup-nav.ts';
 	import { nextTabIndex } from '../lib/tab-nav.ts';
+	import { filesFrom } from '../lib/upload.ts';
 
 	let {
 		running,
@@ -23,6 +24,7 @@
 		onreload,
 		onselect,
 		onstop,
+		ondropfiles,
 		onstartrename,
 		oncommitrename,
 		oncancelrename
@@ -39,12 +41,49 @@
 		onselect: (id: string) => void;
 		/** Absent on /debug, where there is no instance to stop. */
 		onstop?: (id: string) => void;
+		/** Absent while workspace uploads are switched off, so tabs stay plain. */
+		ondropfiles?: (id: string, files: File[]) => void;
 		onstartrename: (instance: Instance) => void;
 		oncommitrename: (id: string) => void;
 		oncancelrename: () => void;
 	} = $props();
 
 	const isStopping = (id: string) => stopping.includes(id);
+
+	// The tooltip is fixed-positioned from the slot's rect, since the scrolling strip clips anything
+	// hanging below the bar.
+	let dropTarget = $state<{ id: string; x: number; y: number; maxX: number } | null>(null);
+	let tipWidth = $state(0);
+	// Centred under the tab but kept on screen, since the first and last tabs sit near the edges.
+	const tipLeft = $derived(
+		dropTarget ? Math.max(8, Math.min(dropTarget.x - tipWidth / 2, dropTarget.maxX - tipWidth)) : 0
+	);
+
+	function onSlotDrag(e: DragEvent, id: string) {
+		if (!ondropfiles || !e.dataTransfer?.types.includes('Files')) return;
+		e.preventDefault();
+		e.dataTransfer.dropEffect = 'copy';
+		if (dropTarget?.id === id) return;
+		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		dropTarget = {
+			id,
+			x: r.left + r.width / 2,
+			y: r.bottom,
+			maxX: document.documentElement.clientWidth - 8
+		};
+	}
+
+	function onSlotLeave(e: DragEvent) {
+		if ((e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) return;
+		dropTarget = null;
+	}
+
+	function onSlotDrop(e: DragEvent, id: string) {
+		if (!ondropfiles) return;
+		e.preventDefault();
+		dropTarget = null;
+		ondropfiles(id, filesFrom(e.dataTransfer));
+	}
 
 	let viewport = $state<HTMLDivElement | null>(null);
 	let content = $state<HTMLElement | null>(null);
@@ -126,7 +165,16 @@
 					{#each running as inst, i (inst.id)}
 						<!-- The slot, not the tab button, carries the chrome: a stop button nested inside
 						     a <button> would be invalid markup. -->
-						<div class="tab-slot" class:active={inst.id === active}>
+						<div
+							class="tab-slot"
+							class:active={inst.id === active}
+							class:drop-target={dropTarget?.id === inst.id}
+							role="presentation"
+							ondragenter={(e) => onSlotDrag(e, inst.id)}
+							ondragover={(e) => onSlotDrag(e, inst.id)}
+							ondragleave={onSlotLeave}
+							ondrop={(e) => onSlotDrop(e, inst.id)}
+						>
 							{#if editingId === inst.id}
 								<div class="tab editing">
 									<Avatar
@@ -236,6 +284,16 @@
 		>
 	</div>
 </AppBar>
+{#if dropTarget}
+	<div
+		class="drop-tip panel"
+		bind:offsetWidth={tipWidth}
+		style:left="{tipLeft}px"
+		style:top="{dropTarget.y}px"
+	>
+		Drop to save into codebay-inbox/
+	</div>
+{/if}
 
 <style>
 	/* Grouped so the auto-margin doesn't have to move when the reload button comes and goes. */
@@ -341,8 +399,29 @@
 		/* The key has sunk into the chassis; this strip is the slot it dropped out of. */
 		box-shadow: inset 0 3px 0 var(--bg);
 	}
-	.tab-slot:not(.active):hover {
+	.tab-slot:not(.active):hover,
+	.tab-slot.drop-target:not(.active) {
 		background: color-mix(in srgb, var(--ink) 12%, transparent);
+	}
+	.tab-slot.drop-target {
+		outline: 2px dashed currentColor;
+		outline-offset: -5px;
+	}
+	/* pointer-events: none, or the tip would steal the drag from the tab it's pointing at. */
+	.drop-tip {
+		position: fixed;
+		z-index: 20;
+		transform: translateY(6px);
+		padding: 6px 10px;
+		background: var(--bg-card);
+		color: var(--ink);
+		font-family: var(--font-mono);
+		font-weight: 600;
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		white-space: nowrap;
+		pointer-events: none;
 	}
 
 	.tab {

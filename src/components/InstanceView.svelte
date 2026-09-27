@@ -6,6 +6,7 @@
 	import AgentLogBox from './AgentLogBox.svelte';
 	import StatusBadge from './StatusBadge.svelte';
 	import Skeleton from './Skeleton.svelte';
+	import DropZone from './DropZone.svelte';
 	import { forwardedPortUrl } from '../lib/links.ts';
 	import { liveSocket, liveStream } from '../live.ts';
 	import { apiPost, apiDelete } from '../api.ts';
@@ -241,7 +242,7 @@
 	ondrop={onDrop}
 >
 	{#if dropping}
-		<div class="dropzone" role="presentation">Drop to save into codebay-inbox/</div>
+		<DropZone />
 	{/if}
 	<div class="meta">
 		<span class="k">Source</span>
@@ -449,23 +450,6 @@
 		max-width: 1200px;
 		margin: 0 auto;
 		padding: 20px 24px 40px;
-	}
-	.dropzone {
-		position: absolute;
-		inset: 0;
-		z-index: 5;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: var(--fill);
-		color: var(--fill-ink);
-		border: 2px dashed var(--fill-ink);
-		font-family: var(--font-mono);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		font-size: 13px;
-		pointer-events: none;
 	}
 	.meta {
 		display: grid;

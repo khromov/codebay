@@ -5,6 +5,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { nextTabIndex } from '../lib/tab-nav.ts';
 	import DashboardView from './DashboardView.svelte';
+	import DropZone from './DropZone.svelte';
 	import IdeBar from './IdeBar.svelte';
 	import IdeLoader from './IdeLoader.svelte';
 	import TerminalSplit from './TerminalSplit.svelte';
@@ -268,11 +269,10 @@
 	});
 
 	// Sequential, so the response order (and the toast order) matches the drop order.
-	async function handleUpload(files: File[]) {
-		if (!active) return;
+	async function handleUpload(id: string, files: File[]) {
 		for (const file of files) {
 			try {
-				const saved = await uploadFile(active, file);
+				const saved = await uploadFile(id, file);
 				toast.success(`Saved ${saved.containerPath}`);
 				void navigator.clipboard.writeText(saved.containerPath).catch(() => {});
 			} catch (err) {
@@ -286,21 +286,27 @@
 	function onDrop(e: DragEvent) {
 		e.preventDefault();
 		dropping = false;
-		void handleUpload(filesFrom(e.dataTransfer));
+		void handleUpload(active, filesFrom(e.dataTransfer));
 	}
 
-	// The code-server iframe swallows drag/drop and paste, so the parent document has to raise an
-	// overlay on `dragenter` and take the drop itself — a plain listener on the pane never fires.
+	// Covering the code-server iframe hijacks VS Code's own drops, so there only the tab takes a
+	// file; a terminal pane lives in this document and gets the full overlay.
 	$effect(() => {
 		if (!livePreflight.uploadEnabled || !onIde) return;
+		const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes('Files') ?? false;
 		const enter = (e: DragEvent) => {
-			if (e.dataTransfer?.types.includes('Files')) {
-				e.preventDefault();
-				dropping = true;
-			}
+			if (hasFiles(e)) dropping = true;
 		};
+		// A drop target already claimed the drag; anywhere else refuses it, since the browser's
+		// default is to open the file in a new tab.
 		const over = (e: DragEvent) => {
-			if (dropping) e.preventDefault();
+			if (!hasFiles(e) || e.defaultPrevented) return;
+			e.preventDefault();
+			e.dataTransfer!.dropEffect = 'none';
+		};
+		const drop = (e: DragEvent) => {
+			if (hasFiles(e)) e.preventDefault();
+			dropping = false;
 		};
 		const leave = (e: DragEvent) => {
 			if (e.relatedTarget === null) dropping = false;
@@ -309,19 +315,21 @@
 		// textarea, the tab bar) — paste inside the iframe never reaches here.
 		const paste = (e: ClipboardEvent) => {
 			const files = filesFrom(e.clipboardData);
-			if (files.length) {
+			if (files.length && active) {
 				e.preventDefault();
-				void handleUpload(files);
+				void handleUpload(active, files);
 			}
 		};
 		window.addEventListener('dragenter', enter);
 		window.addEventListener('dragover', over);
 		window.addEventListener('dragleave', leave);
+		window.addEventListener('drop', drop);
 		window.addEventListener('paste', paste, true);
 		return () => {
 			window.removeEventListener('dragenter', enter);
 			window.removeEventListener('dragover', over);
 			window.removeEventListener('dragleave', leave);
+			window.removeEventListener('drop', drop);
 			window.removeEventListener('paste', paste, true);
 		};
 	});
@@ -443,6 +451,9 @@
 				: undefined}
 			onselect={(id) => navigate(`/ide/${id}`)}
 			onstop={stopTab}
+			ondropfiles={livePreflight.uploadEnabled
+				? (id, files) => void handleUpload(id, files)
+				: undefined}
 			onstartrename={startRename}
 			oncommitrename={commitRename}
 			oncancelrename={cancelRename}
@@ -499,15 +510,8 @@
 					{:else if inst.mode !== 'terminal' && !loadedFrames.has(inst.id)}
 						<IdeLoader />
 					{/if}
-					{#if dropping && inst.id === active}
-						<div
-							class="dropzone"
-							role="presentation"
-							ondragover={(e) => e.preventDefault()}
-							ondrop={onDrop}
-						>
-							Drop to save into codebay-inbox/
-						</div>
+					{#if dropping && inst.id === active && inst.mode === 'terminal'}
+						<DropZone ondrop={onDrop} />
 					{/if}
 				</div>
 			{/if}
@@ -563,23 +567,5 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		font-size: 13px;
-	}
-	/* pointer-events: auto so the overlay (not the iframe beneath it) takes the drop. */
-	.dropzone {
-		position: absolute;
-		inset: 0;
-		z-index: 5;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: var(--fill);
-		color: var(--fill-ink);
-		border: 2px dashed var(--fill-ink);
-		font-family: var(--font-mono);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		font-size: 13px;
-		pointer-events: auto;
 	}
 </style>
