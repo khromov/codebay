@@ -15,13 +15,17 @@ export const INSTALL_SCRIPT =
 	'command -v tmux >/dev/null 2>&1';
 
 /**
- * `mouse on` buys wheel-scroll at the cost of code-server's native drag-select, since tmux
- * takes the mouse — hence `bind m` to toggle it, shadowing mark-pane, unused in a single pane.
+ * `mouse on` buys wheel-scroll and makes tmux — not the browser — own the drag, which is what
+ * survives Claude's screen repaints; `set-clipboard on` then hands the copy to the host via OSC 52,
+ * which `TerminalPane` decodes. `bind m` shadows mark-pane, unused in a single pane.
  */
 export const TMUX_CONF_LINES = [
 	'set -g mouse on',
 	'set -g history-limit 50000',
 	'set -g set-clipboard on',
+	// Only `xterm*` gets the clipboard feature by default, so an image whose TERM is anything
+	// else silently turns `set-clipboard on` into a no-op.
+	"set -as terminal-overrides ',*:Ms=\\E]52;%p1%s;%p2%s\\007'",
 	'set -g allow-passthrough on',
 	'set -g status off',
 	'bind m set -g mouse \\; display-message "mouse: #{?mouse,on,off}"'

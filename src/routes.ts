@@ -37,6 +37,7 @@ import {
 	broadcastFilter,
 	broadcastPet,
 	broadcastTheme,
+	broadcastUploadEnabled,
 	createInstance,
 	getDefaultMode,
 	deleteAllInstances,
@@ -84,6 +85,7 @@ import { proxyRoutes } from './lib/proxy.server.ts';
 import { runDetail, runTimeline } from './lib/agent-runs.server.ts';
 import { PR_ATTRIBUTION_KEY, prAttributionEnabled } from './lib/sandbox-ops.server.ts';
 import { mcpRoutes } from './mcp/routes.server.ts';
+import { UPLOAD_ENABLED_KEY, uploadEnabled, uploadRoutes } from './lib/uploads.server.ts';
 import {
 	isInstanceFilter,
 	isTheme,
@@ -114,7 +116,7 @@ async function preflight() {
 				})
 		)
 	]);
-	return { docker, cli, auth, defaultMode: getDefaultMode() };
+	return { docker, cli, auth, defaultMode: getDefaultMode(), uploadEnabled: uploadEnabled() };
 }
 
 /** The header pet logo, resolved from the DB option. A name that left the catalog reads as "off". */
@@ -194,7 +196,8 @@ export const routes: Record<string, MochiRouteValue> = {
 			// Lets the health panel's skeleton render one row per real check before the first snapshot.
 			return {
 				id: params.id,
-				injectionChecks: resolveInjections(row.mode).filter((i) => i.check).length
+				injectionChecks: resolveInjections(row.mode).filter((i) => i.check).length,
+				uploadEnabled: uploadEnabled()
 			};
 		},
 		actions: {
@@ -230,6 +233,7 @@ export const routes: Record<string, MochiRouteValue> = {
 				defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
 				builtinImage: DEFAULT_IMAGE,
 				disableBuildCache: getOption('disable_build_cache') === '1',
+				workspaceUploadEnabled: uploadEnabled(),
 				// An explicit empty string (as opposed to unset) means "copy everything".
 				copyIgnorePatterns: getOption('copy_ignore_patterns') ?? DEFAULT_COPY_IGNORE,
 				builtinCopyIgnore: DEFAULT_COPY_IGNORE,
@@ -325,6 +329,14 @@ export const routes: Record<string, MochiRouteValue> = {
 			disableBuildCache: ({ formData }) => {
 				const enabled = onChecked(formData, 'enabled');
 				setOption('disable_build_cache', enabled ? '1' : '0');
+				return success({ enabled });
+			},
+
+			// Gates the upload route and the drop zones; broadcast so an open IDE tab arms/disarms without a reload.
+			workspaceUploadToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption(UPLOAD_ENABLED_KEY, enabled ? '1' : '0');
+				broadcastUploadEnabled(enabled);
 				return success({ enabled });
 			},
 
@@ -756,6 +768,8 @@ export const routes: Record<string, MochiRouteValue> = {
 	...proxyRoutes,
 
 	...mcpRoutes,
+
+	...uploadRoutes,
 
 	...(process.env.MODE === 'development'
 		? {

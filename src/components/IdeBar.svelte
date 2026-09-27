@@ -7,10 +7,12 @@
 	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import CircleStop from '@lucide/svelte/icons/circle-stop';
 	import Avatar from './Avatar.svelte';
 	import AppBar from './AppBar.svelte';
 	import { withPopupMarker } from '../lib/popup-nav.ts';
 	import { nextTabIndex } from '../lib/tab-nav.ts';
+	import { filesFrom } from '../lib/upload.ts';
 
 	let {
 		running,
@@ -18,8 +20,11 @@
 		attention,
 		editingId,
 		editingName = $bindable(),
+		stopping = [],
 		onreload,
 		onselect,
+		onstop,
+		ondropfiles,
 		onstartrename,
 		oncommitrename,
 		oncancelrename
@@ -29,21 +34,59 @@
 		attention: Record<string, 'done' | 'waiting' | null>;
 		editingId: string | null;
 		editingName: string;
+		/** Ids with a stop already in flight — the tab survives until the stream drops it from `running`. */
+		stopping?: readonly string[];
 		/** Absent for terminal tabs, which carry their own reload, and until the iframe exists. */
 		onreload?: () => void;
 		onselect: (id: string) => void;
+		/** Absent on /debug, where there is no instance to stop. */
+		onstop?: (id: string) => void;
+		/** Absent while workspace uploads are switched off, so tabs stay plain. */
+		ondropfiles?: (id: string, files: File[]) => void;
 		onstartrename: (instance: Instance) => void;
 		oncommitrename: (id: string) => void;
 		oncancelrename: () => void;
 	} = $props();
 
-	const activeIndex = $derived(running.findIndex((i) => i.id === active));
-	// Falls back to the first tab so the strip always offers exactly one tab stop,
-	// even when `active` names an instance that has since stopped.
-	const focusIndex = $derived(activeIndex >= 0 ? activeIndex : 0);
+	const isStopping = (id: string) => stopping.includes(id);
+
+	// The tooltip is fixed-positioned from the slot's rect, since the scrolling strip clips anything
+	// hanging below the bar.
+	let dropTarget = $state<{ id: string; x: number; y: number; maxX: number } | null>(null);
+	let tipWidth = $state(0);
+	// Centred under the tab but kept on screen, since the first and last tabs sit near the edges.
+	const tipLeft = $derived(
+		dropTarget ? Math.max(8, Math.min(dropTarget.x - tipWidth / 2, dropTarget.maxX - tipWidth)) : 0
+	);
+
+	function onSlotDrag(e: DragEvent, id: string) {
+		if (!ondropfiles || !e.dataTransfer?.types.includes('Files')) return;
+		e.preventDefault();
+		e.dataTransfer.dropEffect = 'copy';
+		if (dropTarget?.id === id) return;
+		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		dropTarget = {
+			id,
+			x: r.left + r.width / 2,
+			y: r.bottom,
+			maxX: document.documentElement.clientWidth - 8
+		};
+	}
+
+	function onSlotLeave(e: DragEvent) {
+		if ((e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) return;
+		dropTarget = null;
+	}
+
+	function onSlotDrop(e: DragEvent, id: string) {
+		if (!ondropfiles) return;
+		e.preventDefault();
+		dropTarget = null;
+		ondropfiles(id, filesFrom(e.dataTransfer));
+	}
 
 	let viewport = $state<HTMLDivElement | null>(null);
-	let content = $state<HTMLDivElement | null>(null);
+	let content = $state<HTMLElement | null>(null);
 	let atStart = $state(true);
 	let atEnd = $state(true);
 	// `$state` rather than a plain object so `bind:this` into it is a tracked write —
@@ -67,8 +110,9 @@
 		tabEls[inst.id]?.focus();
 	}
 
-	function onTabKeydown(e: KeyboardEvent) {
-		const next = nextTabIndex(activeIndex, e.key, running.length);
+	// Relative to the focused tab, not the active one: every tab is in the Tab order now.
+	function onTabKeydown(e: KeyboardEvent, index: number) {
+		const next = nextTabIndex(index, e.key, running.length);
 		if (next === null) return;
 		e.preventDefault();
 		select(next);
@@ -115,74 +159,99 @@
 				>
 			{/if}
 			<div class="viewport" bind:this={viewport}>
-				<div class="tabs" role="tablist" aria-label="Instances" bind:this={content}>
+				<!-- A nav of buttons rather than a tablist: a tablist may only own tabs, so the
+				     stop buttons beside them fail ARIA, and each tab switches the route anyway. -->
+				<nav class="tabs" aria-label="Instances" bind:this={content}>
 					{#each running as inst, i (inst.id)}
-						{#if editingId === inst.id}
-							<div class="tab editing">
-								<Avatar
-									name={inst.name}
-									art={findAvatar(inst.avatar ?? undefined) ?? null}
-									scale={3}
-								/>
-								<!-- svelte-ignore a11y_autofocus -->
-								<input
-									class="tab-name-edit"
-									bind:value={editingName}
-									autofocus
-									onfocus={(e) => (e.currentTarget as HTMLInputElement).select()}
-									onblur={() => oncommitrename(inst.id)}
-									onkeydown={(e) => {
-										if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
-										else if (e.key === 'Escape') oncancelrename();
-									}}
-								/>
-							</div>
-						{:else}
-							<button
-								bind:this={tabEls[inst.id]}
-								type="button"
-								class="tab"
-								class:active={inst.id === active}
-								id="tab-{inst.id}"
-								role="tab"
-								aria-selected={inst.id === active}
-								tabindex={i === focusIndex ? 0 : -1}
-								onclick={() => onselect(inst.id)}
-								ondblclick={() => onstartrename(inst)}
-								onkeydown={onTabKeydown}
-								title={inst.name}
-							>
-								<Avatar
-									name={inst.name}
-									art={findAvatar(inst.avatar ?? undefined) ?? null}
-									scale={3}
-								/>
-								<span class="tab-name">{inst.name}</span>
-								<span
-									class="tab-mode"
-									aria-label={inst.mode === 'terminal'
-										? 'Terminal-only instance'
-										: 'Full IDE instance'}
+						<!-- The slot, not the tab button, carries the chrome: a stop button nested inside
+						     a <button> would be invalid markup. -->
+						<div
+							class="tab-slot"
+							class:active={inst.id === active}
+							class:drop-target={dropTarget?.id === inst.id}
+							role="presentation"
+							ondragenter={(e) => onSlotDrag(e, inst.id)}
+							ondragover={(e) => onSlotDrag(e, inst.id)}
+							ondragleave={onSlotLeave}
+							ondrop={(e) => onSlotDrop(e, inst.id)}
+						>
+							{#if editingId === inst.id}
+								<div class="tab editing">
+									<Avatar
+										name={inst.name}
+										art={findAvatar(inst.avatar ?? undefined) ?? null}
+										scale={3}
+									/>
+									<!-- svelte-ignore a11y_autofocus -->
+									<input
+										class="tab-name-edit"
+										bind:value={editingName}
+										autofocus
+										onfocus={(e) => (e.currentTarget as HTMLInputElement).select()}
+										onblur={() => oncommitrename(inst.id)}
+										onkeydown={(e) => {
+											if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+											else if (e.key === 'Escape') oncancelrename();
+										}}
+									/>
+								</div>
+							{:else}
+								<button
+									bind:this={tabEls[inst.id]}
+									type="button"
+									class="tab"
+									class:active={inst.id === active}
+									id="tab-{inst.id}"
+									aria-current={inst.id === active ? 'page' : undefined}
+									onclick={() => onselect(inst.id)}
+									ondblclick={() => onstartrename(inst)}
+									onkeydown={(e) => onTabKeydown(e, i)}
+									title={inst.name}
 								>
-									{#if inst.mode === 'terminal'}
-										<Terminal size={11} />
-									{:else}
-										<LayoutTemplate size={11} />
-									{/if}
-								</span>
-								<!-- The focused tab never lights up, so a lit LED always means "needs your eyes". -->
-								{#if inst.id !== active && attention[inst.id]}
+									<Avatar
+										name={inst.name}
+										art={findAvatar(inst.avatar ?? undefined) ?? null}
+										scale={3}
+									/>
+									<span class="tab-name">{inst.name}</span>
 									<span
-										class="attn {attention[inst.id]}"
-										aria-label={attention[inst.id] === 'waiting'
-											? 'Claude is waiting for input'
-											: 'Claude finished'}
-									></span>
+										class="tab-mode"
+										aria-label={inst.mode === 'terminal'
+											? 'Terminal-only instance'
+											: 'Full IDE instance'}
+									>
+										{#if inst.mode === 'terminal'}
+											<Terminal size={11} />
+										{:else}
+											<LayoutTemplate size={11} />
+										{/if}
+									</span>
+									<!-- The focused tab never lights up, so a lit LED always means "needs your eyes". -->
+									{#if inst.id !== active && attention[inst.id]}
+										<span
+											class="attn {attention[inst.id]}"
+											aria-label={attention[inst.id] === 'waiting'
+												? 'Claude is waiting for input'
+												: 'Claude finished'}
+										></span>
+									{/if}
+								</button>
+								{#if onstop}
+									<button
+										type="button"
+										class="tab-stop"
+										disabled={isStopping(inst.id)}
+										onclick={() => onstop(inst.id)}
+										title={isStopping(inst.id) ? 'Stopping…' : `Stop ${inst.name}`}
+										aria-label={isStopping(inst.id) ? 'Stopping…' : `Stop ${inst.name}`}
+									>
+										<CircleStop size={20} />
+									</button>
 								{/if}
-							</button>
-						{/if}
+							{/if}
+						</div>
 					{/each}
-				</div>
+				</nav>
 			</div>
 			{#if overflowing}
 				<button
@@ -215,6 +284,16 @@
 		>
 	</div>
 </AppBar>
+{#if dropTarget}
+	<div
+		class="drop-tip panel"
+		bind:offsetWidth={tipWidth}
+		style:left="{tipLeft}px"
+		style:top="{dropTarget.y}px"
+	>
+		Drop to save into codebay-inbox/
+	</div>
+{/if}
 
 <style>
 	/* Grouped so the auto-margin doesn't have to move when the reload button comes and goes. */
@@ -307,6 +386,44 @@
 		outline-offset: -2px;
 	}
 
+	/* The slot owns the separator and the active plate so the stop button sits inside them. */
+	.tab-slot {
+		display: inline-flex;
+		align-items: stretch;
+		flex: none;
+		border-right: 1px solid var(--rule);
+	}
+	.tab-slot.active {
+		background: var(--fill);
+		color: var(--fill-ink);
+		/* The key has sunk into the chassis; this strip is the slot it dropped out of. */
+		box-shadow: inset 0 3px 0 var(--bg);
+	}
+	.tab-slot:not(.active):hover,
+	.tab-slot.drop-target:not(.active) {
+		background: color-mix(in srgb, var(--ink) 12%, transparent);
+	}
+	.tab-slot.drop-target {
+		outline: 2px dashed currentColor;
+		outline-offset: -5px;
+	}
+	/* pointer-events: none, or the tip would steal the drag from the tab it's pointing at. */
+	.drop-tip {
+		position: fixed;
+		z-index: 20;
+		transform: translateY(6px);
+		padding: 6px 10px;
+		background: var(--bg-card);
+		color: var(--ink);
+		font-family: var(--font-mono);
+		font-weight: 600;
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		white-space: nowrap;
+		pointer-events: none;
+	}
+
 	.tab {
 		display: inline-flex;
 		align-items: center;
@@ -317,7 +434,6 @@
 		margin: 0;
 		padding: 0 12px;
 		border: 0;
-		border-right: 1px solid var(--rule);
 		background: transparent;
 		color: var(--ink-soft);
 		font-family: var(--font-display);
@@ -331,16 +447,12 @@
 	}
 	/* Inversion is the house hover idiom, but it's also the active state here, so hovering
 	   gets a tint instead — that keeps idle → hover → active legible as three steps. */
-	.tab:not(.active):hover {
-		background: color-mix(in srgb, var(--ink) 12%, transparent);
+	.tab-slot:not(.active):hover .tab {
 		color: var(--ink);
 	}
 	.tab.active {
-		background: var(--fill);
 		color: var(--fill-ink);
 		cursor: default;
-		/* The key has sunk into the chassis; this strip is the slot it dropped out of. */
-		box-shadow: inset 0 3px 0 var(--bg);
 	}
 	.tab:focus-visible {
 		outline: 2px solid var(--ink);
@@ -354,6 +466,40 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
+	/* Reads as part of the tab, so it inherits the slot's colour rather than declaring its own. */
+	.tab-stop {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex: none;
+		appearance: none;
+		margin: 0;
+		padding: 0 10px 0 0;
+		border: 0;
+		background: transparent;
+		color: inherit;
+		opacity: 0.55;
+		cursor: pointer;
+	}
+	.tab-slot:not(.active) .tab-stop {
+		color: var(--ink-soft);
+	}
+	.tab-stop:hover:not(:disabled) {
+		opacity: 1;
+		color: var(--danger);
+	}
+	.tab-stop:disabled {
+		opacity: var(--dim);
+		cursor: default;
+	}
+	.tab-stop:focus-visible {
+		outline: 2px solid var(--ink);
+		outline-offset: -2px;
+	}
+	.tab-slot.active .tab-stop:focus-visible {
+		outline-color: var(--fill-ink);
+	}
+
 	.tab-mode {
 		display: inline-flex;
 		align-items: center;

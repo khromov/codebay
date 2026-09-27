@@ -5,6 +5,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { nextTabIndex } from '../lib/tab-nav.ts';
 	import DashboardView from './DashboardView.svelte';
+	import DropZone from './DropZone.svelte';
 	import IdeBar from './IdeBar.svelte';
 	import IdeLoader from './IdeLoader.svelte';
 	import TerminalSplit from './TerminalSplit.svelte';
@@ -15,6 +16,7 @@
 	import { syncTheme } from '../theme.ts';
 	import toast, { Toaster } from 'svelte-french-toast';
 	import { TOAST_OPTIONS } from '../toast.ts';
+	import { filesFrom, uploadFile } from '../lib/upload.ts';
 
 	// `snapshot` seeds the live state so neither view renders a loading flash first.
 	let {
@@ -55,6 +57,22 @@
 
 	let editingId = $state<string | null>(null);
 	let editingName = $state('');
+
+	// The tab only vanishes once the stream drops the instance from `running`, so the
+	// button stays disabled across the round-trip rather than flickering back to armed.
+	const stopping = new SvelteSet<string>();
+
+	async function stopTab(id: string) {
+		if (stopping.has(id)) return;
+		stopping.add(id);
+		try {
+			await apiPost(`/api/instances/${id}/stop`, undefined, 'Failed to stop instance');
+			// The live stream removes the tab once the container is down.
+		} catch (err) {
+			toast.error((err as Error).message);
+			stopping.delete(id);
+		}
+	}
 
 	function startRename(instance: Instance) {
 		editingId = instance.id;
@@ -250,6 +268,72 @@
 		};
 	});
 
+	// Sequential, so the response order (and the toast order) matches the drop order.
+	async function handleUpload(id: string, files: File[]) {
+		for (const file of files) {
+			try {
+				const saved = await uploadFile(id, file);
+				toast.success(`Saved ${saved.containerPath}`);
+				void navigator.clipboard.writeText(saved.containerPath).catch(() => {});
+			} catch (err) {
+				toast.error((err as Error).message);
+			}
+		}
+	}
+
+	let dropping = $state(false);
+
+	function onDrop(e: DragEvent) {
+		e.preventDefault();
+		dropping = false;
+		void handleUpload(active, filesFrom(e.dataTransfer));
+	}
+
+	// Covering the code-server iframe hijacks VS Code's own drops, so there only the tab takes a
+	// file; a terminal pane lives in this document and gets the full overlay.
+	$effect(() => {
+		if (!livePreflight.uploadEnabled || !onIde) return;
+		const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes('Files') ?? false;
+		const enter = (e: DragEvent) => {
+			if (hasFiles(e)) dropping = true;
+		};
+		// A drop target already claimed the drag; anywhere else refuses it, since the browser's
+		// default is to open the file in a new tab.
+		const over = (e: DragEvent) => {
+			if (!hasFiles(e) || e.defaultPrevented) return;
+			e.preventDefault();
+			e.dataTransfer!.dropEffect = 'none';
+		};
+		const drop = (e: DragEvent) => {
+			if (hasFiles(e)) e.preventDefault();
+			dropping = false;
+		};
+		const leave = (e: DragEvent) => {
+			if (e.relatedTarget === null) dropping = false;
+		};
+		// Capture phase: only fires for events that originate in the parent document (xterm's
+		// textarea, the tab bar) — paste inside the iframe never reaches here.
+		const paste = (e: ClipboardEvent) => {
+			const files = filesFrom(e.clipboardData);
+			if (files.length && active) {
+				e.preventDefault();
+				void handleUpload(active, files);
+			}
+		};
+		window.addEventListener('dragenter', enter);
+		window.addEventListener('dragover', over);
+		window.addEventListener('dragleave', leave);
+		window.addEventListener('drop', drop);
+		window.addEventListener('paste', paste, true);
+		return () => {
+			window.removeEventListener('dragenter', enter);
+			window.removeEventListener('dragover', over);
+			window.removeEventListener('dragleave', leave);
+			window.removeEventListener('drop', drop);
+			window.removeEventListener('paste', paste, true);
+		};
+	});
+
 	$effect(() => {
 		// The re-seed after a reconnect is a baseline, not a change — otherwise it replays chimes.
 		let primed = false;
@@ -269,6 +353,10 @@
 				}
 				if (msg.type === 'default-mode') {
 					livePreflight = { ...livePreflight, defaultMode: msg.data.mode };
+					return;
+				}
+				if (msg.type === 'upload-enabled') {
+					livePreflight = { ...livePreflight, uploadEnabled: msg.data.enabled };
 					return;
 				}
 				if (msg.type === 'theme') {
@@ -301,6 +389,7 @@
 				for (const id of [...everReady]) if (!live.has(id)) everReady.delete(id);
 				for (const id of [...forced]) if (!live.has(id)) forced.delete(id);
 				for (const id of [...loadedFrames]) if (!live.has(id)) loadedFrames.delete(id);
+				for (const id of [...stopping]) if (!live.has(id)) stopping.delete(id);
 				const nextAttention: Record<string, 'done' | 'waiting' | null> = {};
 				for (const inst of next) nextAttention[inst.id] = inst.attention;
 				if (primed) {
@@ -356,10 +445,15 @@
 			{attention}
 			{editingId}
 			bind:editingName
+			stopping={[...stopping]}
 			onreload={activeInstance && activeInstance.mode !== 'terminal' && mountable(active)
 				? reloadActive
 				: undefined}
 			onselect={(id) => navigate(`/ide/${id}`)}
+			onstop={stopTab}
+			ondropfiles={livePreflight.uploadEnabled
+				? (id, files) => void handleUpload(id, files)
+				: undefined}
 			onstartrename={startRename}
 			oncommitrename={commitRename}
 			oncancelrename={cancelRename}
@@ -382,7 +476,7 @@
 				<div
 					class="pane"
 					class:active={inst.id === active}
-					role="tabpanel"
+					role="region"
 					aria-labelledby="tab-{inst.id}"
 				>
 					{#if mountable(inst.id)}
@@ -393,10 +487,13 @@
 								initialOpen={inst.terminal_split === 1}
 							/>
 						{:else}
+							<!-- code-server answers a terminal's OSC 52 through the Clipboard API, which
+							     Permissions Policy gates per-frame. -->
 							<iframe
 								bind:this={frames[inst.id]}
 								src={ideUrl(inst)}
 								title={inst.name}
+								allow="clipboard-read; clipboard-write"
 								onload={() => loadedFrames.add(inst.id)}
 							></iframe>
 						{/if}
@@ -412,6 +509,9 @@
 						/>
 					{:else if inst.mode !== 'terminal' && !loadedFrames.has(inst.id)}
 						<IdeLoader />
+					{/if}
+					{#if dropping && inst.id === active && inst.mode === 'terminal'}
+						<DropZone ondrop={onDrop} />
 					{/if}
 				</div>
 			{/if}

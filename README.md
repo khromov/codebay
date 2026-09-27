@@ -19,7 +19,7 @@ The UI opens at `http://localhost:6969`. State (SQLite DB + per-instance workspa
 - `PORT` — server port (default `6969`)
 - `DATA_DIR` — where state lives (default `~/.codebay`)
 - `DOCKER_HOST` — Docker socket/URL (defaults to your active Docker context)
-- `HOST` — bind address (default `127.0.0.1`). Set `0.0.0.0` to reach codebay from other machines; your instances' forwarded app ports are then published on all interfaces too. Each container's code-server port stays loopback-only regardless — it runs without a password of its own and is reached through the Basic-Auth-gated `/p/:id/` proxy instead. Existing instances need a **Restart** to pick up the new binding.
+- `HOST` — bind address (default `127.0.0.1`). Set `0.0.0.0` to reach codebay from other machines; your instances' forwarded app ports are then published on all interfaces too. Each container's code-server port stays loopback-only regardless — it runs without a password of its own and is reached through the Basic-Auth-gated `/p/:id/` proxy instead. Existing instances need a **Restart** to pick up the new binding. Note that a plain-`http` LAN address is not a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts), so browsers refuse clipboard access there and copying out of an instance's VS Code terminal does nothing — reach codebay over `localhost` (e.g. `ssh -L 6969:localhost:6969 <host>`) or allow the origin under `chrome://flags/#unsafely-treat-insecure-origin-as-secure`.
 - `PUBLIC_ORIGIN` — the origin you actually load codebay from (default `http://localhost:<PORT>`). Every form POST — creating an instance, restarting one, saving settings — is checked against it, so reaching the UI at any other address (a LAN IP, a hostname, or a reverse proxy / tunnel that terminates TLS) makes those actions fail with a `403 Cross-site POST form submissions are forbidden` until you set this. Give the exact scheme + host + port your browser shows, with no trailing slash — `PUBLIC_ORIGIN=http://192.168.1.50:6969` or `PUBLIC_ORIGIN=https://codebay.example.com`. Behind a TLS-terminating proxy this is the public `https://` URL, not the loopback address the proxy forwards to.
 - `TRUSTED_ORIGINS` — comma-separated extra origins accepted alongside `PUBLIC_ORIGIN`, for when the UI is legitimately reachable at more than one address (e.g. `http://localhost:6969,http://192.168.1.50:6969`)
 - `BASIC_AUTH_PASSWORD` — enables HTTP Basic Auth over the whole UI (disabled when unset); required if you bind beyond loopback with `HOST=0.0.0.0`
@@ -87,8 +87,11 @@ it is the one place that does not use `BASIC_AUTH_PASSWORD` — MCP clients send
 
 The tools cover the whole loop: `create_sandbox`, `run_agent`, `get_run`, `list_runs`, `stop_run`,
 `get_diff`, `read_file`, `write_file`, `exec_command`, `git_push`, `create_pr`, `get_logs`,
-`list_sandboxes`, `get_sandbox` and `delete_sandbox`. Runs are asynchronous — `run_agent` hands back
-a run id and the work continues in the background, surviving a manager restart.
+`list_sandboxes`, `get_sandbox`, `rename_sandbox`, `stop_sandbox`, `start_sandbox`,
+`rebuild_sandbox`, `add_port_forward`, `remove_port_forward` and `delete_sandbox`. Runs are
+asynchronous — `run_agent` hands back a run id and the work continues in the background, surviving a
+manager restart. `stop_sandbox` / `start_sandbox` cycle the container without losing the workspace,
+and `rebuild_sandbox` recreates it (which is what applies a port forward).
 
 Sandboxes created this way are ordinary instances: they show up on the dashboard with a live
 "agent running" line, and you can open the IDE to watch. They persist until an agent (or you)
@@ -97,6 +100,12 @@ deletes them.
 > **Anything holding the token can create containers and run agents with your GitHub and Claude
 > credentials, with permission prompts bypassed inside the container.** Treat it like a password, and
 > regenerate it from Settings if it leaks.
+
+## Workspace uploads
+
+Turn on Settings → **Drop files into the workspace** to drag-and-drop or paste files/images onto an
+instance and save them under `codebay-inbox/` in its workspace (git-excluded), so Claude Code inside
+can `Read` them. Off by default.
 
 ## Troubleshooting
 
@@ -111,7 +120,7 @@ bun run dev        # dev server, local ./.codebay DATA_DIR, no browser launch
 bun run checks     # format + typecheck + tests
 ```
 
-The repo also ships a minimal Bun devcontainer (`.devcontainer/`) for a containerized setup. New to authoring devcontainers? See the general [Devcontainer guide](./DEVCONTAINER_GUIDE.md).
+The repo also ships a Bun devcontainer (`.devcontainer/`) for a containerized setup; it runs a nested Docker daemon, so codebay itself can boot instances from inside it. New to authoring devcontainers? See the general [Devcontainer guide](./DEVCONTAINER_GUIDE.md).
 
 ## License
 

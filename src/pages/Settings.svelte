@@ -19,6 +19,7 @@
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
+		workspaceUploadEnabled,
 		copyIgnorePatterns,
 		builtinCopyIgnore,
 		claudeConfigDir,
@@ -65,6 +66,7 @@
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
+		workspaceUploadEnabled: boolean;
 		copyIgnorePatterns: string;
 		builtinCopyIgnore: string;
 		claudeConfigDir: string;
@@ -114,6 +116,7 @@
 	{defaultImage}
 	{builtinImage}
 	{disableBuildCache}
+	{workspaceUploadEnabled}
 	{copyIgnorePatterns}
 	{builtinCopyIgnore}
 	{claudeConfigDir}

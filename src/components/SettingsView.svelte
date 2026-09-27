@@ -9,6 +9,7 @@
 	import SunMoon from '@lucide/svelte/icons/sun-moon';
 	import ThemePicker from './ThemePicker.svelte';
 	import Layers from '@lucide/svelte/icons/layers';
+	import Upload from '@lucide/svelte/icons/upload';
 	import FolderMinus from '@lucide/svelte/icons/folder-minus';
 	import FolderCog from '@lucide/svelte/icons/folder-cog';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
@@ -55,6 +56,7 @@
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import Gauge from '@lucide/svelte/icons/gauge';
 	import MessageSquare from '@lucide/svelte/icons/message-square';
+	import ClipboardX from '@lucide/svelte/icons/clipboard-x';
 	import { installPopupBackTrap } from '../lib/popup-nav.ts';
 
 	/** Every settings form action fails with the same `{ error }` shape. */
@@ -69,6 +71,7 @@
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
+		workspaceUploadEnabled,
 		copyIgnorePatterns,
 		builtinCopyIgnore,
 		claudeConfigDir,
@@ -115,6 +118,7 @@
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
+		workspaceUploadEnabled: boolean;
 		copyIgnorePatterns: string;
 		builtinCopyIgnore: string;
 		claudeConfigDir: string;
@@ -167,6 +171,17 @@
 	let shuttingDown = $state(false);
 
 	$effect(() => installPopupBackTrap());
+
+	/** Only settleable after hydration — SSR has no origin to judge. */
+	let insecure = $state<{ origin: string; tunnel: string } | null>(null);
+	$effect(() => {
+		if (window.isSecureContext) return;
+		const port = location.port || '80';
+		insecure = {
+			origin: location.origin,
+			tunnel: `ssh -L ${port}:localhost:${port} ${location.hostname}`
+		};
+	});
 
 	/** Reused by every plain save form below; only the per-control state setters differ. */
 	function saveOpts<Success extends Record<string, unknown> = Record<string, unknown>>(handlers: {
@@ -499,6 +514,18 @@
 		set: (v) => (noCache = v),
 		setSaving: (v) => (savingCache = v),
 		setError: (v) => (cacheError = v)
+	});
+
+	// DB-backed rather than localStorage, so it initializes from the prop.
+	// svelte-ignore state_referenced_locally
+	let workspaceUpload = $state(workspaceUploadEnabled);
+	let savingUpload = $state(false);
+	let uploadError = $state<string | null>(null);
+
+	const uploadToggleOpts = toggleOpts({
+		set: (v) => (workspaceUpload = v),
+		setSaving: (v) => (savingUpload = v),
+		setError: (v) => (uploadError = v)
 	});
 
 	let clearing = $state(false);
@@ -960,6 +987,28 @@
 	</AppBar>
 
 	<main class="content">
+		{#if insecure}
+			<section class="card">
+				<div class="row">
+					<div class="label">
+						<ClipboardX size={20} />
+						<div class="text">
+							<div class="name">Copying out of a terminal may not work on this address</div>
+							<div class="desc">
+								Browsers hand out clipboard access only on a secure origin, and
+								<code>{insecure.origin}</code> isn't one — so a copy out of an instance's VS Code
+								terminal reaches nothing (codebay's own terminal falls back to a legacy copy that
+								usually still works). Either open codebay through <code>localhost</code> (<code
+									>{insecure.tunnel}</code
+								>), or allow this exact origin under
+								<code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>.
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+		{/if}
+
 		<section class="card">
 			<form
 				class="row"
@@ -1240,6 +1289,44 @@
 					<div class="msg ok">Saved.</div>
 				{/if}
 			</form>
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/workspaceUploadToggle"
+				{@attach enhance(uploadToggleOpts)}
+			>
+				<div class="label">
+					<Upload size={20} />
+					<div class="text">
+						<div class="name">Drop files into the workspace</div>
+						<div class="desc">
+							Drag-and-drop or paste files and images onto an instance to save them under
+							<code>codebay-inbox/</code> in its workspace (git-excluded). The in-container path is shown
+							so Claude can Read it. Turn off to drop straight into VS Code's explorer instead. Off by
+							default.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={workspaceUpload}
+						disabled={savingUpload}
+						onchange={(e) => {
+							workspaceUpload = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if uploadError}
+				<div class="sub"><div class="msg error">{uploadError}</div></div>
+			{/if}
 		</section>
 
 		<section class="card">

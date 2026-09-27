@@ -6,6 +6,7 @@ import { PROXY_PREFIX } from './lib/proxy.server.ts';
 import { resumeRuns } from './lib/agent-runs.server.ts';
 import { warnIfBuildStale } from './lib/build-freshness.server.ts';
 import { LOCK_STALE_MS, acquireDataDirLock } from './lib/data-dir-lock.server.ts';
+import { UPLOAD_MAX_BYTES } from './lib/uploads.server.ts';
 import {
 	APP_VERSION,
 	BASIC_AUTH_PASSWORD,
@@ -56,6 +57,8 @@ await Mochi.serve({
 	hostname: HOST,
 	// Bun defaults to 10s and aborts slower form POSTs mid-flight; passed through to Bun.serve.
 	idleTimeout: 120,
+	// Bun's own default (128 MiB) is below UPLOAD_MAX_BYTES; passed through to Bun.serve.
+	maxRequestBodySize: UPLOAD_MAX_BYTES,
 	development: process.env.MODE === 'development',
 	htmlShell: './src/shell.html',
 	handle: sequence(basicAuth, themeHandle),

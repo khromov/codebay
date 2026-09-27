@@ -118,7 +118,10 @@ const MANAGER_GIT_EXCLUDES = [
 	'/.devcontainer/codebay-ttyd/',
 	'/.devcontainer/codebay-claude/',
 	'/.devcontainer/codebay-terminal.sh',
-	'/.vscode/tasks.json'
+	'/.vscode/tasks.json',
+	// Self-excluding on top of this (see uploads.server.ts), so an already-running instance whose
+	// info/exclude predates the upload feature still hides the folder until its next rebuild.
+	'/codebay-inbox/'
 ];
 
 /** Bound the manager-owned block so a rebuild can replace it without touching the user's own lines. */
@@ -466,6 +469,7 @@ type DevcontainerConfig = {
 	postStartCommand?: unknown;
 	runArgs?: string[];
 	containerEnv?: Record<string, string>;
+	mounts?: unknown[];
 	[key: string]: unknown;
 };
 
@@ -524,7 +528,8 @@ export async function writeOverrideConfig(
 	defaultImage: string = DEFAULT_IMAGE,
 	mode: InstanceMode = 'ide',
 	permissionMode: ClaudePermissionMode = 'default',
-	envVars: { name: string; value: string }[] = []
+	envVars: { name: string; value: string }[] = [],
+	claudeRestoreDir: string | null = null
 ): Promise<{ imageSource: string; configPath: string | null; overrideConfigPath: string }> {
 	const isTerminal = mode === 'terminal';
 	const canonical = findDevcontainerConfig(workspaceDir);
@@ -611,6 +616,19 @@ export async function writeOverrideConfig(
 		};
 	}
 
+	// Read-only so the container can't rewrite its own history; claude-history copies out of it.
+	// Our entry is re-rendered rather than merged (like appPort) so it can never accumulate, while
+	// the project's own mounts — string or object form — pass through untouched.
+	if (claudeRestoreDir) {
+		const existingMounts = Array.isArray(config.mounts) ? config.mounts : [];
+		config.mounts = [
+			...existingMounts.filter((m) => !isClaudeRestoreMount(m)),
+			// Docker Desktop takes a Windows path with forward slashes; a backslash would have to
+			// survive both JSON escaping and the CLI's comma-separated --mount parser.
+			`source=${claudeRestoreDir.replaceAll('\\', '/')},target=${CLAUDE_RESTORE_MOUNT},type=bind,readonly`
+		];
+	}
+
 	await mkdir(join(workspaceDir, '.devcontainer'), { recursive: true }).catch(() => {});
 	await writeFile(target, JSON.stringify(config, null, 2) + '\n', 'utf8');
 
@@ -635,6 +653,19 @@ export async function writeOverrideConfig(
 	await writeLocalGitExclude(workspaceDir);
 
 	return { imageSource, configPath: canonical, overrideConfigPath: target };
+}
+
+/** Where the instance's host-side Claude mirror is mounted, for `claude-history` to restore from. */
+export const CLAUDE_RESTORE_MOUNT = '/codebay/claude-restore';
+
+/** Matches our own entry in either devcontainer.json mount form, so the rewrite stays idempotent. */
+function isClaudeRestoreMount(mount: unknown): boolean {
+	if (typeof mount === 'string') return mount.split(',').includes(`target=${CLAUDE_RESTORE_MOUNT}`);
+	return (
+		typeof mount === 'object' &&
+		mount !== null &&
+		(mount as { target?: unknown }).target === CLAUDE_RESTORE_MOUNT
+	);
 }
 
 /** `codebay-tmux` has been injected into every config this manager has ever written. */

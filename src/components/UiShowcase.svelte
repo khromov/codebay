@@ -14,6 +14,7 @@
 	import SettingsCog from './SettingsCog.svelte';
 	import TopBar from './TopBar.svelte';
 	import IdeLoader from './IdeLoader.svelte';
+	import DropZone from './DropZone.svelte';
 	import HealthBox from './HealthBox.svelte';
 	import BranchBox from './BranchBox.svelte';
 	import PortsBox from './PortsBox.svelte';
@@ -215,6 +216,8 @@
 	let tabEditingName = $state('');
 	// Renames are applied for real, so the inline editor is inspectable end to end.
 	let tabRenames = $state<Record<string, string>>({});
+	// No container behind the demo, so a stopped tab just stays disabled.
+	let tabStopping = $state<string[]>([]);
 
 	const demoTabs = $derived(
 		Array.from({ length: tabCount }, (_, i): Instance => {
@@ -465,6 +468,15 @@
 			{/snippet}
 		</ComponentDemo>
 
+		<ComponentDemo
+			title="DropZone"
+			note="Shown while a file drag is over an instance; the page decides when."
+		>
+			<div class="loader-stage">
+				<DropZone />
+			</div>
+		</ComponentDemo>
+
 		<ComponentDemo title="HealthBox">
 			<HealthBox
 				health={demoHealth}
@@ -557,6 +569,12 @@
 					bind:editingName={tabEditingName}
 					onreload={() => toast('Reload editor (demo)')}
 					onselect={(id) => (tabActive = demoTabs.findIndex((t) => t.id === id))}
+					stopping={tabStopping}
+					onstop={(id) => {
+						tabStopping = [...tabStopping, id];
+						toast(`Stop ${id} (demo)`);
+					}}
+					ondropfiles={(id, files) => toast(`Drop ${files.length} file(s) on ${id} (demo)`)}
 					onstartrename={(inst) => {
 						tabEditingId = inst.id;
 						tabEditingName = inst.name;
@@ -679,7 +697,7 @@
 	.showcase :global(.fields input[type='checkbox']) {
 		accent-color: var(--ink);
 	}
-	/* IdeLoader is an inset:0 overlay, so give it a sized, positioned stage. */
+	/* IdeLoader and DropZone are inset:0 overlays, so give them a sized, positioned stage. */
 	.loader-stage {
 		position: relative;
 		width: 100%;
