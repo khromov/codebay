@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import * as v from 'valibot';
 import type { McpServer } from 'tmcp';
 import { tool } from 'tmcp/utils';
@@ -9,25 +10,15 @@ import {
 	rebuildInstance,
 	removeForwardedPort,
 	renameInstance,
-	sanitizeInstance,
 	startInstance,
 	stopInstance,
 	subscribeLogs
 } from '../lib/instances.server.ts';
-import {
-	getInstance,
-	getRun,
-	listForwards,
-	listRuns,
-	openRunFor,
-	type AgentRunRow,
-	type InstanceRow
-} from '../lib/db.server.ts';
+import { getInstance, getRun, listRuns, openRunFor, type AgentRunRow } from '../lib/db.server.ts';
 import {
 	PROMPT_MAX_BYTES,
 	pollRunNow,
 	readRunLog,
-	runDetail,
 	startRun,
 	stopRun
 } from '../lib/agent-runs.server.ts';
@@ -40,13 +31,31 @@ import {
 	readWorkspaceFile,
 	writeWorkspaceFile
 } from '../lib/sandbox-ops.server.ts';
-import { currentHealthSnapshots } from '../lib/health.server.ts';
-import { proxyPathFor } from '../lib/proxy.server.ts';
+import {
+	healthFor,
+	ideUrl,
+	runPayload,
+	sandboxPayload,
+	waitHint,
+	waitPayload,
+	type McpContext
+} from './payloads.server.ts';
+import { armChannel } from './channel.server.ts';
+import { MAX_WAIT_MS, waitFor, type WaitOutcome } from '../lib/waits.server.ts';
 import { PUBLIC_ORIGIN } from '../lib/config.server.ts';
 import { CLAUDE_PERMISSION_MODES, normalizeMode } from '../types.ts';
 
-/** Long-polling `get_run` past this would start tripping MCP clients' own request timeouts. */
+/** `get_run`'s wait is a convenience; anything longer belongs in `wait_for`, which streams progress. */
 const MAX_WAIT_SECONDS = 60;
+
+/** Default `wait_for` bound: the default run timeout, so an unqualified wait sees any run through. */
+const DEFAULT_WAIT_FOR_SECONDS = 30 * 60;
+
+/**
+ * How often a blocked `wait_for` reports in. Claude Code drops an HTTP tool call after 5 minutes
+ * without a response or progress, and that same traffic keeps a proxy from idling the stream out.
+ */
+const PROGRESS_MS = 20_000;
 
 const sandboxId = v.pipe(v.string(), v.minLength(1), v.description('The sandbox id.'));
 
@@ -80,31 +89,6 @@ function requireRunning(id: string) {
 		throw new Error(`the sandbox is ${row.status}, not running`);
 	}
 	return row;
-}
-
-/** The IDE link is what makes a sandbox inspectable by a human, so every sandbox payload carries it. */
-const ideUrl = (id: string) => `${PUBLIC_ORIGIN}${proxyPathFor(id)}`;
-
-const healthFor = (id: string) => currentHealthSnapshots().find((s) => s.id === id)?.health ?? null;
-
-/** Forwards ride along because add/remove_port_forward hand back the sandbox as their receipt. */
-function sandboxPayload(row: InstanceRow) {
-	const open = new Set(healthFor(row.id)?.openPorts ?? []);
-	return {
-		...sanitizeInstance(row),
-		ide_url: ideUrl(row.id),
-		forwarded_ports: listForwards(row.id).map((f) => ({
-			container_port: f.container_port,
-			host_port: f.host_port,
-			open: open.has(f.container_port)
-		}))
-	};
-}
-
-/** The prompt is left out: the caller wrote it, and it can be as large as the carrier allows. */
-function runPayload(run: AgentRunRow) {
-	const { id, instance_id, prompt: _prompt, ...detail } = runDetail(run);
-	return { run_id: id, sandbox_id: instance_id, ...detail };
 }
 
 /** The run a stop/rebuild settled, re-read after the fact so the caller sees it as cancelled. */
@@ -189,9 +173,24 @@ function toStartOptions(input: RunOptionInput) {
 	};
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** One line per target, which is all a progress message has room for. */
+function progressLine(outcome: Pick<WaitOutcome, 'runs' | 'sandboxes'>): string {
+	const runs = outcome.runs.map(({ id, row }) => {
+		if (!row) return `run ${id}: deleted`;
+		const activity = row.status === 'running' && row.last_activity ? ` — ${row.last_activity}` : '';
+		return `run ${id}: ${row.status}${activity}`;
+	});
+	const sandboxes = outcome.sandboxes.map(
+		({ id, row }) => `sandbox ${id}: ${row?.status ?? 'deleted'}`
+	);
+	return [...runs, ...sandboxes].join('; ').slice(0, 500);
+}
 
-export function registerTools(server: McpServer<v.GenericSchema>): void {
+export function registerTools(server: McpServer<v.GenericSchema, McpContext>): void {
+	/** Where the calling client reached us, for commands it will run on its own machine. */
+	const origin = () => server.ctx.custom?.origin ?? PUBLIC_ORIGIN;
+	const sessionId = () => server.ctx.sessionId;
+
 	/** Registers a tool whose handler returns a plain payload; `safe` serialises it and traps errors. */
 	function define<E extends v.ObjectEntries>(
 		options: { name: string; description: string; schema: v.ObjectSchema<E, undefined> },
@@ -205,9 +204,11 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			name: 'create_sandbox',
 			description:
 				'Create an isolated devcontainer sandbox from a Git repo URL or a local folder path on ' +
-				'the Codebay host. Returns immediately while the container builds in the background; poll ' +
-				'get_sandbox until status is "running". Pass a prompt to queue an agent run that starts ' +
-				'as soon as the sandbox is up.',
+				'the Codebay host. Returns immediately while the container builds in the background, with ' +
+				'a wait.command to start with Bash run_in_background (or call wait_for with the sandbox ' +
+				'id) that returns once status is "running" or "error" — never poll get_sandbox. Pass a ' +
+				'prompt to queue an agent run that starts as soon as the sandbox is up; wait.command then ' +
+				'waits for that run instead.',
 			schema: v.object({
 				source: v.pipe(
 					v.string(),
@@ -235,11 +236,16 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			} catch (err) {
 				runError = err instanceof Error ? err.message : String(err);
 			}
+			armChannel(sessionId(), { sandbox: instance.id });
+			if (run) armChannel(sessionId(), { run: run.id });
 			return {
 				sandbox: sandboxPayload(instance),
 				run: run ? runPayload(run) : null,
 				...(runError ? { run_error: runError } : {}),
-				note: 'The sandbox is building. Poll get_sandbox until status is "running".'
+				wait: run
+					? waitHint(origin(), { runs: [run.id] }, 'the queued run is done, failed or cancelled')
+					: waitHint(origin(), { sandboxes: [instance.id] }, 'the sandbox is running or failed'),
+				note: 'The sandbox is building. Wait with wait.command or wait_for rather than polling.'
 			};
 		}
 	);
@@ -342,8 +348,9 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 				'copy, so files edited inside survive. This is what applies add_port_forward / ' +
 				'remove_port_forward and re-runs the Codebay injections (credentials, hooks). Any active ' +
 				'run is cancelled and comes back as cancelled_run. Returns immediately with status ' +
-				'"creating" while the build runs in the background; poll get_sandbox until status is ' +
-				'"running" (or "error" — get_logs kind "boot" says why).',
+				'"creating" while the build runs in the background, plus a wait.command (or use wait_for ' +
+				'with the sandbox id) that returns once it is "running" or "error" — get_logs kind ' +
+				'"boot" says why.',
 			schema: v.object({
 				sandbox_id: sandboxId,
 				no_cache: v.optional(
@@ -355,10 +362,12 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			const row = requireSettled(input.sandbox_id);
 			const open = openRunFor(row.id);
 			const sandbox = sandboxPayload(rebuildInstance(row.id, { noCache: input.no_cache }));
+			armChannel(sessionId(), { sandbox: row.id });
 			return {
 				sandbox,
 				cancelled_run: cancelledRun(open),
-				note: 'The sandbox is rebuilding. Poll get_sandbox until status is "running".'
+				wait: waitHint(origin(), { sandboxes: [row.id] }, 'the rebuild is running or failed'),
+				note: 'The sandbox is rebuilding. Wait with wait.command or wait_for rather than polling.'
 			};
 		}
 	);
@@ -420,8 +429,9 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			name: 'run_agent',
 			description:
 				'Run Claude Code non-interactively against the sandbox and return a run handle. The run ' +
-				'continues in the background; poll get_run for progress and the final result. Only one ' +
-				'run at a time per sandbox.',
+				'continues in the background. To learn when it finishes, do not poll get_run: either ' +
+				'start the returned wait.command with Bash run_in_background (you are notified when it ' +
+				'exits, with the final run as JSON), or call wait_for. Only one run at a time per sandbox.',
 			schema: v.object({
 				sandbox_id: sandboxId,
 				prompt: promptSchema('What Claude should do.'),
@@ -430,7 +440,12 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 		},
 		(input) => {
 			const row = requireInstance(input.sandbox_id);
-			return { run: runPayload(startRun(row, input.prompt, toStartOptions(input))) };
+			const run = startRun(row, input.prompt, toStartOptions(input));
+			armChannel(sessionId(), { run: run.id });
+			return {
+				run: runPayload(run),
+				wait: waitHint(origin(), { runs: [run.id] }, 'the run is done, failed or cancelled')
+			};
 		}
 	);
 
@@ -439,8 +454,9 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			name: 'get_run',
 			description:
 				'Status and result of an agent run. While it is still going you get the live session id, ' +
-				'model, turn count, cost and what Claude is doing right now. Set wait_seconds to block until it ' +
-				'finishes instead of polling.',
+				'model, turn count, cost and what Claude is doing right now. To wait for the end, use ' +
+				`wait_for or run_agent's wait.command rather than calling this in a loop; wait_seconds ` +
+				`(up to ${MAX_WAIT_SECONDS}) is only for a short block.`,
 			schema: v.object({
 				run_id: v.pipe(v.string(), v.minLength(1)),
 				wait_seconds: v.optional(
@@ -456,17 +472,79 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 		},
 		async (input) => {
 			if (!getRun(input.run_id)) throw new Error(`No run with id ${input.run_id}`);
-			const deadline = Date.now() + (input.wait_seconds ?? 0) * 1000;
-			let run = await pollRunNow(input.run_id);
-			while (
-				run &&
-				(run.status === 'running' || run.status === 'queued') &&
-				Date.now() < deadline
-			) {
-				await sleep(2000);
-				run = await pollRunNow(input.run_id);
+			armChannel(sessionId(), { run: input.run_id });
+			// One forced pass first, so a get_run straight after run_agent sees the launch it triggered.
+			await pollRunNow(input.run_id);
+			const outcome = await waitFor(
+				{ runs: [input.run_id] },
+				{ timeoutMs: (input.wait_seconds ?? 0) * 1000, signal: server.ctx.signal }
+			);
+			return { run: runPayload(outcome.runs[0]!.row ?? getRun(input.run_id)!) };
+		}
+	);
+
+	define(
+		{
+			name: 'wait_for',
+			description:
+				'Block until agent runs finish (done, error or cancelled) and/or sandboxes finish building ' +
+				'(running or error), then return their final state — the event-driven replacement for ' +
+				'polling get_run / get_sandbox. Pass several run_ids to track parallel runs: mode "all" ' +
+				'(default) returns when every one has settled, "any" as soon as one has (call again with ' +
+				'the rest). Long waits are safe: progress is streamed so the call is not timed out, and ' +
+				'Claude Code backgrounds a call that runs past about two minutes and notifies you when it ' +
+				'returns. If timeout_seconds passes first, timed_out is true and settled is false.',
+			schema: v.object({
+				run_ids: v.optional(v.array(v.pipe(v.string(), v.minLength(1)))),
+				sandbox_ids: v.optional(v.array(v.pipe(v.string(), v.minLength(1)))),
+				mode: v.optional(v.picklist(['all', 'any'] as const)),
+				timeout_seconds: v.optional(
+					v.pipe(
+						v.number(),
+						v.integer(),
+						v.minValue(1),
+						v.maxValue(MAX_WAIT_MS / 1000),
+						v.description(
+							`Give up after this long. Defaults to ${DEFAULT_WAIT_FOR_SECONDS} (the default run timeout).`
+						)
+					)
+				)
+			})
+		},
+		async (input) => {
+			const targets = { runs: input.run_ids ?? [], sandboxes: input.sandbox_ids ?? [] };
+			const timeoutSeconds = input.timeout_seconds ?? DEFAULT_WAIT_FOR_SECONDS;
+			for (const run of targets.runs) armChannel(sessionId(), { run });
+			for (const sandbox of targets.sandboxes) armChannel(sessionId(), { sandbox });
+			const started = Date.now();
+			const snapshot = () => ({
+				runs: targets.runs.map((id) => ({ id, row: getRun(id) })),
+				sandboxes: targets.sandboxes.map((id) => ({ id, row: getInstance(id) }))
+			});
+			let last = snapshot();
+			// `progress` finds its token through the request's async context, which a change fired
+			// from the poller's own call stack doesn't carry.
+			const inRequest = AsyncLocalStorage.snapshot();
+			// Progress must strictly increase, so it counts elapsed seconds against the bound.
+			const report = () =>
+				inRequest(() =>
+					server.progress((Date.now() - started) / 1000, timeoutSeconds, progressLine(last))
+				);
+			const heartbeat = setInterval(report, PROGRESS_MS);
+			try {
+				const outcome = await waitFor(targets, {
+					mode: input.mode,
+					timeoutMs: timeoutSeconds * 1000,
+					signal: server.ctx.signal,
+					onChange: () => {
+						last = snapshot();
+						report();
+					}
+				});
+				return waitPayload(outcome);
+			} finally {
+				clearInterval(heartbeat);
 			}
-			return { run: runPayload(run!) };
 		}
 	);
 

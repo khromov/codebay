@@ -10,12 +10,15 @@ import {
 	insertInstance,
 	openRunFor,
 	setOption,
+	updateInstance,
 	type InstanceRow
 } from '../lib/db.server.ts';
-import { pollRunNow, runMirrorPath, startRun } from '../lib/agent-runs.server.ts';
+import { triggerReconcile } from '../lib/instances.server.ts';
+import { pollRunNow, runMirrorPath, startRun, stopRun } from '../lib/agent-runs.server.ts';
 import {
 	MCP_ENABLED_KEY,
 	MCP_PATH,
+	MCP_WAIT_PATH,
 	getMcpToken,
 	mcpAuthOk,
 	regenerateMcpToken,
@@ -24,6 +27,9 @@ import {
 import { mcpRoutes } from './routes.server.ts';
 
 const route = mcpRoutes[MCP_PATH] as { handler: (event: unknown) => Promise<Response> };
+const waitRoute = mcpRoutes[MCP_WAIT_PATH] as {
+	handler: (event: unknown) => Response | Promise<Response>;
+};
 
 /** Mochi hands api handlers a `MochiApiEvent`; only `request` matters to this route. */
 function call(init: RequestInit & { token?: string | null } = {}): Promise<Response> {
@@ -138,6 +144,7 @@ describe('the protocol surface', () => {
 				'start_sandbox',
 				'stop_run',
 				'stop_sandbox',
+				'wait_for',
 				'write_file'
 			].sort()
 		);
@@ -189,6 +196,12 @@ interface ToolPayload {
 		forwarded_ports: { container_port: number; host_port: number; open: boolean }[];
 	};
 	cancelled_run?: { run_id: string; status: string; error: string | null } | null;
+	run?: { run_id: string; status: string } | null;
+	runs?: { run_id: string; status: string; error?: string | null }[];
+	sandboxes?: { id: string; status: string }[];
+	settled?: boolean;
+	timed_out?: boolean;
+	wait?: { command: string; how: string };
 	forward?: { container_port: number; host_port: number; open: boolean } | null;
 	note?: string;
 	log?: string;
@@ -408,7 +421,8 @@ describe('the sandbox lifecycle tools', () => {
 		});
 		expect(error).toBeNull();
 		expect(payload.sandbox?.status).toBe('creating');
-		expect(payload.note).toContain('Poll get_sandbox');
+		expect(payload.note).toContain('wait_for');
+		expect(payload.wait?.command).toContain(`sandboxes=${row.id}&sig=`);
 
 		await until(() => getInstance(row.id)?.status === 'error');
 		const log = await callTool(headers, 'get_logs', { sandbox_id: row.id, kind: 'boot' });
@@ -477,5 +491,213 @@ describe('the sandbox lifecycle tools', () => {
 		});
 		expect(removed.error).toBeNull();
 		expect(removed.payload.sandbox?.forwarded_ports).toEqual([]);
+	});
+});
+
+/** GETs the wait endpoint the way the handed-out curl does, from the URL embedded in its command. */
+function callWait(url: string, init: { token?: string; signal?: AbortSignal } = {}) {
+	const headers = new Headers();
+	if (init.token) headers.set('authorization', `Bearer ${init.token}`);
+	const request = new Request(url, { headers, signal: init.signal });
+	return waitRoute.handler({ request, method: 'GET', url: new URL(url), params: {} });
+}
+
+const urlOf = (command: string) => /'(http[^']+)'/.exec(command)![1]!;
+
+/** The waiter sets are pinned to globalThis, so a leaked listener shows up here. */
+const gw = globalThis as unknown as {
+	__codebayRuns?: { watchers: Set<unknown> };
+	__codebayInstanceWatchers?: Set<unknown>;
+};
+const watcherCount = () =>
+	(gw.__codebayRuns?.watchers.size ?? 0) + (gw.__codebayInstanceWatchers?.size ?? 0);
+
+describe('completion waits', () => {
+	afterEach(() => {
+		g.__codebayDocker = undefined;
+		for (const id of seeded.splice(0)) {
+			deleteForwards(id);
+			deleteInstanceRow(id);
+		}
+	});
+
+	/** Still booting and without a container, so a run queues without any exec at all. */
+	const booting = () => seed({ status: 'creating', container_id: null });
+
+	test('run_agent hands back a token-free wait command on the origin the client used', async () => {
+		const headers = await session();
+		const row = booting();
+		const { error, payload } = await callTool(headers, 'run_agent', {
+			sandbox_id: row.id,
+			prompt: 'go'
+		});
+		expect(error).toBeNull();
+		const command = payload.wait!.command;
+		expect(command).toStartWith('curl ');
+		expect(command).toContain(
+			`http://localhost:6969${MCP_WAIT_PATH}?runs=${payload.run!.run_id}&sig=`
+		);
+		expect(command).not.toContain(getMcpToken());
+		expect(payload.wait!.how).toContain('run_in_background');
+		await stopRun(payload.run!.run_id);
+	});
+
+	test('the wait endpoint blocks until the run settles and ends in the final run JSON', async () => {
+		const headers = await session();
+		const row = booting();
+		const { payload } = await callTool(headers, 'run_agent', { sandbox_id: row.id, prompt: 'go' });
+		const runId = payload.run!.run_id;
+		const res = await callWait(urlOf(payload.wait!.command));
+		expect(res.status).toBe(200);
+		setTimeout(() => void stopRun(runId, 'enough'), 20);
+		const body = JSON.parse(await res.text()) as ToolPayload;
+		expect(body.settled).toBe(true);
+		expect(body.runs?.[0]).toMatchObject({ run_id: runId, status: 'cancelled', error: 'enough' });
+	});
+
+	test('the signature only opens the runs it was minted for, and dies with the token', async () => {
+		setMcpEnabled(true);
+		const a = startRun(booting(), 'a');
+		const b = startRun(booting(), 'b');
+		const { payload } = await callTool(await session(), 'get_run', { run_id: a.id });
+		expect(payload.run?.status).toBe('queued');
+		const origin = `http://localhost:6969${MCP_WAIT_PATH}`;
+		const { waitCommand } = await import('./payloads.server.ts');
+		const url = urlOf(waitCommand('http://localhost:6969', { runs: [a.id] }));
+		const forged = url.replace(`runs=${a.id}`, `runs=${b.id}`);
+		expect((await callWait(forged)).status).toBe(401);
+		expect((await callWait(`${origin}?runs=${b.id}`)).status).toBe(401);
+		// The bearer token works too, for a caller that has it.
+		const bearer = await callWait(`${origin}?runs=${b.id}&timeout=0.01`, { token: getMcpToken() });
+		expect(((await bearer.json()) as ToolPayload).timed_out).toBe(true);
+		regenerateMcpToken();
+		expect((await callWait(url)).status).toBe(401);
+		await stopRun(a.id);
+		await stopRun(b.id);
+	});
+
+	test('the wait endpoint 400s an unknown run and 404s while MCP is off', async () => {
+		setMcpEnabled(true);
+		const url = `http://localhost:6969${MCP_WAIT_PATH}?runs=nope`;
+		expect((await callWait(url, { token: getMcpToken() })).status).toBe(400);
+		setOption(MCP_ENABLED_KEY, '0');
+		expect((await callWait(url, { token: getMcpToken() })).status).toBe(404);
+	});
+
+	test('a curl that hangs up takes its waiter with it', async () => {
+		setMcpEnabled(true);
+		const run = startRun(booting(), 'go');
+		const before = watcherCount();
+		const hangup = new AbortController();
+		const res = await callWait(`http://localhost:6969${MCP_WAIT_PATH}?runs=${run.id}`, {
+			token: getMcpToken(),
+			signal: hangup.signal
+		});
+		expect(watcherCount()).toBe(before + 1);
+		await res.body!.cancel();
+		hangup.abort();
+		await until(() => watcherCount() === before);
+		await stopRun(run.id);
+	});
+
+	test('wait_for returns every run once all have settled, streaming progress on the way', async () => {
+		const headers = await session();
+		const a = startRun(booting(), 'a');
+		const b = startRun(booting(), 'b');
+		const pending = call({
+			body: rpc(
+				'tools/call',
+				{
+					name: 'wait_for',
+					arguments: { run_ids: [a.id, b.id] },
+					_meta: { progressToken: 'p1' }
+				},
+				++rpcSeq
+			),
+			headers
+		});
+		await Bun.sleep(20);
+		await stopRun(a.id);
+		await stopRun(b.id, 'second');
+		const text = await (await pending).text();
+		expect(text).toContain('"method":"notifications/progress"');
+		expect(text).toContain(`run ${a.id}: cancelled`);
+		const final = text
+			.split('\n')
+			.filter((l) => l.startsWith('data:'))
+			.map((l) => JSON.parse(l.slice(5)) as { result?: { content: { text: string }[] } })
+			.find((m) => m.result)!;
+		const payload = JSON.parse(final.result!.content[0]!.text) as ToolPayload;
+		expect(payload.settled).toBe(true);
+		expect(payload.runs?.map((r) => r.status)).toEqual(['cancelled', 'cancelled']);
+	});
+
+	test('wait_for gives up at its timeout with settled false and no waiter left', async () => {
+		const headers = await session();
+		const run = startRun(booting(), 'go');
+		const before = watcherCount();
+		const { error, payload } = await callTool(headers, 'wait_for', {
+			run_ids: [run.id],
+			timeout_seconds: 1
+		});
+		expect(error).toBeNull();
+		expect(payload).toMatchObject({ settled: false, timed_out: true });
+		// run_agent/wait_for also arm a channel listener, which lives until the run settles.
+		await stopRun(run.id);
+		await until(() => watcherCount() <= before);
+	});
+
+	test('wait_for on a sandbox returns once its build flips it off creating', async () => {
+		const headers = await session();
+		const row = booting();
+		const pending = callTool(headers, 'wait_for', { sandbox_ids: [row.id] });
+		await Bun.sleep(20);
+		updateInstance(row.id, { status: 'running' });
+		triggerReconcile();
+		const { payload } = await pending;
+		expect(payload.sandboxes?.[0]).toMatchObject({ id: row.id, status: 'running' });
+	});
+
+	test('advertises the Claude Code channel capability', async () => {
+		setMcpEnabled(true);
+		const body = await rpcResult(await call({ body: INITIALIZE }));
+		const caps = (body.result as { capabilities: { experimental?: Record<string, unknown> } })
+			.capabilities;
+		expect(caps.experimental?.['claude/channel']).toEqual({});
+	});
+
+	test('pushes a channel event down the session’s GET stream when its run finishes', async () => {
+		const headers = await session();
+		const stream = await call({
+			method: 'GET',
+			headers: { ...headers, accept: 'text/event-stream' }
+		});
+		expect(stream.status).toBe(200);
+		const reader = stream.body!.getReader();
+		const row = booting();
+		const { payload } = await callTool(headers, 'run_agent', { sandbox_id: row.id, prompt: 'go' });
+		await stopRun(payload.run!.run_id, 'stopped by test');
+
+		let seen = '';
+		const decoder = new TextDecoder();
+		while (!seen.includes('notifications/claude/channel')) {
+			const { value, done } = await reader.read();
+			if (done) break;
+			seen += decoder.decode(value);
+		}
+		await reader.cancel();
+		const frame = JSON.parse(
+			seen
+				.split('\n')
+				.find((l) => l.includes('notifications/claude/channel'))!
+				.slice(5)
+		) as { params: { content: string; meta: Record<string, string> } };
+		expect(frame.params.meta).toEqual({
+			kind: 'run',
+			run_id: payload.run!.run_id,
+			sandbox_id: row.id,
+			status: 'cancelled'
+		});
+		expect(frame.params.content).toContain('stopped by test');
 	});
 });

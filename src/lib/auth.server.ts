@@ -1,7 +1,7 @@
 import type { Handle } from 'mochi-framework';
 import { BASIC_AUTH_PASSWORD, BASIC_AUTH_USERNAME } from './config.server.ts';
 import { timingSafeEqualStr } from './crypto.server.ts';
-import { MCP_PATH } from './mcp-auth.server.ts';
+import { MCP_PATH, MCP_WAIT_PATH } from './mcp-auth.server.ts';
 
 const REALM = 'Codebay';
 
@@ -44,7 +44,7 @@ function wsOriginOk(request: Request): boolean {
  * every hit carries that token.
  */
 export function tokenAuthenticated(pathname: string): boolean {
-	return pathname.startsWith('/api/bridge/') || pathname === MCP_PATH;
+	return pathname.startsWith('/api/bridge/') || pathname === MCP_PATH || pathname === MCP_WAIT_PATH;
 }
 
 /** `Mochi.ws` routes are dispatched by Bun directly and never reach `basicAuth`. */

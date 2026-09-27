@@ -86,6 +86,8 @@ export const PORT = Number(process.env.PORT) || 6969;
 
 /** Mochi's CSRF origin check compares against these; override when behind a proxy. */
 export const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN?.trim() || `http://localhost:${PORT}`;
+/** Whether `PUBLIC_ORIGIN` was pinned, as opposed to the loopback fallback a remote client can't reach. */
+export const PUBLIC_ORIGIN_PINNED = !!process.env.PUBLIC_ORIGIN?.trim();
 export const TRUSTED_ORIGINS = (process.env.TRUSTED_ORIGINS || '')
 	.split(',')
 	.map((o) => o.trim())

@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { getOption, setOption } from './db.server.ts';
 import { timingSafeEqualStr } from './crypto.server.ts';
 
@@ -49,4 +49,32 @@ export function mcpAuthOk(request: Request): boolean {
 	const header = request.headers.get('authorization');
 	if (!header?.startsWith('Bearer ')) return false;
 	return timingSafeEqualStr(header.slice(7).trim(), getMcpToken());
+}
+
+/** The completion long-poll; a sibling of `MCP_PATH` so it shares that path's auth exemptions. */
+export const MCP_WAIT_PATH = `${MCP_PATH}/wait`;
+
+/** Order-insensitive, so `runs=a,b` and `runs=b,a` share a signature. */
+function waitScope(runs: readonly string[], sandboxes: readonly string[]): string {
+	return `wait\nruns=${[...runs].sort().join(',')}\nsandboxes=${[...sandboxes].sort().join(',')}`;
+}
+
+/**
+ * A read-only capability for one set of wait targets, keyed on the MCP token. It rides in the wait
+ * command handed to the agent, so the transcript never carries the token that drives every tool;
+ * rotating the token revokes every outstanding one.
+ */
+export function signWait(runs: readonly string[], sandboxes: readonly string[]): string {
+	return createHmac('sha256', getMcpToken())
+		.update(waitScope(runs, sandboxes))
+		.digest('base64url')
+		.slice(0, 32);
+}
+
+export function waitSigOk(
+	sig: string | null,
+	runs: readonly string[],
+	sandboxes: readonly string[]
+): boolean {
+	return !!sig && timingSafeEqualStr(sig, signWait(runs, sandboxes));
 }
