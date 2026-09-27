@@ -38,6 +38,8 @@ export interface InstanceRow {
 	terminal_split: number;
 	/** 0 until the legacy in-place config injection has been checked/undone; new rows start at 1. */
 	config_migrated: number;
+	/** JSON array of container ports already seeded from the project's files; null pre-dates it. */
+	seeded_ports: string | null;
 }
 
 export interface PortForwardRow {
@@ -45,6 +47,8 @@ export interface PortForwardRow {
 	container_port: number;
 	host_port: number;
 	created_at: number;
+	/** Display name from the project's codebay.json; null when the project didn't name it. */
+	label: string | null;
 }
 
 // Pin the connection to globalThis so dev-mode hot reload doesn't reopen it.
@@ -68,8 +72,8 @@ export function closeDb(): void {
 export function insertInstance(row: InstanceRow): void {
 	db.query(
 		`INSERT INTO instances
-       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source, avatar, mode, terminal_split, config_migrated)
-     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source, $avatar, $mode, $terminal_split, $config_migrated)`
+       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source, avatar, mode, terminal_split, config_migrated, seeded_ports)
+     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source, $avatar, $mode, $terminal_split, $config_migrated, $seeded_ports)`
 	).run({
 		$id: row.id,
 		$name: row.name,
@@ -87,7 +91,8 @@ export function insertInstance(row: InstanceRow): void {
 		$avatar: row.avatar,
 		$mode: row.mode,
 		$terminal_split: row.terminal_split,
-		$config_migrated: row.config_migrated
+		$config_migrated: row.config_migrated,
+		$seeded_ports: row.seeded_ports
 	});
 }
 
@@ -119,14 +124,35 @@ export function allForwards(): PortForwardRow[] {
 
 export function insertForward(row: PortForwardRow): void {
 	db.query(
-		`INSERT INTO port_forwards (instance_id, container_port, host_port, created_at)
-     VALUES ($instance_id, $container_port, $host_port, $created_at)`
+		`INSERT INTO port_forwards (instance_id, container_port, host_port, created_at, label)
+     VALUES ($instance_id, $container_port, $host_port, $created_at, $label)`
 	).run({
 		$instance_id: row.instance_id,
 		$container_port: row.container_port,
 		$host_port: row.host_port,
-		$created_at: row.created_at
+		$created_at: row.created_at,
+		$label: row.label
 	});
+}
+
+export function setForwardLabel(
+	instanceId: string,
+	containerPort: number,
+	label: string | null
+): void {
+	db.query(
+		'UPDATE port_forwards SET label = $label WHERE instance_id = $id AND container_port = $port'
+	).run({ $label: label, $id: instanceId, $port: containerPort });
+}
+
+export function setForwardHostPort(
+	instanceId: string,
+	containerPort: number,
+	hostPort: number
+): void {
+	db.query(
+		'UPDATE port_forwards SET host_port = $host WHERE instance_id = $id AND container_port = $port'
+	).run({ $host: hostPort, $id: instanceId, $port: containerPort });
 }
 
 export function deleteForward(instanceId: string, containerPort: number): void {
@@ -151,6 +177,7 @@ const UPDATABLE_COLUMNS = [
 	'image_source',
 	'terminal_split',
 	'config_migrated',
+	'seeded_ports',
 	// Reassigned when a rebuild finds the recorded port taken over on the host.
 	'host_port'
 ] as const;

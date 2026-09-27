@@ -42,7 +42,8 @@ function makeInstance(id: string, hostPort: number): InstanceRow {
 		avatar: null,
 		mode: 'ide',
 		terminal_split: 0,
-		config_migrated: 1
+		config_migrated: 1,
+		seeded_ports: null
 	};
 }
 
@@ -57,13 +58,15 @@ describe('usedPorts union + port_forwards helpers', () => {
 			instance_id: 'a',
 			container_port: 3000,
 			host_port: 8003,
-			created_at: Date.now()
+			created_at: Date.now(),
+			label: 'web'
 		});
 		db.insertForward({
 			instance_id: 'a',
 			container_port: 5173,
 			host_port: 8004,
-			created_at: Date.now()
+			created_at: Date.now(),
+			label: null
 		});
 		expect(db.usedPorts().sort((x, y) => x - y)).toEqual([8001, 8002, 8003, 8004]);
 	});
@@ -73,6 +76,15 @@ describe('usedPorts union + port_forwards helpers', () => {
 		db.deleteForward('a', 3000);
 		expect(db.listForwards('a').map((f) => f.container_port)).toEqual([5173]);
 		expect(db.usedPorts()).not.toContain(8003);
+	});
+
+	test('labels round-trip and setForwardLabel/setForwardHostPort update one row', () => {
+		expect(db.listForwards('a').map((f) => f.label)).toEqual([null]);
+		db.setForwardLabel('a', 5173, 'vite');
+		db.setForwardHostPort('a', 5173, 8123);
+		expect(db.listForwards('a')).toMatchObject([{ label: 'vite', host_port: 8123 }]);
+		db.setForwardLabel('a', 5173, null);
+		expect(db.listForwards('a')[0]!.label).toBeNull();
 	});
 
 	test('deleteForwards removes every forward for an instance', () => {

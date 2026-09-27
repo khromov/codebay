@@ -17,8 +17,8 @@
 					href={forwardedPortUrl(f.host_port)}
 					target="_blank"
 					rel="noopener"
-					title={`container :${f.container_port} → ${forwardedPortUrl(f.host_port)} ${f.open ? '(open)' : '(not published yet)'}`}
-					>{f.container_port}</a
+					title={`${f.name ? `${f.name} — ` : ''}container :${f.container_port} → ${forwardedPortUrl(f.host_port)} ${f.open ? '(open)' : '(not published yet)'}`}
+					>{f.name || f.container_port}</a
 				>
 			{/each}
 		</span>
