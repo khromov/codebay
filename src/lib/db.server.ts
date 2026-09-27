@@ -230,6 +230,8 @@ export interface AgentRunRow {
 	result: string | null;
 	/** JSON string, only when the caller passed a `--json-schema`. */
 	structured_output: string | null;
+	/** JSON string of the last schema-rejected `StructuredOutput` input, so a caller can salvage it. */
+	rejected_structured_output: string | null;
 	/** Latest tool call or assistant line, so a poller can see progress mid-run. */
 	last_activity: string | null;
 	is_error: number;
@@ -249,8 +251,8 @@ const OPEN_RUN_STATUSES = "('queued', 'running')";
 export function insertRun(row: AgentRunRow): void {
 	db.query(
 		`INSERT INTO agent_runs
-       (id, instance_id, prompt, status, session_id, model, resume_session_id, options, result, structured_output, last_activity, is_error, exit_code, cost_usd, duration_ms, num_turns, error, created_at, started_at, finished_at)
-     VALUES ($id, $instance_id, $prompt, $status, $session_id, $model, $resume_session_id, $options, $result, $structured_output, $last_activity, $is_error, $exit_code, $cost_usd, $duration_ms, $num_turns, $error, $created_at, $started_at, $finished_at)`
+       (id, instance_id, prompt, status, session_id, model, resume_session_id, options, result, structured_output, rejected_structured_output, last_activity, is_error, exit_code, cost_usd, duration_ms, num_turns, error, created_at, started_at, finished_at)
+     VALUES ($id, $instance_id, $prompt, $status, $session_id, $model, $resume_session_id, $options, $result, $structured_output, $rejected_structured_output, $last_activity, $is_error, $exit_code, $cost_usd, $duration_ms, $num_turns, $error, $created_at, $started_at, $finished_at)`
 	).run({
 		$id: row.id,
 		$instance_id: row.instance_id,
@@ -262,6 +264,7 @@ export function insertRun(row: AgentRunRow): void {
 		$options: row.options,
 		$result: row.result,
 		$structured_output: row.structured_output,
+		$rejected_structured_output: row.rejected_structured_output,
 		$last_activity: row.last_activity,
 		$is_error: row.is_error,
 		$exit_code: row.exit_code,
@@ -307,6 +310,7 @@ const UPDATABLE_RUN_COLUMNS = [
 	'model',
 	'result',
 	'structured_output',
+	'rejected_structured_output',
 	'last_activity',
 	'is_error',
 	'exit_code',
