@@ -114,6 +114,35 @@ const registry: Map<string, LiveState> = (globalForReg.__codebayRegistry ??= new
 const globalForBoots = globalThis as unknown as { __codebayProvisioning?: Set<string> };
 const inFlight: Set<string> = (globalForBoots.__codebayProvisioning ??= new Set());
 
+/** Whether a boot for this id is running in this process, as opposed to orphaned by a restart. */
+export function isProvisioning(id: string): boolean {
+	return inFlight.has(id);
+}
+
+/**
+ * Completion waiters for sandboxes. The listener gets the changed id, or undefined for "something
+ * may have changed" — every status write is followed by `triggerReconcile`, which is where that fires.
+ */
+const globalForWatchers = globalThis as unknown as {
+	__codebayInstanceWatchers?: Set<(id: string | undefined) => void>;
+};
+const instanceWatchers = (globalForWatchers.__codebayInstanceWatchers ??= new Set());
+
+export function watchInstances(listener: (id: string | undefined) => void): () => void {
+	instanceWatchers.add(listener);
+	return () => instanceWatchers.delete(listener);
+}
+
+function notifyInstanceWatchers(id?: string): void {
+	for (const watcher of [...instanceWatchers]) {
+		try {
+			watcher(id);
+		} catch {
+			// One broken waiter must not break the mutation that notified it.
+		}
+	}
+}
+
 /**
  * Whether reconcile may re-derive a row's status from Docker. A live boot owns its own row until it
  * opens the instance itself; an orphaned `creating` row (the manager restarted mid-boot) must not
@@ -306,6 +335,7 @@ async function reconcileAndBroadcast(): Promise<void> {
  * re-probing the CLI here would spawn a process per Claude tool-call boundary.
  */
 export function triggerReconcile(): void {
+	notifyInstanceWatchers();
 	void reconcileInstances(true);
 }
 
@@ -693,6 +723,7 @@ export async function listInstances(): Promise<Instance[]> {
 				}
 				updateInstance(row.id, { status: next });
 				row.status = next;
+				notifyInstanceWatchers(row.id);
 			}
 			// The workspace is bind-mounted, so the host copy's .git/HEAD tracks the container.
 			branches.set(row.id, await readGitBranch(row.workspace_path));

@@ -222,14 +222,19 @@ interface RunRegistry {
 	cursors: Map<string, RunCursor>;
 	/** The in-flight pass per run, so an overlapping caller joins it instead of seeing stale state. */
 	inFlight: Map<string, Promise<void>>;
+	/** Transient listeners (completion waiters), pinned so a hot reload doesn't strand a blocked caller. */
+	watchers: Set<(runId: string) => void>;
 }
 
 // Pinned like every other long-lived map here, so dev-mode hot reload doesn't orphan the timer.
 const globalForRuns = globalThis as unknown as { __codebayRuns?: RunRegistry };
 const registry: RunRegistry = (globalForRuns.__codebayRuns ??= {
 	cursors: new Map(),
-	inFlight: new Map()
+	inFlight: new Map(),
+	watchers: new Set()
 });
+// A registry pinned by an older build predates the field.
+registry.watchers ??= new Set();
 
 /**
  * Collapses concurrent passes for one run onto a single promise. Joining rather than skipping is
@@ -297,6 +302,26 @@ export function setRunChangeHook(hook: (runId: string) => void): void {
 	onRunChanged = hook;
 }
 
+/**
+ * Every row change the poller makes, for completion waiters. Separate from the hub hook because
+ * there are many of these and they come and go, where the hub registers exactly once per module load.
+ */
+export function watchRuns(listener: (runId: string) => void): () => void {
+	registry.watchers.add(listener);
+	return () => registry.watchers.delete(listener);
+}
+
+function emitRunChange(runId: string): void {
+	onRunChanged?.(runId);
+	for (const watcher of [...registry.watchers]) {
+		try {
+			watcher(runId);
+		} catch {
+			// One broken waiter must not stall the poller or the other waiters.
+		}
+	}
+}
+
 /** The one projection of a run row every reader shares, so the Agent log and MCP can't drift apart. */
 export function runDetail(row: AgentRunRow) {
 	return {
@@ -342,7 +367,7 @@ export function currentRunSummaries(): AgentRunSummary[] {
 function finish(runId: string, patch: Parameters<typeof updateRun>[1]): void {
 	updateRun(runId, { ...patch, finished_at: Date.now() });
 	registry.cursors.delete(runId);
-	onRunChanged?.(runId);
+	emitRunChange(runId);
 }
 
 export function startRunTimer(): void {
@@ -475,7 +500,7 @@ function launch(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 			return;
 		}
 		updateRun(row.id, { status: 'running', started_at: Date.now() });
-		onRunChanged?.(row.id);
+		emitRunChange(row.id);
 	});
 }
 
@@ -528,7 +553,7 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 				num_turns: state.numTurns,
 				cost_usd: state.costUsd
 			});
-			onRunChanged?.(row.id);
+			emitRunChange(row.id);
 		}
 
 		if (exitRaw) {
@@ -638,7 +663,7 @@ export function startRun(
 	};
 	insertRun(row);
 	startRunTimer();
-	onRunChanged?.(id);
+	emitRunChange(id);
 	// A sandbox that is already up shouldn't wait a poll interval to get going.
 	if (instance.status === 'running') void advance(row);
 	return row;
@@ -708,7 +733,7 @@ async function drainAfterStop(runId: string, instance: InstanceRow): Promise<voi
 			cost_usd: state.costUsd,
 			result: state.result
 		});
-		onRunChanged?.(runId);
+		emitRunChange(runId);
 	});
 }
 
