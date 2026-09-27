@@ -1,6 +1,6 @@
 import type { Injection } from '../lib/injections.server.ts';
 import { CLAUDE_RESTORE_MOUNT } from '../lib/devcontainer.server.ts';
-import { afterMarker, execInContainer } from '../lib/exec.server.ts';
+import { afterMarker, checkPresence, execInContainer } from '../lib/exec.server.ts';
 
 const RESTORE_MARKER = '__CODEBAY_RESTORE__';
 
@@ -10,6 +10,8 @@ const RESTORE_MARKER = '__CODEBAY_RESTORE__';
  */
 export function restoreScript(mountDir: string = CLAUDE_RESTORE_MOUNT): string {
 	return (
+		// The host mirror's modes don't survive the mount, so match the 0600 Claude Code writes.
+		`umask 077; ` +
 		`h=$(eval echo ~$(id -un)); cfg="\${CLAUDE_CONFIG_DIR:-$h/.claude}"; ` +
 		`cd ${mountDir} 2>/dev/null || { printf '%s0\\n' '${RESTORE_MARKER}'; exit 0; }; ` +
 		// Listed to a file, not piped: a pipeline would run the loop in a subshell the count dies with.
@@ -41,5 +43,10 @@ export const claudeHistory: Injection = {
 		}
 		const count = Number(afterMarker(res.stdout, RESTORE_MARKER)?.trim());
 		if (count > 0) log(`✓ Restored ${count} Claude conversation file(s) from a previous build\n`);
+	},
+
+	// The mount, not the copied files, is what the next rebuild restores from; compose configs drop it.
+	async check(target) {
+		return checkPresence(target, `[ -d ${CLAUDE_RESTORE_MOUNT} ] && echo 1 || echo 0`);
 	}
 };

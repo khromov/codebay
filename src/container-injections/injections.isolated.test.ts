@@ -1,11 +1,13 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
 import {
+	chmodSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	realpathSync,
 	rmSync,
+	statSync,
 	writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -186,6 +188,13 @@ describe('injection registry', () => {
 		// A check() would fire an `npm view` network call on every health tick — too costly.
 		expect(update!.auth).toBeUndefined();
 		expect(update!.check).toBeUndefined();
+	});
+
+	test('claude-history is registered with a health check and no auth chip', () => {
+		const history = injections.find((i) => i.id === 'claude-history');
+		expect(history).toBeDefined();
+		expect(typeof history!.check).toBe('function');
+		expect(history!.auth).toBeUndefined();
 	});
 
 	test('claude-code-ide-extension is registered with a health check and no auth chip', () => {
@@ -474,6 +483,14 @@ describe('claude-history restore script', () => {
 		seed('projects/enc/s1.jsonl', 'live\n', cfg);
 		expect(restore()).toBe('0');
 		expect(readFileSync(join(cfg, 'projects', 'enc', 's1.jsonl'), 'utf8')).toBe('live\n');
+	});
+
+	test.skipIf(POSIX_SHELL_ONLY)('restores transcripts owner-only whatever the mirror mode', () => {
+		seed('projects/enc/s1.jsonl', 'x\n');
+		chmodSync(join(mount, 'projects', 'enc', 's1.jsonl'), 0o644);
+		expect(restore()).toBe('1');
+		expect(statSync(join(cfg, 'projects', 'enc', 's1.jsonl')).mode & 0o777).toBe(0o600);
+		expect(statSync(join(cfg, 'projects', 'enc')).mode & 0o777).toBe(0o700);
 	});
 
 	test.skipIf(POSIX_SHELL_ONLY)('survives a project dir containing spaces', () => {

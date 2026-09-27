@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InstanceRow } from './db.server.ts';
@@ -43,6 +43,17 @@ describe('parseManifest', () => {
 		expect(parseManifest(stdout)).toEqual([]);
 	});
 
+	test('drops a relPath that would climb out of the mirror root', () => {
+		const stdout = [
+			'__CODEBAY_MANIFEST__',
+			'/h/.claude',
+			'/h/.claude/../../../../tmp/pwn.jsonl\t7',
+			'/h/.claude/projects/../../x.jsonl\t7',
+			'/h/.claude/projects/enc/s1.jsonl\t7'
+		].join('\n');
+		expect(parseManifest(stdout).map((e) => e.relPath)).toEqual(['projects/enc/s1.jsonl']);
+	});
+
 	test('returns nothing when the marker is absent', () => {
 		expect(parseManifest('some unrelated output')).toEqual([]);
 	});
@@ -71,8 +82,7 @@ describe('planFetch', () => {
 				path: '/c/.claude/history.jsonl',
 				relPath: 'history.jsonl',
 				hostFileName: 'history-id.jsonl',
-				startByte: 21,
-				mode: 'append'
+				startByte: 21
 			}
 		]);
 	});
@@ -83,8 +93,7 @@ describe('planFetch', () => {
 			path: '/c/.claude/projects/e/s.jsonl',
 			relPath: 'projects/e/s.jsonl',
 			hostFileName: 'transcript-id-s.jsonl',
-			startByte: 1,
-			mode: 'rollover'
+			startByte: 1
 		});
 	});
 });
@@ -220,6 +229,39 @@ describe('runCapturePass', () => {
 		const index = JSON.parse(readFileSync(join(logsDir, 'index.json'), 'utf8'));
 		expect(index.inst1.name).toBe('demo');
 		expect(index.inst1.source_path).toBe('/src/demo');
+	});
+
+	test('rolls a pre-mirror flat archive over instead of appending the whole file onto it', async () => {
+		dirs();
+		// An instance captured before the per-instance mirror existed: archive populated, mirror empty.
+		const histPath = join(logsDir, 'history-inst1.jsonl');
+		const sessPath = join(logsDir, 'transcript-inst1-s1.jsonl');
+		writeFileSync(histPath, 'h1\n');
+		writeFileSync(sessPath, 'line1\nline2\n');
+		const files = new Map<string, Buffer>([
+			[HIST, Buffer.from('h1\n')],
+			[SESS, Buffer.from('line1\nline2\n')]
+		]);
+
+		await runCapturePass(row(), { exec: fakeExec(files), logsDir, mirrorDir });
+
+		expect(readFileSync(histPath, 'utf8')).toBe('h1\n');
+		expect(readFileSync(sessPath, 'utf8')).toBe('line1\nline2\n');
+		expect(readFileSync(join(logsDir, 'history-inst1.1.jsonl'), 'utf8')).toBe('h1\n');
+		expect(readFileSync(join(logsDir, 'transcript-inst1-s1.1.jsonl'), 'utf8')).toBe(
+			'line1\nline2\n'
+		);
+		expect(readFileSync(join(mirrorDir, 'projects', 'enc', 's1.jsonl'), 'utf8')).toBe(
+			'line1\nline2\n'
+		);
+	});
+
+	test('a brand-new instance gets a single archive generation on its first pass', async () => {
+		dirs();
+		const files = new Map<string, Buffer>([[SESS, Buffer.from('line1\n')]]);
+		await runCapturePass(row(), { exec: fakeExec(files), logsDir, mirrorDir });
+		expect(readdirSync(logsDir).sort()).toEqual(['index.json', 'transcript-inst1-s1.jsonl']);
+		expect(readFileSync(join(logsDir, 'transcript-inst1-s1.jsonl'), 'utf8')).toBe('line1\n');
 	});
 
 	test('is a no-op that still indexes when there are no Claude files', async () => {

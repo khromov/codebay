@@ -34,7 +34,6 @@ interface FetchJob {
 	hostFileName: string;
 	/** 1-indexed byte to `tail -c +N` from; 1 re-pulls the whole file. */
 	startByte: number;
-	mode: 'append' | 'rollover';
 }
 
 /**
@@ -91,7 +90,10 @@ export function parseManifest(stdout: string): ManifestEntry[] {
 		const path = line.slice(0, tab);
 		const size = Number(line.slice(tab + 1).trim());
 		if (!path || !Number.isFinite(size) || !path.startsWith(`${cfg}/`)) continue;
-		out.push({ path, relPath: path.slice(cfg.length + 1), size });
+		const relPath = path.slice(cfg.length + 1);
+		// `find` can't emit `..` today, but this gets joined onto a host dir, so don't rely on that.
+		if (relPath.split('/').includes('..')) continue;
+		out.push({ path, relPath, size });
 	}
 	return out;
 }
@@ -120,9 +122,7 @@ export function planFetch(
 		const hostFileName = hostFileNameFor(instanceId, path);
 		const existing = hostSize(relPath);
 		if (size === existing) continue;
-		const job = { path, relPath, hostFileName };
-		if (size < existing) jobs.push({ ...job, startByte: 1, mode: 'rollover' });
-		else jobs.push({ ...job, startByte: existing + 1, mode: 'append' });
+		jobs.push({ path, relPath, hostFileName, startByte: size < existing ? 1 : existing + 1 });
 	}
 	return jobs;
 }
@@ -230,7 +230,8 @@ export async function runCapturePass(row: InstanceRow, deps: CaptureDeps = {}): 
 				mkdirSync(dirname(mirror), { recursive: true });
 				// The archive keeps every generation; the mirror only ever holds what the container
 				// holds, since it gets mounted back in and a stale byte would resurface as history.
-				if (job.mode === 'rollover') {
+				// Any whole-file pull rolls, since a pre-mirror instance's archive would otherwise double.
+				if (job.startByte === 1) {
 					rollOver(archive);
 					writeFileSync(mirror, bytes);
 				} else {
