@@ -68,17 +68,23 @@ interface SyncedSkillEntry {
 	creatorType?: unknown;
 }
 
-/** Older manifests predate `creatorType`, and there `source` is the only authorship signal. */
+/** Claude Code 2.1.283's manifests carry only `source`; `creatorType` is honoured if one ever appears. */
 export function isAnthropicSkill(entry: SyncedSkillEntry): boolean {
 	if (entry.creatorType !== undefined) return entry.creatorType === 'anthropic';
 	return typeof entry.source === 'string' && entry.source.startsWith('anthropic');
 }
 
-/** The sync names each skill's dir after its `name`; `skillId` is the fallback for older layouts. */
-const entryMatchesDir = (entry: SyncedSkillEntry, dir: string): boolean =>
-	[entry.name, entry.skillId].some(
-		(v) => typeof v === 'string' && v.toLowerCase() === dir.toLowerCase()
-	);
+/** Folds a name the way Claude Code compares synced dir names, so case and Unicode form don't matter. */
+const foldDirName = (name: string): string =>
+	name
+		.replace(/[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g, '')
+		.normalize('NFD')
+		.toLowerCase();
+
+/** The dir Claude Code lands a synced skill in: its `name` with path-hostile characters replaced. */
+export function syncedSkillDir(name: string): string {
+	return name.replace(/[<>:"|?*\\/]/g, '_').replace(/[. ]+$/, '');
+}
 
 /**
  * Copies a sync bucket minus Anthropic's own skills, which the sandbox's Claude Code re-syncs for the
@@ -94,27 +100,33 @@ async function walkSyncedBucket(dir: string, rel: string, out: HostFile[]): Prom
 		return false;
 	}
 	if (!Array.isArray(manifest?.skills)) return false;
-	const kept = (manifest.skills as SyncedSkillEntry[]).filter(
-		(e) => typeof e === 'object' && e !== null && !isAnthropicSkill(e)
-	);
 	let entries;
 	try {
 		entries = await readdir(dir, { withFileTypes: true });
 	} catch {
 		return false;
 	}
-	const keptDirs = entries.filter(
-		(e) => e.isDirectory() && kept.some((k) => entryMatchesDir(k, e.name))
+	const dirs = new Map(
+		entries.filter((e) => e.isDirectory()).map((e) => [foldDirName(e.name), e.name])
 	);
-	if (!keptDirs.length) return false;
-	for (const entry of keptDirs) {
-		await walkSkills(posix.join(dir, entry.name), posix.join(rel, entry.name), out);
+	const kept: { row: SyncedSkillEntry; dir: string }[] = [];
+	for (const row of manifest.skills as unknown[]) {
+		if (typeof row !== 'object' || row === null) continue;
+		const entry = row as SyncedSkillEntry;
+		if (typeof entry.name !== 'string' || isAnthropicSkill(entry)) continue;
+		const found = dirs.get(foldDirName(syncedSkillDir(entry.name)));
+		if (found !== undefined && !kept.some((k) => k.dir === found))
+			kept.push({ row: entry, dir: found });
+	}
+	if (!kept.length) return false;
+	for (const { dir: name } of kept) {
+		await walkSkills(posix.join(dir, name), posix.join(rel, name), out);
 	}
 	// `staleDirs`/`pendingClaims` name host dirs and host PIDs, so neither means anything in the sandbox.
 	const { staleDirs: _stale, pendingClaims: _pending, ...rest } = manifest;
 	out.push({
 		rel: posix.join(rel, 'manifest.json'),
-		bytes: Buffer.from(JSON.stringify({ ...rest, skills: kept }, null, 2)),
+		bytes: Buffer.from(JSON.stringify({ ...rest, skills: kept.map((k) => k.row) }, null, 2)),
 		exec: false,
 		oversized: false
 	});
@@ -132,10 +144,11 @@ async function walkSynced(dir: string, rel: string, out: HostFile[]): Promise<vo
 		if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
 		const bucketRel = posix.join(rel, entry.name);
 		if (!(await walkSyncedBucket(posix.join(dir, entry.name), bucketRel, out))) continue;
-		const marker = `${BUCKET_MARKER_PREFIX}${entry.name}`;
-		if (existsSync(posix.join(dir, marker))) {
-			out.push(await readHostFile(posix.join(dir, marker), posix.join(rel, marker)));
-		}
+		const marker = entries.find(
+			(e) => e.isFile() && e.name === `${BUCKET_MARKER_PREFIX}${entry.name}`
+		);
+		if (marker)
+			out.push(await readHostFile(posix.join(dir, marker.name), posix.join(rel, marker.name)));
 	}
 }
 
