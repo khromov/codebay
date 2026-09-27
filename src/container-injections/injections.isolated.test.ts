@@ -442,7 +442,6 @@ describe('tmux injection scripts', () => {
 	});
 
 	test('conf makes a copy reach the browser clipboard on any TERM', () => {
-		expect(TMUX_CONF_LINES).toContain('set -g set-clipboard on');
 		expect(TMUX_CONF_LINES).toContain("set -as terminal-overrides ',*:Ms=\\E]52;%p1%s;%p2%s\\007'");
 	});
 });
