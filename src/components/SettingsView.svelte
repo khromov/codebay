@@ -55,6 +55,7 @@
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import Gauge from '@lucide/svelte/icons/gauge';
 	import MessageSquare from '@lucide/svelte/icons/message-square';
+	import ClipboardX from '@lucide/svelte/icons/clipboard-x';
 	import { installPopupBackTrap } from '../lib/popup-nav.ts';
 
 	/** Every settings form action fails with the same `{ error }` shape. */
@@ -167,6 +168,17 @@
 	let shuttingDown = $state(false);
 
 	$effect(() => installPopupBackTrap());
+
+	/** Only settleable after hydration — SSR has no origin to judge. */
+	let insecure = $state<{ origin: string; tunnel: string } | null>(null);
+	$effect(() => {
+		if (window.isSecureContext) return;
+		const port = location.port || '80';
+		insecure = {
+			origin: location.origin,
+			tunnel: `ssh -L ${port}:localhost:${port} ${location.hostname}`
+		};
+	});
 
 	/** Reused by every plain save form below; only the per-control state setters differ. */
 	function saveOpts<Success extends Record<string, unknown> = Record<string, unknown>>(handlers: {
@@ -960,6 +972,28 @@
 	</AppBar>
 
 	<main class="content">
+		{#if insecure}
+			<section class="card">
+				<div class="row">
+					<div class="label">
+						<ClipboardX size={20} />
+						<div class="text">
+							<div class="name">Copying out of a terminal may not work on this address</div>
+							<div class="desc">
+								Browsers hand out clipboard access only on a secure origin, and
+								<code>{insecure.origin}</code> isn't one — so a copy out of an instance's VS Code
+								terminal reaches nothing (codebay's own terminal falls back to a legacy copy that
+								usually still works). Either open codebay through <code>localhost</code> (<code
+									>{insecure.tunnel}</code
+								>), or allow this exact origin under
+								<code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>.
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+		{/if}
+
 		<section class="card">
 			<form
 				class="row"
