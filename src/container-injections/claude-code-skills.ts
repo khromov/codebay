@@ -8,10 +8,10 @@ import { hostClaudeFile } from '../lib/host-claude.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
 
 /**
- * The env-var stdin carrier caps a single write near 128 KB (Linux `MAX_ARG_STRLEN`); base64
- * inflates ~4/3, so a raw file over this is skipped rather than failing the whole injection.
+ * `writeContainerFileBytes` chunks past the exec carrier's 128 KiB cap, so this only guards against
+ * a stray multi-megabyte artifact costing dozens of execs per boot.
  */
-const MAX_FILE_BYTES = 90_000;
+export const MAX_FILE_BYTES = 16 * 1024 * 1024;
 
 interface HostFile {
 	/** Path relative to the host Claude dir, e.g. `CLAUDE.md` or `skills/foo/SKILL.md`. */
@@ -96,11 +96,14 @@ export const claudeCodeSkills: Injection = {
 		}
 		log(`Injecting ${files.length} global skill/CLAUDE.md file(s)…\n`);
 		let failed = 0;
+		const skipped = files.filter((f) => f.oversized).map((f) => f.rel);
+		if (skipped.length) {
+			log(
+				`⚠ Skipped ${skipped.length} file(s) larger than ${MAX_FILE_BYTES} bytes: ${skipped.join(', ')}\n`
+			);
+		}
 		for (const file of files) {
-			if (file.oversized) {
-				log(`⚠ Skipped ${file.rel} (larger than ${MAX_FILE_BYTES} bytes)\n`);
-				continue;
-			}
+			if (file.oversized) continue;
 			const dest = claudeConfigFile(file.rel, file.exec ? '755' : '644');
 			const wrote = await writeContainerFileBytes(target, dest, file.bytes);
 			if (!wrote.ok) {

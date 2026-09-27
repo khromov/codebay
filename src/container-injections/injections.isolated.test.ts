@@ -24,6 +24,7 @@ import { injections, resolveInjections, resolveInjectionStages } from '../lib/in
 import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings, hasAttentionHook } from './attention-hooks.ts';
 import { restoreScript } from './claude-history.ts';
+import { collectHostSkillFiles, MAX_FILE_BYTES } from './claude-code-skills.ts';
 import { isValid, LIVE_CREDENTIALS_TEST, tokenCredentials } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
 import { gitIdentity, gitIdentityEnabled, readGitIdentity } from './git-identity.ts';
@@ -132,6 +133,25 @@ describe('injection registry', () => {
 		expect(skills).toBeDefined();
 		expect(skills!.auth).toBeDefined();
 		expect(typeof skills!.check).toBe('function');
+	});
+
+	test('skill files past the exec carrier cap are collected, not skipped', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'codebay-skills-'));
+		try {
+			const schemas = join(dir, 'skills/docx/scripts/office/schemas');
+			mkdirSync(schemas, { recursive: true });
+			writeFileSync(join(schemas, 'wml.xsd'), 'x'.repeat(200_000));
+			writeFileSync(join(schemas, 'huge.bin'), Buffer.alloc(MAX_FILE_BYTES + 1));
+			setOption('claude_config_dir', dir);
+			const files = await collectHostSkillFiles();
+			const wml = files.find((f) => f.rel.endsWith('wml.xsd'));
+			expect(wml?.oversized).toBe(false);
+			expect(wml?.bytes.length).toBe(200_000);
+			expect(files.find((f) => f.rel.endsWith('huge.bin'))?.oversized).toBe(true);
+		} finally {
+			setOption('claude_config_dir', '');
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	test('claude-model is registered with a health check and no auth chip', () => {

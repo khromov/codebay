@@ -1,4 +1,9 @@
-import { checkPresence, execInContainer, type ExecTarget } from './exec.server.ts';
+import {
+	EXEC_STDIN_MAX_BYTES_BASE64,
+	checkPresence,
+	execInContainer,
+	type ExecTarget
+} from './exec.server.ts';
 
 /**
  * A file inside a container, addressed by a shell expr for its dir (`$h` = the exec user's home) + name.
@@ -63,6 +68,23 @@ export function writeBase64FileScript(file: ContainerFile): string {
 	);
 }
 
+/**
+ * One slice of a multi-exec base64 write: slices accumulate in a sibling `.codebay-part` file that
+ * the last slice renames into place, so a failure midway never leaves a truncated file at `$f`.
+ */
+export function writeBase64ChunkScript(
+	file: ContainerFile,
+	chunk: { first: boolean; last: boolean }
+): string {
+	const mode = file.mode ?? '644';
+	const redirect = chunk.first ? '>' : '>>';
+	const finish = chunk.last ? `; chmod ${mode} "$p"; mv -f "$p" "$f"` : '';
+	return (
+		`set -e; ${HOME_PRELUDE}f="${filePath(file)}"; p="$f.codebay-part"; mkdir -p "$(dirname "$f")"; ` +
+		`printf '%s' "$CODEBAY_STDIN" | base64 -d ${redirect} "$p"${finish}`
+	);
+}
+
 /** Single-quotes a value for a sourced shell file so whatever it contains stays literal. */
 export const shellSingleQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
@@ -107,17 +129,33 @@ export async function writeContainerFile(
 	return res.ok ? { ok: true } : { ok: false, error: res.error };
 }
 
-/** Writes raw `bytes` to a container file, ferrying them as base64 so binary content stays intact. */
+/** A multiple of 3 so every slice base64-encodes without padding and fits the exec carrier. */
+export const BYTES_CHUNK_SIZE = Math.floor(EXEC_STDIN_MAX_BYTES_BASE64 / 3) * 3;
+
+/** Writes raw `bytes` to a container file as base64, split across execs so no size hits the carrier cap. */
 export async function writeContainerFileBytes(
 	target: ExecTarget,
 	file: ContainerFile,
 	bytes: Buffer
 ): Promise<{ ok: boolean; error?: string }> {
-	const res = await execInContainer(target, {
-		script: writeBase64FileScript(file),
-		stdin: bytes.toString('base64')
-	});
-	return res.ok ? { ok: true } : { ok: false, error: res.error };
+	if (bytes.length <= BYTES_CHUNK_SIZE) {
+		const res = await execInContainer(target, {
+			script: writeBase64FileScript(file),
+			stdin: bytes.toString('base64')
+		});
+		return res.ok ? { ok: true } : { ok: false, error: res.error };
+	}
+	for (let at = 0; at < bytes.length; at += BYTES_CHUNK_SIZE) {
+		const res = await execInContainer(target, {
+			script: writeBase64ChunkScript(file, {
+				first: at === 0,
+				last: at + BYTES_CHUNK_SIZE >= bytes.length
+			}),
+			stdin: bytes.subarray(at, at + BYTES_CHUNK_SIZE).toString('base64')
+		});
+		if (!res.ok) return { ok: false, error: res.error };
+	}
+	return { ok: true };
 }
 
 /** Appends each line to every file it's missing from — the shared idempotent rc/conf write. */
