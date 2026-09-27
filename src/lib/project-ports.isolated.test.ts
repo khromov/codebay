@@ -7,6 +7,7 @@ import {
 	deleteForwards,
 	deleteInstanceRow,
 	getInstance,
+	insertForward,
 	insertInstance,
 	listForwards,
 	type InstanceRow
@@ -33,7 +34,7 @@ function makeWorkspace(files: { devcontainer?: string; codebay?: string }): stri
 	return dir;
 }
 
-function seed(workspacePath: string): InstanceRow {
+function seed(workspacePath: string, seededPorts: string | null = '[]'): InstanceRow {
 	const row: InstanceRow = {
 		id: `ports-${seq++}`,
 		name: 'ports',
@@ -52,7 +53,7 @@ function seed(workspacePath: string): InstanceRow {
 		mode: 'ide',
 		terminal_split: 0,
 		config_migrated: 1,
-		seeded_ports: null
+		seeded_ports: seededPorts
 	};
 	insertInstance(row);
 	seeded.push(row.id);
@@ -134,6 +135,26 @@ describe('seedProjectPorts', () => {
 		expect(forwards(row.id)).toEqual([
 			{ container_port: 3000, label: 'web' },
 			{ container_port: 5173, label: 'vite' }
+		]);
+	});
+
+	test('a pre-upgrade row does not resurrect a declared port the user removed', async () => {
+		const dir = makeWorkspace({
+			devcontainer: '{ "forwardPorts": [3000, 4000] }',
+			codebay: '{ "ports": { "9229": "debug" } }'
+		});
+		const row = seed(dir, null);
+		insertForward({
+			instance_id: row.id,
+			container_port: 3000,
+			host_port: 8700,
+			created_at: Date.now(),
+			label: null
+		});
+		await seedProjectPorts(row);
+		expect(forwards(row.id)).toEqual([
+			{ container_port: 3000, label: null },
+			{ container_port: 9229, label: 'debug' }
 		]);
 	});
 

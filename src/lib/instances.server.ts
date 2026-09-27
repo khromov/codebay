@@ -422,9 +422,11 @@ export async function seedProjectPorts(row: InstanceRow): Promise<void> {
 	const declared = await readDeclaredContainerPorts(row.workspace_path);
 	const existing = new Map(listForwards(row.id).map((f) => [f.container_port, f]));
 	// Without this a port the user removed by hand would come back on the next restart; a row from
-	// before the column has no record, so treat whatever it already forwards as seeded.
+	// before the column already had every declared port seeded by its first boot.
 	const seeded = new Set<number>(
-		row.seeded_ports ? (JSON.parse(row.seeded_ports) as number[]) : [...existing.keys()]
+		row.seeded_ports !== null
+			? (JSON.parse(row.seeded_ports) as number[])
+			: [...existing.keys(), ...declared]
 	);
 	// Republishing the surface port would put the unauthenticated editor/terminal outside the proxy.
 	const reserved = row.mode === 'terminal' ? TTYD_PORT : CODE_SERVER_PORT;
@@ -729,7 +731,8 @@ export async function createInstance(
 		terminal_split: 0,
 		// Born under the separate-config scheme, so there is never a legacy injection to undo.
 		config_migrated: 1,
-		seeded_ports: null
+		// NULL marks a row from before the column, which seedProjectPorts treats differently.
+		seeded_ports: '[]'
 	};
 	insertInstance(row);
 	// Strip the de-dup `#2` suffix so the recent-folders list keeps the base name.
