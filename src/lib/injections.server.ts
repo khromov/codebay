@@ -8,6 +8,7 @@ import { gitIdentity } from '../container-injections/git-identity.ts';
 import { claudeCodeCredentials } from '../container-injections/claude-code-credentials.ts';
 import { claudeCodeCustom } from '../container-injections/claude-code-custom.ts';
 import { claudeCodeSkills } from '../container-injections/claude-code-skills.ts';
+import { claudeHistory } from '../container-injections/claude-history.ts';
 import { claudeCodeIdeExtension } from '../container-injections/claude-code-ide-extension.ts';
 import { codeServerDark } from '../container-injections/code-server-dark.ts';
 import { claudeCodeInstall } from '../container-injections/claude-code-install.ts';
@@ -70,7 +71,10 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 			claudeInjection,
 			claudeCodeSkills,
 			claudeCodeIdeExtension,
-			claudeEffortLevel
+			claudeEffortLevel,
+			// Only writes `projects/**` + `history.jsonl`, which no other injection touches, and
+			// lands before the injections-done sentinel releases the launcher's `claude`.
+			claudeHistory
 		],
 		// git-identity needs stage 1's safe.directory; ttyd shares the apt/dpkg lock with tmux and
 		// the /usr/local/bin symlink with claude-code-install, so it trails both. code-server-dark

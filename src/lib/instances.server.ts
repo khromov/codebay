@@ -1,6 +1,8 @@
+import { mkdirSync } from 'node:fs';
 import { rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import {
+	claudeMirrorDir,
 	CODE_SERVER_PORT,
 	DATA_DIR,
 	DEFAULT_COPY_IGNORE,
@@ -493,6 +495,10 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		}));
 		appendLog(row.id, `Injecting ${surfaceLabel(row.mode)} (host port ${row.host_port})\n`);
 		const defaultImage = getOption('default_image') ?? DEFAULT_IMAGE;
+		// Mounted read-only for claude-history to restore from, so it has to exist before the boot —
+		// and it has to be mounted *after* the drain above, or a rebuild would restore a stale mirror.
+		const mirrorDir = claudeMirrorDir(row.id);
+		mkdirSync(mirrorDir, { recursive: true });
 		const { imageSource, configPath, overrideConfigPath } = await writeOverrideConfig(
 			row.workspace_path,
 			row.host_port,
@@ -500,7 +506,8 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			defaultImage,
 			row.mode,
 			getClaudePermissionMode(),
-			customEnvVarsConfig()?.vars ?? []
+			customEnvVarsConfig()?.vars ?? [],
+			mirrorDir
 		);
 		updateInstance(row.id, { image_source: imageSource });
 
@@ -908,8 +915,8 @@ export async function deleteInstance(id: string): Promise<void> {
 	await cancelActiveRun(id, 'the sandbox was deleted');
 	stopHealthMonitor(id);
 	// Mirror the tail of the session before the transcripts die with the container; the periodic
-	// chain is stopped first so it can't race this last pass. Retention outlives the instance —
-	// <LOGS_DIR>/*-<id>.jsonl is deliberately left on disk.
+	// chain is stopped first so it can't race this last pass. The flat <LOGS_DIR>/*-<id>.jsonl
+	// archive is deliberately left on disk; the per-instance mirror goes with the instance below.
 	stopLogCapture(id);
 	if (row.container_id) {
 		await runCapturePass(row).catch(() => undefined);
