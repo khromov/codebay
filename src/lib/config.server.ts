@@ -151,6 +151,15 @@ export function binShim(binDir: string, name: string): string | null {
 }
 
 /**
+ * The CLI's `node` shebang resolves to Bun under Bun, and Bun loads `bunfig.toml` from cwd — so a
+ * workspace cwd would run the repo's `preload` on the host; not tmpdir, since that's world-writable.
+ */
+export function devcontainerCwd(): string {
+	mkdirSync(DATA_DIR, { recursive: true });
+	return DATA_DIR;
+}
+
+/**
  * An argv rather than a path, because the `devcontainer.js` fallback leads with a
  * `#!/usr/bin/env node` shebang that Windows doesn't honour — there it only runs when handed to
  * an interpreter. Resolved from our own dependency tree, not cwd, because under `bunx codebay`

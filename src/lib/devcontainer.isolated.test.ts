@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import {
 	mkdtempSync,
 	rmSync,
@@ -11,11 +11,12 @@ import {
 	symlinkSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, sep } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { PUBLISH_HOST } from './config.server.ts';
 import { setOption } from './db.server.ts';
 import {
 	CLAUDE_RESTORE_MOUNT,
+	devcontainerUp,
 	devcontainerUpArgs,
 	devcontainerUpEnv,
 	launchCommandFor,
@@ -1161,6 +1162,52 @@ describe('devcontainerUp args and env', () => {
 			if (prev === undefined) delete process.env.DOCKER_BUILDKIT;
 			else process.env.DOCKER_BUILDKIT = prev;
 		}
+	});
+});
+
+describe('devcontainerUp cwd', () => {
+	let workspace: string;
+
+	beforeEach(() => {
+		workspace = mkdtempSync(join(tmpdir(), 'codebay-bunfig-'));
+		writeFileSync(join(workspace, 'bunfig.toml'), 'preload = ["./evil.ts"]\n');
+		writeFileSync(join(workspace, 'evil.ts'), 'throw new Error("workspace preload ran");\n');
+	});
+	afterEach(() => rmSync(workspace, { recursive: true, force: true }));
+
+	// The devcontainer CLI's `node` shebang resolves to Bun, which loads `bunfig.toml` from cwd.
+	test('spawns from outside the workspace, so its bunfig.toml preload never runs', async () => {
+		let cwd: string | undefined;
+		const spawn = spyOn(Bun, 'spawn').mockImplementation(((
+			_cmd: string[],
+			opts: { cwd?: string }
+		) => {
+			cwd = opts.cwd;
+			return {
+				stdout: new Response('').body,
+				stderr: new Response('').body,
+				exited: Promise.resolve(1)
+			};
+		}) as unknown as typeof Bun.spawn);
+		try {
+			await expect(devcontainerUp(workspace, () => {})).rejects.toThrow('did not return a result');
+		} finally {
+			spawn.mockRestore();
+		}
+
+		expect(cwd).toBeDefined();
+		const rel = relative(workspace, cwd!);
+		expect(rel.startsWith('..') || isAbsolute(rel)).toBe(true);
+
+		const script = join(workspace, 'cli.js');
+		writeFileSync(script, 'console.log("ok");\n');
+		const run = (dir: string) =>
+			Bun.spawnSync([process.execPath, script], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });
+		// Sanity: the fixture really does break a Bun process started inside the workspace.
+		expect(run(workspace).exitCode).not.toBe(0);
+		const safe = run(cwd!);
+		expect(safe.stderr.toString()).not.toContain('workspace preload ran');
+		expect(safe.exitCode).toBe(0);
 	});
 });
 
