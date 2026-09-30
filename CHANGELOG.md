@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/khromov/codebay/compare/codebay-v0.16.0...codebay-v0.16.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **devcontainer:** spawn the devcontainer CLI outside the sandbox workspace ([#227](https://github.com/khromov/codebay/issues/227)) ([4cedf90](https://github.com/khromov/codebay/commit/4cedf901696d8136f2e26d9e52c32af702c12d33))
+
 ## [0.16.0](https://github.com/khromov/codebay/compare/codebay-v0.15.0...codebay-v0.16.0) (2026-09-27)
 
 
