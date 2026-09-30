@@ -15,6 +15,7 @@ import {
 	PUBLISH_HOST,
 	TTYD_PORT,
 	devcontainerBin,
+	devcontainerCwd,
 	dockerEnv
 } from './config.server.ts';
 import { spawnCapture } from './spawn.server.ts';
@@ -381,7 +382,8 @@ let cliProbeWarned = false;
 
 export async function devcontainerCliAvailable(): Promise<boolean> {
 	const argv = devcontainerBin();
-	const available = (await spawnCapture([...argv, '--version'])) !== null;
+	const available =
+		(await spawnCapture([...argv, '--version'], { cwd: devcontainerCwd() })) !== null;
 	if (!available && !cliProbeWarned) {
 		console.warn(`⚠ devcontainer CLI probe failed — could not run: ${argv.join(' ')}`);
 	}
@@ -1032,7 +1034,7 @@ export async function devcontainerUp(
 	opts: UpOptions = {}
 ): Promise<UpResult> {
 	const proc = Bun.spawn(devcontainerUpArgs(workspaceDir, opts), {
-		cwd: workspaceDir,
+		cwd: devcontainerCwd(),
 		stdout: 'pipe',
 		stderr: 'pipe',
 		env: devcontainerUpEnv()
