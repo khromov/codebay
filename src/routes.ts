@@ -642,8 +642,9 @@ export const routes: Record<string, MochiRouteValue> = {
 		return apiError(405, 'Method Not Allowed');
 	}),
 
-	'/api/instances/delete-all': mutationRoute('POST', async () => {
-		await deleteAllInstances();
+	'/api/instances/delete-all': mutationRoute('POST', async ({ request }) => {
+		const body = (await request.json().catch(() => null)) as { ids?: string[] } | null;
+		await deleteAllInstances(Array.isArray(body?.ids) ? body.ids : undefined);
 		return { ok: true };
 	}),
 

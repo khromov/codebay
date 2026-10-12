@@ -137,9 +137,15 @@
 
 	async function deleteAll() {
 		actionError = null;
-		if (!confirm(`Delete all ${instances.length} instances and their copied files?`)) return;
+		const ids = visible.map((i) => i.id);
+		if (
+			!confirm(
+				`Delete ${ids.length} instance${ids.length === 1 ? '' : 's'} and their copied files?`
+			)
+		)
+			return;
 		try {
-			await apiPost('/api/instances/delete-all', undefined, 'Failed to delete all');
+			await apiPost('/api/instances/delete-all', { ids }, 'Failed to delete all');
 			// The live stream reflects the resulting empty state.
 		} catch (err) {
 			actionError = (err as Error).message;
@@ -150,7 +156,7 @@
 <TopBar
 	auth={preflight.auth}
 	{pet}
-	canDelete={instances.length > 0}
+	canDelete={visible.length > 0}
 	{ready}
 	{creating}
 	{filter}

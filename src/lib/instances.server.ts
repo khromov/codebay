@@ -940,8 +940,10 @@ export async function deleteInstance(id: string): Promise<void> {
 	triggerReconcile();
 }
 
-export async function deleteAllInstances(): Promise<void> {
+export async function deleteAllInstances(ids?: string[]): Promise<void> {
+	const only = ids && new Set(ids);
 	for (const row of allInstances()) {
+		if (only && !only.has(row.id)) continue;
 		await deleteInstance(row.id);
 	}
 }

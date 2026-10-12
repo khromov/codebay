@@ -38,6 +38,7 @@
 		onDeleteAll?: () => void;
 	} = $props();
 
+	const deleteLabel = $derived(filter && filter !== 'all' ? `Delete ${filter}` : 'Delete all');
 	const altMode = $derived<InstanceMode>(defaultMode === 'terminal' ? 'ide' : 'terminal');
 </script>
 
@@ -53,7 +54,7 @@
 		<SettingsCog />
 		<CredMenu {auth} />
 		<Button variant="danger" size="sm" onclick={onDeleteAll} disabled={!canDelete}>
-			Delete all
+			{deleteLabel}
 		</Button>
 		<div class="new-group">
 			<Button
