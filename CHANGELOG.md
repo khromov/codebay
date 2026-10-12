@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.2](https://github.com/khromov/codebay/compare/codebay-v0.16.1...codebay-v0.16.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **dashboard:** make Delete all respect the active instance filter ([#229](https://github.com/khromov/codebay/issues/229)) ([1b37e38](https://github.com/khromov/codebay/commit/1b37e3835a437481a46fd6c6ebf09201beafb67d))
+
 ## [0.16.1](https://github.com/khromov/codebay/compare/codebay-v0.16.0...codebay-v0.16.1) (2026-09-30)
 
 
