@@ -6,6 +6,7 @@ import { GITHUB_TOKEN } from '../lib/config.server.ts';
 import { getOption } from '../lib/db.server.ts';
 import { checkPresence, execInContainer } from '../lib/exec.server.ts';
 import { spawnCapture } from '../lib/spawn.server.ts';
+import { overrideSource, projectOverride } from '../lib/project-config.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 /** The only host the Settings and env-var overrides apply to; Enterprise hosts come from `gh`. */
@@ -20,6 +21,7 @@ function manualGithubToken(): string | null {
 interface GhCredentials {
 	host: string;
 	token: string;
+	source: string;
 	user?: string;
 	/** Defaults to https when unknown. */
 	gitProtocol?: string;
@@ -27,9 +29,12 @@ interface GhCredentials {
 
 /** Falls back to `gh`, which transparently spans all its storage backends. */
 export async function readGhToken(
-	host: string = GH_HOST
+	host: string = GH_HOST,
+	workspaceDir?: string | null
 ): Promise<{ token: string; source: string } | null> {
 	if (host === GH_HOST) {
+		const repo = await projectOverride(workspaceDir, 'githubToken');
+		if (repo) return { token: repo.value, source: overrideSource(repo.varName) };
 		const manual = manualGithubToken();
 		if (manual) return { token: manual, source: 'Settings — manual token' };
 		if (GITHUB_TOKEN) return { token: GITHUB_TOKEN, source: 'CODEBAY_GITHUB_TOKEN env var' };
@@ -91,15 +96,15 @@ async function readGhHostMeta(host: string): Promise<{ user?: string; gitProtoco
 }
 
 /** `github.com` is included unconditionally so the manual/env override works with no `gh` setup. */
-async function readAllGhCredentials(): Promise<GhCredentials[]> {
+async function readAllGhCredentials(workspaceDir?: string | null): Promise<GhCredentials[]> {
 	const configured = await readGhHosts();
 	const hosts = [...new Set([GH_HOST, ...configured])];
 	const creds = await Promise.all(
 		hosts.map(async (host): Promise<GhCredentials | null> => {
-			const found = await readGhToken(host);
+			const found = await readGhToken(host, workspaceDir);
 			if (!found) return null;
 			const meta = await readGhHostMeta(host);
-			return { host, token: found.token, ...meta };
+			return { host, token: found.token, source: found.source, ...meta };
 		})
 	);
 	return creds.filter((c): c is GhCredentials => c !== null);
@@ -153,12 +158,14 @@ export const githubCredentials: Injection = {
 	},
 
 	async apply(target, log) {
-		const credsList = await readAllGhCredentials();
+		const credsList = await readAllGhCredentials(target.instance.workspace_path);
 		if (!credsList.length) {
 			log('⚠ No GitHub CLI credentials found on host; skipped gh injection\n');
 			return;
 		}
-		log(`Injecting GitHub CLI credentials for ${credsList.map((c) => c.host).join(', ')}…\n`);
+		log(
+			`Injecting GitHub CLI credentials for ${credsList.map((c) => `${c.host} (${c.source})`).join(', ')}…\n`
+		);
 		const injected = await injectGhCredentials(target, credsList);
 		log(
 			injected.ok
