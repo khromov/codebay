@@ -19,6 +19,7 @@ import crab from './crab.ts';
 import crown from './crown.ts';
 import diamond from './diamond.ts';
 import dog from './dog.ts';
+import dragon from './dragon.ts';
 import elephant from './elephant.ts';
 import fish from './fish.ts';
 import fleurDeLis from './fleur-de-lis.ts';
@@ -30,6 +31,7 @@ import giraffe from './giraffe.ts';
 import glasses from './glasses.ts';
 import heart from './heart.ts';
 import horse from './horse.ts';
+import house from './house.ts';
 import invader from './invader.ts';
 import kangaroo from './kangaroo.ts';
 import key from './key.ts';
@@ -50,6 +52,7 @@ import snail from './snail.ts';
 import snake from './snake.ts';
 import snakegame from './snakegame.ts';
 import snowflake from './snowflake.ts';
+import spiral from './spiral.ts';
 import star from './star.ts';
 import strawberry from './strawberry.ts';
 import svelte from './svelte.ts';
@@ -84,6 +87,7 @@ export const avatars: AvatarArt[] = [
 	crown,
 	diamond,
 	dog,
+	dragon,
 	elephant,
 	fish,
 	fleurDeLis,
@@ -95,6 +99,7 @@ export const avatars: AvatarArt[] = [
 	glasses,
 	heart,
 	horse,
+	house,
 	invader,
 	kangaroo,
 	key,
@@ -115,6 +120,7 @@ export const avatars: AvatarArt[] = [
 	snake,
 	snakegame,
 	snowflake,
+	spiral,
 	star,
 	strawberry,
 	svelte,
