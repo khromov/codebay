@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.17.0](https://github.com/khromov/codebay/compare/codebay-v0.16.2...codebay-v0.17.0) (2026-10-30)
+
+
+### Features
+
+* **avatars:** add dragon, spiral and house community avatars ([#234](https://github.com/khromov/codebay/issues/234)) ([9adb5dc](https://github.com/khromov/codebay/commit/9adb5dcc989b567144b98589ad48a8043103972c)), closes [#231](https://github.com/khromov/codebay/issues/231) [#232](https://github.com/khromov/codebay/issues/232) [#233](https://github.com/khromov/codebay/issues/233)
+
+
+### Bug Fixes
+
+* **deps:** resolve security audit advisories ([#236](https://github.com/khromov/codebay/issues/236)) ([f1cbf0f](https://github.com/khromov/codebay/commit/f1cbf0fecd41d40cd1b6a62069a5ba123dacab87))
+
 ## [0.16.2](https://github.com/khromov/codebay/compare/codebay-v0.16.1...codebay-v0.16.2) (2026-10-12)
 
 
