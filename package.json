@@ -90,6 +90,7 @@
 	},
 	"resolutions": {
 		"msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*",
+		"nodemailer": "^10.1.4",
 		"svelte": "5.57.1"
 	},
 	"patchedDependencies": {
