@@ -1,6 +1,7 @@
 import { checkPresence, execInContainer } from '../lib/exec.server.ts';
 import { spawnCapture } from '../lib/spawn.server.ts';
 import { getOption } from '../lib/db.server.ts';
+import { projectOverride } from '../lib/project-config.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
 
 interface GitIdentity {
@@ -9,7 +10,8 @@ interface GitIdentity {
 }
 
 function readGitConfig(key: string): Promise<string | null> {
-	return spawnCapture(['git', 'config', '--global', '--get', key]);
+	// Bun.spawn ignores later `process.env` edits, so pass it so tests can set GIT_CONFIG_GLOBAL.
+	return spawnCapture(['git', 'config', '--global', '--get', key], { env: process.env });
 }
 
 /**
@@ -31,14 +33,29 @@ function overrideIdentity(): GitIdentity | null {
 	return name && email ? { name, email } : null;
 }
 
-/** `--global` so the host fallback reads the host user's identity, not the manager checkout's. */
-export async function readGitIdentity(): Promise<GitIdentity | null> {
+/**
+ * `--global` so the host fallback reads the host user's identity, not the manager checkout's; each
+ * half may be missing, since a repo override can supply the other.
+ */
+async function hostIdentity(): Promise<Partial<GitIdentity>> {
 	const override = overrideIdentity();
 	if (override) return override;
 	const [name, email] = await Promise.all([
 		readGitConfig('user.name'),
 		readGitConfig('user.email')
 	]);
+	return { name: name ?? undefined, email: email ?? undefined };
+}
+
+/** The two halves resolve independently, so a repo can rename the author and keep the host email. */
+export async function readGitIdentity(workspaceDir?: string | null): Promise<GitIdentity | null> {
+	const [repoName, repoEmail, host] = await Promise.all([
+		projectOverride(workspaceDir, 'gitUserName'),
+		projectOverride(workspaceDir, 'gitUserEmail'),
+		hostIdentity()
+	]);
+	const name = repoName?.value ?? host.name ?? '';
+	const email = repoEmail?.value ?? host.email ?? '';
 	return name && email ? { name, email } : null;
 }
 
@@ -63,7 +80,7 @@ export const gitIdentity: Injection = {
 	},
 
 	async apply(target, log) {
-		const identity = await readGitIdentity();
+		const identity = await readGitIdentity(target.instance.workspace_path);
 		if (!identity) {
 			log('⚠ No global git identity found on host; skipped git identity injection\n');
 			return;

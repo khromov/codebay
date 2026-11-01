@@ -7,6 +7,7 @@ import { checkPresence } from '../lib/exec.server.ts';
 import { deepMerge, editJsonFile, writeContainerFile } from '../lib/container-files.server.ts';
 import { CLAUDE_JSON_FILE, claudeConfigFile } from '../lib/claude-settings.server.ts';
 import { spawnCapture } from '../lib/spawn.server.ts';
+import { overrideSource, projectOverride } from '../lib/project-config.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
 /** A blank field falls through to the env var, so a user can set just one provider. */
@@ -58,7 +59,13 @@ export const LIVE_CREDENTIALS_TEST =
 	'[ -s "$f" ] && tr -d \'[:space:]\' < "$f" | grep -q \'"accessToken":"[^"]\'';
 
 /** macOS keeps these in the login Keychain; everything else uses ~/.claude/.credentials.json. */
-async function locateClaudeCredentials(): Promise<{ creds: string; source: string } | null> {
+export async function locateClaudeCredentials(
+	workspaceDir?: string | null
+): Promise<{ creds: string; source: string } | null> {
+	const repo = await projectOverride(workspaceDir, 'claudeCodeToken');
+	if (repo) {
+		return { creds: tokenCredentials(repo.value), source: overrideSource(repo.varName) };
+	}
 	const manual = manualClaudeToken();
 	if (manual) {
 		return { creds: tokenCredentials(manual), source: 'Settings — manual token' };
@@ -124,12 +131,12 @@ export const claudeCodeCredentials: Injection = {
 	},
 
 	async apply(target, log) {
-		const found = await locateClaudeCredentials();
+		const found = await locateClaudeCredentials(target.instance.workspace_path);
 		if (!found) {
 			log('⚠ No Claude Code credentials found on host; skipped auth injection\n');
 			return;
 		}
-		log('Injecting Claude Code credentials…\n');
+		log(`Injecting Claude Code credentials (${found.source})…\n`);
 		const injected = await injectClaudeCredentials(target, found.creds);
 		log(
 			injected.ok

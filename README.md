@@ -27,6 +27,48 @@ The UI opens at `http://localhost:6969`. State (SQLite DB + per-instance workspa
 - `CODEBAY_GITHUB_TOKEN` — GitHub token to inject instead of reading `gh auth token` from the host
 - `DISABLE_OPEN_BROWSER=1` — skip opening the browser on startup
 
+## Per-repo config (`codebay.json`)
+
+A repo can ship a `codebay.json` at its root to override which credentials Codebay injects into
+_its_ sandbox, and to name its ports. Changes apply on the next **Restart**.
+
+```jsonc
+{
+	// Each value is the NAME of a variable, never a secret — this file is safe to commit.
+	"overrides": {
+		"claudeCodeToken": "MOCHI_CLAUDE_TOKEN",
+		"githubToken": "MOCHI_GITHUB_AUTH",
+		"gitUserName": "MOCHI_GIT_NAME",
+		"gitUserEmail": "MOCHI_GIT_EMAIL"
+	},
+	"ports": {
+		"6969": "web",
+		"8123:5173": "vite"
+	}
+}
+```
+
+**Overrides.** Each name is looked up first in Settings → **Custom environment variables**, then in
+the environment of the Codebay process itself. If it resolves nowhere, the injection falls back to
+whatever Codebay would have used anyway. `gitUserName` and `gitUserEmail` are independent, so a repo
+can rename the commit author and keep the host's email. The boot log names the variable that won.
+Two limits: cloning a private repo still uses the host's `gh` token, since the workspace (and this
+file) doesn't exist yet; and `claudeCodeToken` doesn't apply when Settings → **Custom endpoint** is
+on, which uses its own token.
+
+**Ports.** The key is the container port, or `"<host>:<container>"` to pin the host side; the value
+is a display name shown on the dashboard and the instance page. These merge with the project's own
+`devcontainer.json` `forwardPorts`/`appPort` — a port declared there just gets a name, a port only
+here is forwarded too. A pinned host port that's already taken falls back to an allocated one, with
+a line in the boot log. A port you remove by hand stays removed.
+
+> **A repo's `codebay.json` can name any environment variable set on the Codebay host, and its value
+> is injected into that repo's container** — where an agent running with permission prompts bypassed
+> can read it. The file is also read from the instance's own copy of the workspace, so an agent can
+> write one and grant itself a different variable on the next restart. Booting an untrusted repo
+> already runs its `devcontainer.json` build steps against your daemon; this widens that, so keep to
+> repos you'd trust with a devcontainer.
+
 ## MCP server
 
 Codebay can expose itself to other AI agents over [MCP](https://modelcontextprotocol.io), so an agent

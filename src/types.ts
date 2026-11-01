@@ -1,6 +1,8 @@
 export interface PortForward {
 	container_port: number;
 	host_port: number;
+	/** Display name from the project's codebay.json; absent when it didn't name this port. */
+	name?: string | null;
 	/** Live per Docker; set only when serializing for the client. */
 	open?: boolean;
 }
