@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { hostPortsInUse, removeContainer, removeContainerOnly } from './docker.server.ts';
+import {
+	builtImages,
+	hostPortsInUse,
+	removeContainer,
+	removeContainerOnly,
+	removeImages
+} from './docker.server.ts';
 
 /**
  * `getDocker()` resolves a dockerode client pinned to `globalThis.__codebayDocker`.
@@ -170,5 +176,124 @@ describe('hostPortsInUse', () => {
 			}
 		});
 		expect(await hostPortsInUse()).toEqual([]);
+	});
+});
+
+const HASH = 'a'.repeat(64);
+const BASE = `vsc-ws-${HASH}`;
+const httpErr = (status: number) =>
+	Object.assign(new Error(`http ${status}`), { statusCode: status });
+
+/** A fake image store: `images` maps a ref (tag or id) to its inspect result; `removeFails` rejects removal. */
+function fakeImages(opts: {
+	containerImage?: string;
+	images?: Record<string, { Id: string; RepoTags?: string[] }>;
+	removeFails?: Record<string, number>;
+}) {
+	const removed: string[] = [];
+	g.__codebayDocker = Promise.resolve({
+		getContainer: () => ({
+			inspect: async () => ({ Config: { Image: opts.containerImage } })
+		}),
+		getImage: (ref: string) => ({
+			inspect: async () => {
+				const image = opts.images?.[ref];
+				if (!image) throw httpErr(404);
+				return image;
+			},
+			remove: async () => {
+				const status = opts.removeFails?.[ref];
+				if (status) throw httpErr(status);
+				removed.push(ref);
+			}
+		})
+	});
+	return removed;
+}
+
+describe('builtImages', () => {
+	afterEach(() => {
+		g.__codebayDocker = undefined;
+	});
+
+	test('resolves the CLI tag chain the container runs on, children before parents', async () => {
+		fakeImages({
+			containerImage: `${BASE}-features-uid`,
+			images: {
+				[`${BASE}-features-uid`]: { Id: 'sha256:uid' },
+				[`${BASE}-features`]: { Id: 'sha256:features' }
+			}
+		});
+		expect(await builtImages('c1')).toEqual([
+			{ tag: `${BASE}-features-uid`, id: 'sha256:uid' },
+			{ tag: `${BASE}-features`, id: 'sha256:features' }
+		]);
+	});
+
+	test('includes the bare Dockerfile build under its layers', async () => {
+		fakeImages({
+			containerImage: `${BASE}-uid:latest`,
+			images: { [`${BASE}-uid`]: { Id: 'sha256:uid' }, [BASE]: { Id: 'sha256:base' } }
+		});
+		expect((await builtImages('c1')).map((i) => i.tag)).toEqual([`${BASE}-uid`, BASE]);
+	});
+
+	test('never claims an image the CLI did not tag for this workspace', async () => {
+		for (const containerImage of [
+			'mcr.microsoft.com/devcontainers/base:ubuntu',
+			'vsc-ws-not-a-hash-features',
+			undefined
+		]) {
+			fakeImages({ containerImage, images: { [`${BASE}-features`]: { Id: 'sha256:x' } } });
+			expect(await builtImages('c1')).toEqual([]);
+		}
+	});
+
+	test('returns [] when the container is already gone', async () => {
+		g.__codebayDocker = Promise.resolve({
+			getContainer: () => ({
+				inspect: async () => {
+					throw httpErr(404);
+				}
+			})
+		});
+		expect(await builtImages('c1')).toEqual([]);
+	});
+});
+
+describe('removeImages', () => {
+	afterEach(() => {
+		g.__codebayDocker = undefined;
+	});
+
+	test('removes every ref, treating an already-absent image as done', async () => {
+		const removed = fakeImages({ removeFails: { gone: 404 } });
+		expect(await removeImages(['a', 'gone', 'b'])).toEqual([]);
+		expect(removed).toEqual(['a', 'b']);
+	});
+
+	test('keeps an image still in use (409) and reports why, without throwing', async () => {
+		const removed = fakeImages({ removeFails: { shared: 409 } });
+		const kept = await removeImages(['shared', 'mine']);
+		expect(removed).toEqual(['mine']);
+		expect(kept).toEqual(['shared: http 409']);
+	});
+
+	test('reports a daemon that is unreachable instead of throwing', async () => {
+		g.__codebayDocker = Promise.reject(new Error('connect ECONNREFUSED'));
+		expect(await removeImages(['a'])).toEqual(['a: connect ECONNREFUSED']);
+	});
+
+	test('untaggedOnly spares an image a tag still points at', async () => {
+		const removed = fakeImages({
+			images: {
+				'sha256:old': { Id: 'sha256:old', RepoTags: [] },
+				'sha256:legacy': { Id: 'sha256:legacy', RepoTags: ['<none>:<none>'] },
+				'sha256:reused': { Id: 'sha256:reused', RepoTags: [`${BASE}-features:latest`] }
+			}
+		});
+		const ids = ['sha256:old', 'sha256:legacy', 'sha256:reused'];
+		expect(await removeImages(ids, { untaggedOnly: true })).toEqual([]);
+		expect(removed).toEqual(['sha256:old', 'sha256:legacy']);
 	});
 });
