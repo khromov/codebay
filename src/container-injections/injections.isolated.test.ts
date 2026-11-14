@@ -24,6 +24,7 @@ import { injections, resolveInjections, resolveInjectionStages } from '../lib/in
 import { setOption } from '../lib/db.server.ts';
 import { attentionHookSettings, hasAttentionHook } from './attention-hooks.ts';
 import { restoreScript } from './claude-history.ts';
+import { collectHostSkillFiles, isAnthropicSkill, syncedSkillDir } from './claude-code-skills.ts';
 import { isValid, LIVE_CREDENTIALS_TEST, tokenCredentials } from './claude-code-credentials.ts';
 import { customEndpointConfig } from './claude-code-custom.ts';
 import { gitIdentity, gitIdentityEnabled, readGitIdentity } from './git-identity.ts';
@@ -1686,5 +1687,223 @@ describe.skipIf(POSIX_SHELL_ONLY)('code-server-dark', () => {
 		} finally {
 			rmSync(tmp, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('claude-code-skills synced-skill exclusion', () => {
+	const BUCKET = '6a52d718-2bf5-4a99-b237-25f0cedbd0aa_377466a7-208f-4f07-a63a-18776d228b66';
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-skills-'));
+		setOption('claude_config_dir', dir);
+	});
+
+	afterEach(() => {
+		setOption('claude_config_dir', '');
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	const bucketDir = () => join(dir, 'skills/synced', BUCKET);
+
+	function writeSkill(root: string, name: string): void {
+		mkdirSync(join(root, name, 'scripts'), { recursive: true });
+		writeFileSync(join(root, name, 'SKILL.md'), `# ${name}`);
+		writeFileSync(join(root, name, 'scripts/run.py'), 'print(1)');
+	}
+
+	function seedBucket(manifest: string | null): void {
+		writeSkill(bucketDir(), 'docx');
+		writeSkill(bucketDir(), 'team-style');
+		writeFileSync(join(bucketDir(), '.last-complete-round'), 'round cli');
+		writeFileSync(join(dir, 'skills/synced', `.bucket-${BUCKET}`), '');
+		if (manifest !== null) writeFileSync(join(bucketDir(), 'manifest.json'), manifest);
+	}
+
+	const manifest = JSON.stringify({
+		lastUpdated: 1,
+		skills: [
+			{ skillId: 'docx', name: 'docx', source: 'anthropic', creatorType: 'anthropic' },
+			{ skillId: 'skill_01abc', name: 'team-style', source: 'org', creatorType: 'user' }
+		],
+		staleDirs: ['old'],
+		pendingClaims: ['123:/team-style']
+	});
+
+	const rels = async () => (await collectHostSkillFiles()).map((f) => f.rel).sort();
+
+	test('drops Anthropic skills but copies user/org synced skills and a trimmed manifest', async () => {
+		seedBucket(manifest);
+		writeSkill(join(dir, 'skills'), 'mine');
+		const files = await collectHostSkillFiles();
+		const b = `skills/synced/${BUCKET}`;
+		expect(files.map((f) => f.rel).sort()).toEqual([
+			`skills/mine/SKILL.md`,
+			`skills/mine/scripts/run.py`,
+			`skills/synced/.bucket-${BUCKET}`,
+			`${b}/manifest.json`,
+			`${b}/team-style/SKILL.md`,
+			`${b}/team-style/scripts/run.py`
+		]);
+		const written = JSON.parse(files.find((f) => f.rel === `${b}/manifest.json`)!.bytes.toString());
+		expect(written).toEqual({
+			lastUpdated: 1,
+			skills: [{ skillId: 'skill_01abc', name: 'team-style', source: 'org', creatorType: 'user' }]
+		});
+	});
+
+	test('a bucket holding only Anthropic skills is dropped whole, marker included', async () => {
+		seedBucket(
+			JSON.stringify({
+				skills: [
+					{ skillId: 'docx', name: 'docx', creatorType: 'anthropic' },
+					{ skillId: 'x', name: 'team-style', creatorType: 'anthropic' }
+				]
+			})
+		);
+		expect(await rels()).toEqual([]);
+	});
+
+	test('a missing manifest drops the bucket, since authorship cannot be judged', async () => {
+		seedBucket(null);
+		writeSkill(join(dir, 'skills'), 'mine');
+		expect(await rels()).toEqual(['skills/mine/SKILL.md', 'skills/mine/scripts/run.py']);
+	});
+
+	test('an unparseable or skill-less manifest drops the bucket too', async () => {
+		seedBucket('{not json');
+		expect(await rels()).toEqual([]);
+		writeFileSync(join(bucketDir(), 'manifest.json'), JSON.stringify({ skills: 'nope' }));
+		expect(await rels()).toEqual([]);
+	});
+
+	test('a dir the manifest does not list is not copied', async () => {
+		seedBucket(manifest);
+		writeSkill(bucketDir(), 'orphan');
+		expect((await rels()).some((r) => r.includes('orphan'))).toBe(false);
+	});
+
+	test("the sync's own .staging and .trash dirs are never copied", async () => {
+		writeSkill(join(dir, 'skills/.trash'), 'docx');
+		writeSkill(join(dir, 'skills/.staging'), 'pptx');
+		expect(await rels()).toEqual([]);
+	});
+
+	test('copies from a real 2.1.283 manifest, which carries only `source`', async () => {
+		seedBucket(
+			JSON.stringify({
+				lastUpdated: 1,
+				skills: [
+					{ skillId: 'docx', name: 'docx', source: 'anthropic', updatedAt: 'a' },
+					{ skillId: 'docs', name: 'docs', source: 'anthropic-example', updatedAt: 'b' },
+					{ skillId: 'skill_01abc', name: 'team-style', source: 'custom', updatedAt: 'c' }
+				]
+			})
+		);
+		writeSkill(bucketDir(), 'docs');
+		expect(await rels()).toEqual([
+			`skills/synced/.bucket-${BUCKET}`,
+			`skills/synced/${BUCKET}/manifest.json`,
+			`skills/synced/${BUCKET}/team-style/SKILL.md`,
+			`skills/synced/${BUCKET}/team-style/scripts/run.py`
+		]);
+	});
+
+	test('reads the real manifest shape, where anthropic-example skills carry creatorType anthropic', async () => {
+		seedBucket(
+			JSON.stringify({
+				lastUpdated: 1,
+				skills: [
+					{
+						skillId: 'docx',
+						name: 'docx',
+						description: 'd',
+						source: 'anthropic',
+						updatedAt: '2026-09-23T04:00:28.352014Z',
+						creatorType: 'anthropic'
+					},
+					{
+						skillId: 'docs',
+						name: 'docs',
+						description: 'd',
+						source: 'anthropic-example',
+						updatedAt: '2026-09-16T00:10:45.680014Z',
+						creatorType: 'anthropic'
+					},
+					{
+						skillId: 'skill_01abc',
+						name: 'team-style',
+						description: 't',
+						source: 'custom',
+						updatedAt: '2026-09-20T00:00:00Z',
+						creatorType: 'user'
+					}
+				]
+			})
+		);
+		writeSkill(bucketDir(), 'docs');
+		const b = `skills/synced/${BUCKET}`;
+		expect(await rels()).toEqual([
+			`skills/synced/.bucket-${BUCKET}`,
+			`${b}/manifest.json`,
+			`${b}/team-style/SKILL.md`,
+			`${b}/team-style/scripts/run.py`
+		]);
+	});
+
+	test('matches a skill to the dir Claude Code sanitized its name into', async () => {
+		seedBucket(
+			JSON.stringify({ skills: [{ skillId: 'skill_01x', name: 'Q&A: notes.', source: 'custom' }] })
+		);
+		expect(syncedSkillDir('Q&A: notes.')).toBe('Q&A_ notes');
+		writeSkill(bucketDir(), 'Q&A_ notes');
+		const b = `skills/synced/${BUCKET}`;
+		expect(await rels()).toContain(`${b}/Q&A_ notes/SKILL.md`);
+	});
+
+	test('a dir named only after a skillId is not copied, and rows with no dir leave the manifest', async () => {
+		seedBucket(
+			JSON.stringify({
+				skills: [
+					{ skillId: 'team-style', name: 'Renamed', source: 'custom' },
+					{ skillId: 'skill_02', name: 'team-style', source: 'custom' },
+					{ skillId: 'skill_03', name: 'not-landed', source: 'custom' }
+				]
+			})
+		);
+		const files = await collectHostSkillFiles();
+		const b = `skills/synced/${BUCKET}`;
+		const written = JSON.parse(files.find((f) => f.rel === `${b}/manifest.json`)!.bytes.toString());
+		expect(written.skills.map((s: { name: string }) => s.name)).toEqual(['team-style']);
+	});
+
+	test('each bucket is judged on its own manifest, and a missing marker is not invented', async () => {
+		seedBucket(manifest);
+		const other = '11111111-2222-3333-4444-555555555555_unbound';
+		const otherDir = join(dir, 'skills/synced', other);
+		writeSkill(otherDir, 'pdf');
+		writeFileSync(
+			join(otherDir, 'manifest.json'),
+			JSON.stringify({ skills: [{ skillId: 'pdf', name: 'pdf', source: 'anthropic' }] })
+		);
+		const third = '66666666-2222-3333-4444-555555555555_unbound';
+		writeSkill(join(dir, 'skills/synced', third), 'mine');
+		writeFileSync(
+			join(dir, 'skills/synced', third, 'manifest.json'),
+			JSON.stringify({ skills: [{ skillId: 's', name: 'mine', source: 'custom' }] })
+		);
+		const out = await rels();
+		expect(out.some((r) => r.includes(other))).toBe(false);
+		expect(out).toContain(`skills/synced/${third}/mine/SKILL.md`);
+		expect(out).not.toContain(`skills/synced/.bucket-${third}`);
+		expect(out).toContain(`skills/synced/.bucket-${BUCKET}`);
+	});
+
+	test('isAnthropicSkill prefers creatorType and falls back to source when it is absent', () => {
+		expect(isAnthropicSkill({ creatorType: 'anthropic', source: 'org' })).toBe(true);
+		expect(isAnthropicSkill({ creatorType: 'user', source: 'anthropic' })).toBe(false);
+		expect(isAnthropicSkill({ source: 'anthropic-example' })).toBe(true);
+		expect(isAnthropicSkill({ source: 'org' })).toBe(false);
+		expect(isAnthropicSkill({})).toBe(false);
 	});
 });
