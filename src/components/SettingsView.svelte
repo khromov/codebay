@@ -44,10 +44,10 @@
 	import { avatars, findAvatar, type AvatarArt } from '../avatars/index.ts';
 	import {
 		CLAUDE_PERMISSION_MODES,
-		CLAUDE_EFFORT_LEVELS,
+		CLAUDE_EFFORT_SETTINGS,
 		CLAUDE_OUTPUT_STYLES,
 		type ClaudePermissionMode,
-		type ClaudeEffortLevel,
+		type ClaudeEffortSetting,
 		type ClaudeOutputStyle,
 		type InstanceMode
 	} from '../types.ts';
@@ -113,7 +113,7 @@
 		pet?: AvatarArt;
 		defaultMode: InstanceMode;
 		claudePermissionMode: ClaudePermissionMode;
-		claudeEffortLevel: ClaudeEffortLevel;
+		claudeEffortLevel: ClaudeEffortSetting;
 		claudeOutputStyle: ClaudeOutputStyle;
 		defaultImage: string;
 		builtinImage: string;
@@ -296,12 +296,12 @@
 	}
 
 	// svelte-ignore state_referenced_locally
-	let effortChoice = $state<ClaudeEffortLevel>(claudeEffortLevel);
+	let effortChoice = $state<ClaudeEffortSetting>(claudeEffortLevel);
 	let savingEffort = $state(false);
 	let effortError = $state<string | null>(null);
 	let effortFormEl: HTMLFormElement | undefined;
 
-	const effortLevelOpts = saveOpts<{ level: ClaudeEffortLevel }>({
+	const effortLevelOpts = saveOpts<{ level: ClaudeEffortSetting }>({
 		setSaving: (v) => (savingEffort = v),
 		setError: (v) => (effortError = v),
 		setMsg: () => {},
@@ -310,7 +310,8 @@
 		}
 	});
 
-	const EFFORT_LABELS: Record<ClaudeEffortLevel, string> = {
+	const EFFORT_LABELS: Record<ClaudeEffortSetting, string> = {
+		default: 'Host',
 		low: 'Low',
 		medium: 'Medium',
 		high: 'High',
@@ -318,7 +319,7 @@
 		max: 'Max'
 	};
 
-	function chooseEffort(next: ClaudeEffortLevel) {
+	function chooseEffort(next: ClaudeEffortSetting) {
 		if (next === effortChoice) return;
 		flushSync(() => (effortChoice = next));
 		effortFormEl?.requestSubmit();
@@ -1113,15 +1114,16 @@
 					<div class="text">
 						<div class="name">Claude effort level</div>
 						<div class="desc">
-							The default reasoning effort Claude Code starts new sessions at inside instances,
-							written to <code>~/.claude/settings.json</code>. Applies on create and rebuild, not to
-							already-running instances.
+							The reasoning effort Claude Code starts new sessions and MCP runs at inside instances.
+							<b>Host</b> carries over the per-model levels from your own
+							<code>~/.claude/settings.json</code>; any other choice applies to every model. Applies
+							on create and rebuild; MCP runs pick up a change immediately.
 						</div>
 					</div>
 				</div>
 				<input type="hidden" name="level" value={effortChoice} />
 				<div class="mode-toggle" role="group" aria-label="Claude effort level">
-					{#each CLAUDE_EFFORT_LEVELS as option (option)}
+					{#each CLAUDE_EFFORT_SETTINGS as option (option)}
 						<button
 							type="button"
 							class="mode-btn"

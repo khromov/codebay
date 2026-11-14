@@ -10,6 +10,10 @@ import { ENV_FILE_NAME as CUSTOM_ENV_FILE } from '../container-injections/claude
 import { ENV_FILE_NAME as MODELS_ENV_FILE } from '../container-injections/claude-code-models.ts';
 import { ENV_FILE_NAME as HOST_ENV_FILE } from '../container-injections/host-env-vars.ts';
 import {
+	EFFORT_ENV_VAR,
+	ENV_FILE_NAME as EFFORT_ENV_FILE
+} from '../container-injections/claude-effort-level.ts';
+import {
 	CODE_SERVER_PORT,
 	DEFAULT_IMAGE,
 	PUBLISH_HOST,
@@ -213,7 +217,8 @@ export const launchClaude = (permissionMode: ClaudePermissionMode): string =>
 	`echo "codebay: run claude yourself once it finishes, or watch it in the Agent log."; ` +
 	`else ` +
 	`if [ ! -e "$HOME/${INJECTIONS_DONE_FILE}" ]; then i=0; until command -v claude >/dev/null 2>&1 || [ "$i" -ge ${CLAUDE_BINARY_WAIT_SECONDS} ]; do sleep 1; i=$((i + 1)); done; fi; ` +
-	`if command -v claude >/dev/null 2>&1; then claude ${claudePermissionFlags(permissionMode)}; ` +
+	// `$(…)` rather than `${VAR:+…}`: VS Code would substitute that form in the tasks.json command.
+	`if command -v claude >/dev/null 2>&1; then claude ${claudePermissionFlags(permissionMode)} $([ -n "$${EFFORT_ENV_VAR}" ] && echo --effort "$${EFFORT_ENV_VAR}"); ` +
 	`else echo "codebay: claude is not installed in this container — check the boot log, then Rebuild"; fi; ` +
 	`fi; `;
 
@@ -234,7 +239,12 @@ const WAIT_FOR_IDE_BRIDGE = `i=0; until ls "$HOME/.claude/ide/" 2>/dev/null | gr
  * An explicit list, never a glob: tmux runs this under the user's shell, and zsh would print
  * "no matches found" when a file is absent.
  */
-export const SOURCE_INJECTED_ENV = `for f in ${[CUSTOM_ENV_FILE, MODELS_ENV_FILE, HOST_ENV_FILE]
+export const SOURCE_INJECTED_ENV = `for f in ${[
+	CUSTOM_ENV_FILE,
+	MODELS_ENV_FILE,
+	HOST_ENV_FILE,
+	EFFORT_ENV_FILE
+]
 	.map((name) => `"$HOME/${name}"`)
 	.join(' ')}; do [ -r "$f" ] && . "$f"; done; `;
 

@@ -19,8 +19,10 @@ import {
 	devcontainerUp,
 	devcontainerUpArgs,
 	devcontainerUpEnv,
+	launchClaude,
 	launchCommandFor,
 	copyWorkspace,
+	SOURCE_INJECTED_ENV,
 	overrideConfigPath,
 	readDeclaredContainerPorts,
 	restoreCanonicalConfig,
@@ -1264,4 +1266,25 @@ describe('copyWorkspace', () => {
 			expect(lstatSync(join(dest, 'link.txt')).isSymbolicLink()).toBe(true);
 		}
 	);
+});
+
+describe('the effort the auto-launched claude starts at', () => {
+	test('a session-only max set by the effort injection reaches claude as --effort', async () => {
+		const launch = launchClaude('default');
+		// No `${…}`: VS Code would substitute it inside the tasks.json command.
+		expect(launch).not.toContain('${');
+		expect(SOURCE_INJECTED_ENV).toContain('.codebay-claude-effort-env');
+		const proc = Bun.spawn(
+			[
+				'bash',
+				'-c',
+				`claude(){ echo "ARGS:$*"; }; CODEBAY_CLAUDE_EFFORT=max; ${launch}` +
+					`unset CODEBAY_CLAUDE_EFFORT; ${launch}`
+			],
+			{ env: { ...process.env, HOME: tmpdir() }, stdout: 'pipe' }
+		);
+		const out = await new Response(proc.stdout).text();
+		expect(out).toContain('ARGS:--dangerously-skip-permissions --effort max\n');
+		expect(out).toContain('ARGS:--dangerously-skip-permissions\n');
+	});
 });

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { PassThrough } from 'node:stream';
-import { rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DATA_DIR, PORT_BASE, PORT_MAX } from '../lib/config.server.ts';
 import {
@@ -477,5 +477,85 @@ describe('the sandbox lifecycle tools', () => {
 		});
 		expect(removed.error).toBeNull();
 		expect(removed.payload.sandbox?.forwarded_ports).toEqual([]);
+	});
+});
+
+describe('the effort level a calling model sees and gets', () => {
+	const hostDir = join(DATA_DIR, 'mcp-host-claude');
+	beforeEach(() => {
+		rmSync(hostDir, { recursive: true, force: true });
+		mkdirSync(hostDir, { recursive: true });
+		writeFileSync(
+			join(hostDir, 'settings.json'),
+			JSON.stringify({
+				effortLevel: 'xhigh',
+				modelSettings: { 'claude-opus-5-5': { effortLevel: 'xhigh' } }
+			})
+		);
+		setOption('claude_config_dir', hostDir);
+	});
+	afterEach(() => {
+		setOption('claude_config_dir', '');
+		setOption('claude_effort_level', '');
+		g.__codebayDocker = undefined;
+		for (const id of seeded.splice(0)) deleteInstanceRow(id);
+	});
+
+	interface ListedTool {
+		name: string;
+		description: string;
+		inputSchema: { properties: Record<string, Record<string, unknown>> };
+	}
+
+	async function listedTools(): Promise<Record<string, ListedTool>> {
+		const body = await rpcResult(
+			await call({ body: rpc('tools/list', {}, 2), headers: await session() })
+		);
+		const tools = (body.result as { tools: ListedTool[] }).tools;
+		return Object.fromEntries(tools.map((t) => [t.name, t]));
+	}
+
+	test('run_agent and create_sandbox state the live default and tell callers to omit it', async () => {
+		const tools = await listedTools();
+		for (const name of ['run_agent', 'create_sandbox']) {
+			const effort = tools[name]!.inputSchema.properties.effort!;
+			expect(effort.description).toBe(
+				"Reasoning effort for this run. Omit to use the configured default (currently xhigh, inherited from the host's Claude Code settings). Callers should normally omit it; pass a level only when the user explicitly asks for a different effort, since any value here overrides theirs."
+			);
+			// A schema default is exactly what a client fills in on the caller's behalf.
+			expect(effort).not.toHaveProperty('default');
+			expect(effort.enum).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+			expect(tools[name]!.description).toContain(
+				"Leave `effort` unset to run at the user's configured effort (currently xhigh, inherited from the host's Claude Code settings)."
+			);
+		}
+	});
+
+	test('the descriptor follows a settings change without a restart', async () => {
+		setOption('claude_effort_level', 'high');
+		const tools = await listedTools();
+		expect(tools.run_agent!.inputSchema.properties.effort!.description).toContain(
+			"(currently high, set in Codebay's settings)"
+		);
+		expect(tools.run_agent!.description).toContain("(currently high, set in Codebay's settings)");
+	});
+
+	test('run_agent with no effort runs at the configured level; an explicit one overrides it', async () => {
+		fakeDocker();
+		const headers = await session();
+		const row = seed();
+		const plain = await callTool(headers, 'run_agent', { sandbox_id: row.id, prompt: 'go' });
+		const run = (plain.payload as { run?: { run_id: string; effort: string | null } }).run!;
+		expect(run.effort).toBe('xhigh');
+		await callTool(headers, 'stop_run', { run_id: run.run_id });
+
+		const other = seed();
+		const pinned = await callTool(headers, 'run_agent', {
+			sandbox_id: other.id,
+			prompt: 'go',
+			model: 'sonnet',
+			effort: 'low'
+		});
+		expect((pinned.payload as { run?: { effort: string } }).run!.effort).toBe('low');
 	});
 });

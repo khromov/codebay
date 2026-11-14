@@ -76,16 +76,22 @@ export function claudePermissionFlags(mode: ClaudePermissionMode): string {
 	return mode === 'default' ? '--dangerously-skip-permissions' : `--permission-mode ${mode}`;
 }
 
-/** Claude Code's default reasoning-effort level for new sessions, written to `settings.json`. */
+/** A Claude Code reasoning-effort level, as `--effort` and `settings.json` spell it. */
 export type ClaudeEffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export const CLAUDE_EFFORT_LEVELS: ClaudeEffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
-/** Anything unrecognised falls back to the balanced default. */
-export function normalizeEffortLevel(value: unknown): ClaudeEffortLevel {
-	return CLAUDE_EFFORT_LEVELS.includes(value as ClaudeEffortLevel)
-		? (value as ClaudeEffortLevel)
-		: 'high';
+export const isEffortLevel = (value: unknown): value is ClaudeEffortLevel =>
+	CLAUDE_EFFORT_LEVELS.includes(value as ClaudeEffortLevel);
+
+/** The Settings choice: a fixed level for every model, or `'default'` to inherit the host's. */
+export type ClaudeEffortSetting = 'default' | ClaudeEffortLevel;
+
+export const CLAUDE_EFFORT_SETTINGS: ClaudeEffortSetting[] = ['default', ...CLAUDE_EFFORT_LEVELS];
+
+/** Anything unrecognised inherits the host, so an unset option carries the host's choice through. */
+export function normalizeEffortSetting(value: unknown): ClaudeEffortSetting {
+	return value === 'default' || isEffortLevel(value) ? value : 'default';
 }
 
 /**
