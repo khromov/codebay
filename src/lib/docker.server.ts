@@ -147,3 +147,60 @@ export async function removeContainer(containerId: string): Promise<boolean> {
 	}
 	return true;
 }
+
+/** `devcontainer up` tags builds `vsc-<folder>-<sha256 of the workspace path>`, plus `-features`/`-uid` layers. */
+const CLI_IMAGE_TAG = /^(vsc-.+-[0-9a-f]{64})(?:-features)?(?:-uid)?(?::latest)?$/;
+
+export type BuiltImage = { tag: string; id: string };
+
+/**
+ * The images `devcontainer up` built for this container, derived from the tag it actually runs on
+ * rather than a name prefix, so a pulled base image or another workspace's build is never included.
+ */
+export async function builtImages(containerId: string): Promise<BuiltImage[]> {
+	try {
+		const docker = await getDocker();
+		const info = await docker.getContainer(containerId).inspect();
+		const base = info.Config?.Image?.match(CLI_IMAGE_TAG)?.[1];
+		if (!base) return [];
+		const images: BuiltImage[] = [];
+		// Children first: the classic builder refuses to remove a parent while an image built on it exists.
+		for (const tag of [`${base}-features-uid`, `${base}-uid`, `${base}-features`, base]) {
+			const id = await docker
+				.getImage(tag)
+				.inspect()
+				.then(
+					(image) => image.Id,
+					() => null
+				);
+			if (id) images.push({ tag, id });
+		}
+		return images;
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Never forced, so Docker itself refuses (409) an image another container still runs on;
+ * `untaggedOnly` also spares any image a tag still points at. Returns why each one was kept.
+ */
+export async function removeImages(
+	refs: string[],
+	opts: { untaggedOnly?: boolean } = {}
+): Promise<string[]> {
+	const kept: string[] = [];
+	for (const ref of refs) {
+		try {
+			const image = (await getDocker()).getImage(ref);
+			if (opts.untaggedOnly) {
+				const tags = (await image.inspect()).RepoTags ?? [];
+				if (tags.some((t) => t !== '<none>:<none>')) continue;
+			}
+			await image.remove();
+		} catch (err) {
+			if (statusOf(err) !== 404) kept.push(`${ref}: ${(err as Error).message}`);
+		}
+	}
+	return kept;
+}

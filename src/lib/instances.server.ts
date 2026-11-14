@@ -34,11 +34,13 @@ import {
 	type InstanceStatus
 } from './db.server.ts';
 import {
+	builtImages,
 	dockerAvailable,
 	hostPortsInUse,
 	isRunning,
 	removeContainer,
 	removeContainerOnly,
+	removeImages,
 	startContainer,
 	stopContainer
 } from './docker.server.ts';
@@ -524,6 +526,8 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		const noCache = opts.noCache || getOption('disable_build_cache') === '1';
 		if (noCache) appendLog(row.id, `Building without cache (--build-no-cache)\n`);
 
+		// Read before the old container goes, since it's the only record of which images it ran on.
+		const staleImages = row.container_id ? await builtImages(row.container_id) : [];
 		// The CLI's --remove-existing-container matches by the devcontainer.config_file label, and
 		// deliberately ignores a workspace match whose label differs — so a container left by a build
 		// that labelled itself differently would survive and keep the host port. Drop it ourselves.
@@ -547,6 +551,11 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			throw new Error(
 				result.message || result.description || `devcontainer up failed (${result.outcome})`
 			);
+		}
+		// The rebuild re-tagged fresh images, so any old one it left untagged is now unreachable.
+		const staleIds = staleImages.map((i) => i.id);
+		for (const why of await removeImages(staleIds, { untaggedOnly: true })) {
+			appendLog(row.id, `⚠ Could not remove the previous image ${why}\n`);
 		}
 
 		containerId = result.containerId;
@@ -930,7 +939,13 @@ export async function deleteInstance(id: string): Promise<void> {
 	stopLogCapture(id);
 	if (row.container_id) {
 		await runCapturePass(row).catch(() => undefined);
-		await removeContainer(row.container_id);
+		// Read first, since the container is the only record of which images were built for it.
+		const images = await builtImages(row.container_id);
+		if (await removeContainer(row.container_id)) {
+			for (const why of await removeImages(images.map((i) => i.tag))) {
+				console.warn(`⚠ Kept image ${why}`);
+			}
+		}
 	}
 	await rm(join(INSTANCES_DIR, id), { recursive: true, force: true });
 	deleteForwards(id);
