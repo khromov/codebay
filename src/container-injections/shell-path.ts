@@ -26,6 +26,7 @@ export const PATH_MARKER_END = '# <<< codebay path <<<';
  * re-apply after a restart adds nothing, and a file lacking a trailing newline gets one first so
  * the marker can't glue itself onto the user's last line.
  *
+ * The `case` patterns inside `$( )` take a leading `(` so bash 3.2 (macOS) can parse them.
  * `$1` overrides the target home (tests); the injection omits it to use the exec user's home.
  */
 export const APPLY_SCRIPT = [
@@ -37,8 +38,8 @@ export const APPLY_SCRIPT = [
 	'printf \'%s\\n\' \'codebay_path_add() { case ":$PATH:" in *":$1:"*) ;; *) PATH="${PATH:+$PATH:}$1" ;; esac; }\';',
 	'IFS=:;',
 	'for d in $PATH; do',
-	'case "$d" in /*) ;; *) continue ;; esac;',
-	'case "$d" in *\\\'*) continue ;; esac;',
+	'case "$d" in (/*) ;; (*) continue ;; esac;',
+	'case "$d" in (*\\\'*) continue ;; esac;',
 	'printf "codebay_path_add \'%s\'\\n" "$d";',
 	'done;',
 	'unset IFS;',

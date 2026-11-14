@@ -479,9 +479,12 @@ describe('shell-path injection script', () => {
 	});
 	afterEach(() => rmSync(home, { recursive: true, force: true }));
 
+	// Absolute, because the tests hand bash a fake PATH (macOS keeps bash only in /bin).
+	const BASH = Bun.which('bash') ?? 'bash';
+
 	/** Runs the apply script as if `path` were the container's login PATH. */
 	function apply(path: string): number {
-		const res = Bun.spawnSync(['bash', '-c', SHELL_PATH_APPLY, 'shell-path', home], {
+		const res = Bun.spawnSync([BASH, '-c', SHELL_PATH_APPLY, 'shell-path', home], {
 			env: { ...process.env, PATH: path }
 		});
 		return res.exitCode;
@@ -489,12 +492,9 @@ describe('shell-path injection script', () => {
 
 	/** Sources the rc file the way a non-login interactive shell would, starting from `path`. */
 	function resolvedPath(rc: string, path: string): string {
-		const res = Bun.spawnSync(
-			['bash', '-c', '. "$1"; printf %s "$PATH"', 'probe', join(home, rc)],
-			{
-				env: { PATH: path }
-			}
-		);
+		const res = Bun.spawnSync([BASH, '-c', '. "$1"; printf %s "$PATH"', 'probe', join(home, rc)], {
+			env: { PATH: path }
+		});
 		return res.stdout.toString();
 	}
 
@@ -546,7 +546,7 @@ describe('shell-path injection script', () => {
 		expect(apply(`/opt/a:/usr/bin`)).toBe(0);
 		const res = Bun.spawnSync(
 			[
-				'bash',
+				BASH,
 				'-c',
 				'. "$1"; type codebay_path_add >/dev/null 2>&1 && echo leaked || echo clean',
 				'probe',
