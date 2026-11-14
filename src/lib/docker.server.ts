@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { getDocker, resetDocker } from './docker-client.server.ts';
 
 function statusOf(err: unknown): number | undefined {
@@ -146,4 +147,58 @@ export async function removeContainer(containerId: string): Promise<boolean> {
 		}
 	}
 	return true;
+}
+
+export type BuiltImage = { tag: string; id: string };
+
+/**
+ * `devcontainer up` tags every build `vsc-<folder>-<sha256 of the workspace path>` (plus `-features`/`-uid`
+ * layers), so the hash pins a tag to this one sandbox even when no container was ever recorded for it.
+ */
+export async function builtImages(workspacePath: string): Promise<BuiltImage[]> {
+	const hash = createHash('sha256').update(workspacePath).digest('hex');
+	const ours = new RegExp(`^vsc-.*${hash}(?:-features)?(?:-uid)?:latest$`);
+	try {
+		const docker = await getDocker();
+		const images = await docker.listImages({ filters: { reference: [`vsc-*${hash}*`] } });
+		return (
+			images
+				.flatMap((image) =>
+					(image.RepoTags ?? []).filter((t) => ours.test(t)).map((tag) => ({ tag, id: image.Id }))
+				)
+				// A child's tag extends its parent's, and the classic builder won't remove a parent under a child.
+				.sort((a, b) => b.tag.length - a.tag.length)
+		);
+	} catch {
+		return [];
+	}
+}
+
+/** Never forced, so Docker itself refuses (409) an image another container still runs on. */
+export async function removeImages(
+	refs: string[],
+	opts: { untaggedOnly?: boolean } = {}
+): Promise<string[]> {
+	const kept: string[] = [];
+	for (const ref of refs) {
+		try {
+			const image = (await getDocker()).getImage(ref);
+			if (opts.untaggedOnly) {
+				const tags = (await image.inspect()).RepoTags ?? [];
+				if (tags.some((t) => t !== '<none>:<none>')) continue;
+			}
+			await image.remove();
+		} catch (err) {
+			if (statusOf(err) !== 404) kept.push(`${ref}: ${(err as Error).message}`);
+		}
+	}
+	return kept;
+}
+
+/** Only the old IDs a rebuild left nameless, and by ID, since no tag reaches them any more. */
+export function removeOrphanedImages(stale: BuiltImage[]): Promise<string[]> {
+	return removeImages(
+		stale.map((i) => i.id),
+		{ untaggedOnly: true }
+	);
 }

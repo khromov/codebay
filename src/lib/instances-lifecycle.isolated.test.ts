@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { PassThrough } from 'node:stream';
-import { deleteInstanceRow, insertInstance, setOption, type InstanceRow } from './db.server.ts';
 import {
+	deleteInstanceRow,
+	getInstance,
+	insertInstance,
+	setOption,
+	type InstanceRow
+} from './db.server.ts';
+import {
+	deleteInstance,
 	invalidateSecretValues,
 	listInstances,
 	reconcilesFromDocker,
@@ -273,6 +281,72 @@ describe('listInstances orphan recovery', () => {
 		// Its injections will never finish, so the in-container wait must not sit out its full bound.
 		await until(() => calls.execs.some((c) => scriptOf(c).includes('.codebay-injections-done')));
 		deleteInstanceRow(row.id);
+	});
+});
+
+describe('deleteInstance', () => {
+	/** `seed()` rows live at `/ws`, which is what the CLI hashes into the tag. */
+	const base = `vsc-ws-${createHash('sha256').update('/ws').digest('hex')}`;
+
+	/** Records container and image removals into one ordered log. */
+	function fakeDeleteDocker(opts: { removeImageStatus?: number } = {}) {
+		const events: string[] = [];
+		const container = {
+			inspect: async () => ({ State: { Running: false }, Mounts: [] }),
+			remove: async () => void events.push('rm container'),
+			// The final capture pass execs in; a failed exec just ends it early.
+			exec: async () => {
+				throw new Error('no exec in this stub');
+			}
+		};
+		g.__codebayDocker = Promise.resolve({
+			getContainer: () => container,
+			listImages: async () => [
+				{ Id: 'sha256:features', RepoTags: [`${base}-features:latest`] },
+				{ Id: 'sha256:uid', RepoTags: [`${base}-features-uid:latest`] }
+			],
+			getImage: (ref: string) => ({
+				remove: async () => {
+					if (opts.removeImageStatus) {
+						throw Object.assign(new Error('conflict: image is in use'), {
+							statusCode: opts.removeImageStatus
+						});
+					}
+					events.push(`rmi ${ref}`);
+				}
+			})
+		});
+		return events;
+	}
+
+	test('removes the images built for the sandbox, after the container itself', async () => {
+		const events = fakeDeleteDocker();
+		const row = seed();
+		await deleteInstance(row.id);
+
+		expect(events).toEqual([
+			'rm container',
+			`rmi ${base}-features-uid:latest`,
+			`rmi ${base}-features:latest`
+		]);
+		expect(getInstance(row.id)).toBeNull();
+	});
+
+	test('still removes the images of a boot that failed before recording a container', async () => {
+		const events = fakeDeleteDocker();
+		const row = seed({ container_id: null, status: 'error' });
+		await deleteInstance(row.id);
+
+		expect(events).toEqual([`rmi ${base}-features-uid:latest`, `rmi ${base}-features:latest`]);
+	});
+
+	test('an image another container still uses is skipped without failing the delete', async () => {
+		const events = fakeDeleteDocker({ removeImageStatus: 409 });
+		const row = seed();
+		await deleteInstance(row.id);
+
+		expect(events).toEqual(['rm container']);
+		expect(getInstance(row.id)).toBeNull();
 	});
 });
 

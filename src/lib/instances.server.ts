@@ -34,11 +34,14 @@ import {
 	type InstanceStatus
 } from './db.server.ts';
 import {
+	builtImages,
 	dockerAvailable,
 	hostPortsInUse,
 	isRunning,
 	removeContainer,
 	removeContainerOnly,
+	removeImages,
+	removeOrphanedImages,
 	startContainer,
 	stopContainer
 } from './docker.server.ts';
@@ -524,6 +527,8 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 		const noCache = opts.noCache || getOption('disable_build_cache') === '1';
 		if (noCache) appendLog(row.id, `Building without cache (--build-no-cache)\n`);
 
+		// Listed before the build re-tags these names, which leaves the old IDs unreachable by name.
+		const staleImages = await builtImages(row.workspace_path);
 		// The CLI's --remove-existing-container matches by the devcontainer.config_file label, and
 		// deliberately ignores a workspace match whose label differs — so a container left by a build
 		// that labelled itself differently would survive and keep the host port. Drop it ourselves.
@@ -542,6 +547,11 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			overrideConfigPath
 		});
 		appendLog(row.id, `⏱ devcontainer up: ${elapsed(upStart)}\n`);
+		// Ahead of the outcome check (a failed build may still have re-tagged a layer) and not awaited,
+		// since dropping gigabytes of old layers mustn't hold up the boot.
+		void removeOrphanedImages(staleImages).then((kept) => {
+			for (const why of kept) appendLog(row.id, `⚠ Could not remove the previous image ${why}\n`);
+		});
 
 		if (result.outcome !== 'success' || !result.containerId) {
 			throw new Error(
@@ -931,6 +941,11 @@ export async function deleteInstance(id: string): Promise<void> {
 	if (row.container_id) {
 		await runCapturePass(row).catch(() => undefined);
 		await removeContainer(row.container_id);
+	}
+	// By workspace path rather than off the container, so a boot that failed before recording one is covered.
+	const images = await builtImages(row.workspace_path);
+	for (const why of await removeImages(images.map((i) => i.tag))) {
+		console.warn(`⚠ Kept image ${why}`);
 	}
 	await rm(join(INSTANCES_DIR, id), { recursive: true, force: true });
 	deleteForwards(id);

@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { hostPortsInUse, removeContainer, removeContainerOnly } from './docker.server.ts';
+import { createHash } from 'node:crypto';
+import {
+	builtImages,
+	hostPortsInUse,
+	removeContainer,
+	removeContainerOnly,
+	removeImages,
+	removeOrphanedImages
+} from './docker.server.ts';
 
 /**
  * `getDocker()` resolves a dockerode client pinned to `globalThis.__codebayDocker`.
@@ -170,5 +178,150 @@ describe('hostPortsInUse', () => {
 			}
 		});
 		expect(await hostPortsInUse()).toEqual([]);
+	});
+});
+
+const BASE = `vsc-ws-${'a'.repeat(64)}`;
+const httpErr = (status: number) =>
+	Object.assign(new Error(`http ${status}`), { statusCode: status });
+
+/** A fake image store: `images` maps a ref (tag or id) to its inspect result; `removeFails` rejects removal. */
+function fakeImages(opts: {
+	images?: Record<string, { Id: string; RepoTags?: string[] }>;
+	removeFails?: Record<string, number>;
+}) {
+	const removed: string[] = [];
+	g.__codebayDocker = Promise.resolve({
+		getImage: (ref: string) => ({
+			inspect: async () => {
+				const image = opts.images?.[ref];
+				if (!image) throw httpErr(404);
+				return image;
+			},
+			remove: async () => {
+				const status = opts.removeFails?.[ref];
+				if (status) throw httpErr(status);
+				removed.push(ref);
+			}
+		})
+	});
+	return removed;
+}
+
+describe('builtImages', () => {
+	const WS = '/data/instances/abc/proj';
+	const OURS = `vsc-proj-${createHash('sha256').update(WS).digest('hex')}`;
+	const OTHER = `vsc-proj-${createHash('sha256').update('/data/instances/xyz/proj').digest('hex')}`;
+
+	afterEach(() => {
+		g.__codebayDocker = undefined;
+	});
+
+	/** Ignores the daemon-side filter, so the client-side match is what the assertions exercise. */
+	function fakeList(images: { Id: string; RepoTags?: string[] }[]) {
+		const filters: unknown[] = [];
+		g.__codebayDocker = Promise.resolve({
+			listImages: async (opts: { filters: unknown }) => {
+				filters.push(opts.filters);
+				return images;
+			}
+		});
+		return filters;
+	}
+
+	test('lists only the workspace-hash chain, children before parents', async () => {
+		const filters = fakeList([
+			{ Id: 'sha256:base', RepoTags: [`${OURS}:latest`] },
+			{ Id: 'sha256:features', RepoTags: [`${OURS}-features:latest`] },
+			{ Id: 'sha256:uid', RepoTags: [`${OURS}-features-uid:latest`] }
+		]);
+		expect(await builtImages(WS)).toEqual([
+			{ tag: `${OURS}-features-uid:latest`, id: 'sha256:uid' },
+			{ tag: `${OURS}-features:latest`, id: 'sha256:features' },
+			{ tag: `${OURS}:latest`, id: 'sha256:base' }
+		]);
+		expect(filters).toEqual([{ reference: [`vsc-*${OURS.slice('vsc-proj-'.length)}*`] }]);
+	});
+
+	test('never claims another sandbox, a pulled image, or a foreign tag on our image', async () => {
+		fakeList([
+			{ Id: 'sha256:other', RepoTags: [`${OTHER}-features-uid:latest`] },
+			{ Id: 'sha256:base', RepoTags: ['mcr.microsoft.com/devcontainers/base:debian'] },
+			{
+				Id: 'sha256:mine',
+				RepoTags: [`${OURS}-features:latest`, `someone/${OURS}-features:latest`, 'keep:me']
+			},
+			{ Id: 'sha256:dangling', RepoTags: [] },
+			{ Id: 'sha256:odd', RepoTags: [`${OURS}-extra:latest`] }
+		]);
+		expect(await builtImages(WS)).toEqual([{ tag: `${OURS}-features:latest`, id: 'sha256:mine' }]);
+	});
+
+	test('returns [] when the daemon is unreachable', async () => {
+		g.__codebayDocker = Promise.resolve({
+			listImages: async () => {
+				throw new Error('connect ECONNREFUSED');
+			}
+		});
+		expect(await builtImages(WS)).toEqual([]);
+	});
+});
+
+describe('removeImages', () => {
+	afterEach(() => {
+		g.__codebayDocker = undefined;
+	});
+
+	test('removes every ref, treating an already-absent image as done', async () => {
+		const removed = fakeImages({ removeFails: { gone: 404 } });
+		expect(await removeImages(['a', 'gone', 'b'])).toEqual([]);
+		expect(removed).toEqual(['a', 'b']);
+	});
+
+	test('keeps an image still in use (409) and reports why, without throwing', async () => {
+		const removed = fakeImages({ removeFails: { shared: 409 } });
+		const kept = await removeImages(['shared', 'mine']);
+		expect(removed).toEqual(['mine']);
+		expect(kept).toEqual(['shared: http 409']);
+	});
+
+	test('reports a daemon that is unreachable instead of throwing', async () => {
+		g.__codebayDocker = Promise.reject(new Error('connect ECONNREFUSED'));
+		expect(await removeImages(['a'])).toEqual(['a: connect ECONNREFUSED']);
+	});
+
+	test('untaggedOnly spares an image a tag still points at', async () => {
+		const removed = fakeImages({
+			images: {
+				'sha256:old': { Id: 'sha256:old', RepoTags: [] },
+				'sha256:legacy': { Id: 'sha256:legacy', RepoTags: ['<none>:<none>'] },
+				'sha256:reused': { Id: 'sha256:reused', RepoTags: [`${BASE}-features:latest`] }
+			}
+		});
+		const ids = ['sha256:old', 'sha256:legacy', 'sha256:reused'];
+		expect(await removeImages(ids, { untaggedOnly: true })).toEqual([]);
+		expect(removed).toEqual(['sha256:old', 'sha256:legacy']);
+	});
+});
+
+describe('removeOrphanedImages', () => {
+	afterEach(() => {
+		g.__codebayDocker = undefined;
+	});
+
+	test('removes by ID only the old images the rebuild left untagged', async () => {
+		const removed = fakeImages({
+			images: {
+				'sha256:old': { Id: 'sha256:old', RepoTags: [] },
+				// A cache hit re-tags the very same image, which must survive.
+				'sha256:reused': { Id: 'sha256:reused', RepoTags: [`${BASE}-features:latest`] }
+			}
+		});
+		const stale = [
+			{ tag: `${BASE}-features-uid:latest`, id: 'sha256:old' },
+			{ tag: `${BASE}-features:latest`, id: 'sha256:reused' }
+		];
+		expect(await removeOrphanedImages(stale)).toEqual([]);
+		expect(removed).toEqual(['sha256:old']);
 	});
 });
