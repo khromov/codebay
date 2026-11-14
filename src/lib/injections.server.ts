@@ -1,76 +1,119 @@
-import type { InstanceRow } from './db.server.ts';
+import type { InstanceMode, InstanceRow } from './db.server.ts';
 import type { ExecTarget } from './exec.server.ts';
+import { getOption } from './db.server.ts';
 import { gitSafeDirectory } from '../container-injections/git-safe-directory.ts';
-import { shellPath } from '../container-injections/shell-path.ts';
 import { tmux } from '../container-injections/tmux.ts';
+import { ttyd } from '../container-injections/ttyd.ts';
 import { gitIdentity } from '../container-injections/git-identity.ts';
 import { claudeCodeCredentials } from '../container-injections/claude-code-credentials.ts';
+import { claudeCodeCustom } from '../container-injections/claude-code-custom.ts';
+import { claudeCodeSkills } from '../container-injections/claude-code-skills.ts';
+import { claudeHistory } from '../container-injections/claude-history.ts';
+import { claudeCodeIdeExtension } from '../container-injections/claude-code-ide-extension.ts';
+import { codeServerDark } from '../container-injections/code-server-dark.ts';
+import { claudeCodeInstall } from '../container-injections/claude-code-install.ts';
+import { claudeCodeUpdate } from '../container-injections/claude-code-update.ts';
+import { claudeCodeModels } from '../container-injections/claude-code-models.ts';
 import { githubCredentials } from '../container-injections/github-credentials.ts';
 import { attentionHooks } from '../container-injections/attention-hooks.ts';
-import { claudeSkipPermissions } from '../container-injections/claude-skip-permissions.ts';
+import { claudeStatusline } from '../container-injections/claude-statusline.ts';
+import { claudeModel } from '../container-injections/claude-model.ts';
+import { claudeEffortLevel } from '../container-injections/claude-effort-level.ts';
+import { claudeOutputStyle } from '../container-injections/claude-output-style.ts';
+import { claudePermissionMode } from '../container-injections/claude-permission-mode.ts';
+import { claudeTrust } from '../container-injections/claude-trust.ts';
 import { claudeAliases } from '../container-injections/claude-aliases.ts';
+import { claudeNoCoauthor } from '../container-injections/claude-no-coauthor.ts';
+import { shellPath } from '../container-injections/shell-path.ts';
+import { hostEnvVars } from '../container-injections/host-env-vars.ts';
+import { customEnvVars } from '../container-injections/custom-env-vars.ts';
 
-/**
- * A running container an injection acts on, plus the instance row behind it.
- * Extends `ExecTarget` so the `containerId`/`remoteUser` exec-user semantics have
- * a single source of truth (see `execInContainer`).
- */
+/** Extends `ExecTarget` so exec-user semantics have a single source of truth. */
 export interface ContainerTarget extends ExecTarget {
-	/** The full instance row — gives an injection its id and `bridge_token`. */
 	instance: InstanceRow;
 }
 
 /**
- * One self-contained thing the manager installs into a freshly-provisioned
- * container (credentials, hooks, git config). Every injection owns its host-side
- * discovery, its container `apply()`, and an optional live `check()` that the
- * health monitor runs — so what gets injected and what gets health-probed never
- * drift apart. Add a new injection by dropping a module in `src/container-injections/`
- * and listing it in the registry below; remove one by deleting it from that list.
+ * Bundles host-side discovery, container `apply()`, and a live `check()` in one module,
+ * so what gets injected and what gets health-probed can never drift apart.
  */
 export interface Injection {
-	/** Stable id, also used as the health-row key (e.g. `claude-code-credentials`). */
+	/** Doubles as the health-row key. */
 	id: string;
-	/** Human label, reused as the health-row label and the auth-chip label. */
 	label: string;
-	/**
-	 * Host-side authorization surfaced on the preflight/setup UI. Omit for
-	 * injections with no host dependency (e.g. git safe.directory, attention hooks).
-	 */
+	/** Restrict to specific instance modes; absent means it applies to every mode. */
+	modes?: InstanceMode[];
+	/** Omit for injections with no host dependency — presence is what draws the setup-UI chip. */
 	auth?: {
 		/** Short instruction shown when unavailable, e.g. "run `gh auth login`". */
 		hint: string;
-		/** Whether the host credential is available, and where it was found. */
 		status(): Promise<{ available: boolean; source: string | null }>;
 	};
-	/** Inject into the running container; reports progress through `log`. */
 	apply(target: ContainerTarget, log: (msg: string) => void): Promise<void>;
-	/**
-	 * Live-probe whether this injection is present/healthy in the container.
-	 * Omit to keep the injection out of the health list.
-	 */
+	/** Omit to keep the injection out of the health list. */
 	check?(target: ContainerTarget): Promise<boolean>;
 }
 
 /**
- * Every injection applied to a freshly-provisioned container, in apply order
- * (git safe.directory first so subsequent git-touching steps work). The boot
- * driver in `instances.server.ts` runs each `apply()`, the health monitor runs
- * each `check()`, and `routes.ts` builds the auth chips from each `auth`. Add or
- * remove an injection by editing this list.
+ * Injections within a stage apply in parallel, so no two of them may write the same container
+ * resource; the stage boundaries serialize each shared resource in the same relative order the
+ * old flat list ran it (gitconfig, ~/.claude/settings.json, rc files, ~/.claude.json, apt/dpkg).
  */
-export const injections: Injection[] = [
-	gitSafeDirectory,
-	// shell-path early and cheap: everything a user later types in a terminal tab
-	// (claude, node, bun) depends on the build-time PATH being back.
-	shellPath,
-	// tmux third: the package install is the slowest injection, so starting it
-	// early shrinks the window in which a first folderOpen finds tmux missing.
-	tmux,
-	gitIdentity,
-	claudeCodeCredentials,
-	githubCredentials,
-	attentionHooks,
-	claudeSkipPermissions,
-	claudeAliases
-];
+function buildStages(claudeInjection: Injection): Injection[][] {
+	return [
+		// Disjoint resources — and the slow network installs (apt tmux, npm/standalone claude,
+		// Open VSX extension) start immediately instead of queueing behind one another.
+		// claude-code-install (terminal-only) must precede claude-code-update: both are the sole
+		// npm-global writer of their stage, and the update no-ops until a binary exists.
+		[
+			gitSafeDirectory,
+			tmux,
+			claudeCodeInstall,
+			claudeInjection,
+			claudeCodeSkills,
+			claudeCodeIdeExtension,
+			claudeEffortLevel,
+			// Only writes `projects/**` + `history.jsonl`, which no other injection touches, and
+			// lands before the injections-done sentinel releases the launcher's `claude`.
+			claudeHistory
+		],
+		// git-identity needs stage 1's safe.directory; ttyd shares the apt/dpkg lock with tmux and
+		// the /usr/local/bin symlink with claude-code-install, so it trails both. code-server-dark
+		// drops the extension cache, so it must not run while stage 1 is still installing into it.
+		[gitIdentity, attentionHooks, claudeCodeModels, ttyd, claudeCodeUpdate, codeServerDark],
+		[githubCredentials, claudeStatusline, claudePermissionMode],
+		[claudeModel, claudeAliases],
+		// claude-trust edits ~/.claude.json, which the stage-1 Claude slot also writes.
+		// custom-env-vars writes nothing (values ride containerEnv) — it only verifies + health-checks.
+		[claudeTrust, hostEnvVars, customEnvVars],
+		// shell-path is the last rc writer: it appends after every other rc line, and snapshots the
+		// login PATH once the stage-1/2 installs have landed whatever they put on it.
+		[claudeNoCoauthor, shellPath],
+		// A settings.json writer of its own: every other stage already has one, and same-stage
+		// settings.json writers race — so output style merges last, on its own.
+		[claudeOutputStyle]
+	];
+}
+
+/**
+ * Resolved per call so toggling the custom-endpoint setting takes effect without a restart.
+ * `mode` drops injections that don't apply to it (e.g. ttyd off IDE instances, the IDE
+ * extension off terminal ones); omit it in mode-agnostic contexts to keep every injection.
+ */
+export function resolveInjectionStages(mode?: InstanceMode): Injection[][] {
+	const claudeInjection =
+		getOption('custom_endpoint_enabled') === '1' ? claudeCodeCustom : claudeCodeCredentials;
+	const stages = buildStages(claudeInjection)
+		.map((stage) => (mode ? stage.filter((i) => !i.modes || i.modes.includes(mode)) : stage))
+		.filter((stage) => stage.length > 0);
+	// One injection per stage restores the fully serial boot for diagnosing injection interference.
+	return getOption('advanced_serial_injections') === '1' ? stages.flat().map((i) => [i]) : stages;
+}
+
+/** Flat view of `resolveInjectionStages()` for order-insensitive consumers (health, auth chips). */
+export function resolveInjections(mode?: InstanceMode): Injection[] {
+	return resolveInjectionStages(mode).flat();
+}
+
+/** @deprecated Use `resolveInjections()`; this ignores settings/mode and is kept for the tests. */
+export const injections: Injection[] = buildStages(claudeCodeCredentials).flat();

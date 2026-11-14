@@ -8,101 +8,136 @@ import { checkPresence, execInContainer } from '../lib/exec.server.ts';
 import { spawnCapture } from '../lib/spawn.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
+/** The only host the Settings and env-var overrides apply to; Enterprise hosts come from `gh`. */
 const GH_HOST = 'github.com';
 
-/**
- * A token entered by the user in Settings, or null. Only honored when the
- * "set tokens manually" toggle is on; a blank field falls through to the env
- * var / host discovery so a user can set just one provider.
- */
+/** A blank field falls through to the env var, so a user can set just one provider. */
 function manualGithubToken(): string | null {
 	if (getOption('manual_tokens_enabled') !== '1') return null;
 	return getOption('manual_github_token')?.trim() || null;
 }
 
-/** The host's GitHub CLI auth, ready to stage inside a container. */
 interface GhCredentials {
+	host: string;
 	token: string;
-	/** GitHub login, when cheaply readable from the host's hosts.yml. */
 	user?: string;
-	/** Preferred git protocol (`https`/`ssh`), defaults to https when unknown. */
+	/** Defaults to https when unknown. */
 	gitProtocol?: string;
 }
 
-/**
- * Resolve the GitHub token to inject, plus a human-readable source for display.
- * An explicit `CODEBAY_GITHUB_TOKEN` override wins; otherwise read it via the `gh`
- * binary, which transparently spans its storage backends (macOS Keychain,
- * encrypted file, or GH_TOKEN). Returns null when no token is available.
- */
-export async function readGhToken(): Promise<{ token: string; source: string } | null> {
-	const manual = manualGithubToken();
-	if (manual) return { token: manual, source: 'Settings — manual token' };
-	if (GITHUB_TOKEN) return { token: GITHUB_TOKEN, source: 'CODEBAY_GITHUB_TOKEN env var' };
-	const token = await spawnCapture(['gh', 'auth', 'token', '--hostname', GH_HOST]);
-	return token ? { token, source: `GitHub CLI — ${GH_HOST}` } : null;
+/** Falls back to `gh`, which transparently spans all its storage backends. */
+export async function readGhToken(
+	host: string = GH_HOST
+): Promise<{ token: string; source: string } | null> {
+	if (host === GH_HOST) {
+		const manual = manualGithubToken();
+		if (manual) return { token: manual, source: 'Settings — manual token' };
+		if (GITHUB_TOKEN) return { token: GITHUB_TOKEN, source: 'CODEBAY_GITHUB_TOKEN env var' };
+	}
+	const token = await spawnCapture(['gh', 'auth', 'token', '--hostname', host]);
+	return token ? { token, source: `GitHub CLI — ${host}` } : null;
 }
 
-/**
- * Best-effort read of `user`/`git_protocol` from the host's gh config so we can
- * populate them in the container's hosts.yml. The token lives in the keychain,
- * not this file, so a lightweight line parse is enough — no YAML dependency.
- */
-async function readGhHostMeta(): Promise<{ user?: string; gitProtocol?: string }> {
-	const file = join(homedir(), '.config', 'gh', 'hosts.yml');
-	if (!existsSync(file)) return {};
+export function parseGhHosts(raw: string): string[] {
+	return [...raw.matchAll(/^([A-Za-z0-9._-]+):$/gm)].map((m) => m[1]!);
+}
+
+export function ghHostBlock(raw: string, host: string): string | null {
+	const lines = raw.split('\n');
+	const start = lines.findIndex((l) => l === `${host}:`);
+	if (start === -1) return null;
+	const rest = lines.slice(start + 1);
+	const end = rest.findIndex((l) => /^\S/.test(l));
+	return rest.slice(0, end === -1 ? rest.length : end).join('\n');
+}
+
+/** Mirrors `gh`'s own resolution order, which is not XDG on Windows. */
+function ghConfigDir(): string {
+	const explicit = process.env.GH_CONFIG_DIR?.trim();
+	if (explicit) return explicit;
+	if (process.platform === 'win32') {
+		return join(process.env.AppData || join(homedir(), 'AppData', 'Roaming'), 'GitHub CLI');
+	}
+	const xdg = process.env.XDG_CONFIG_HOME?.trim();
+	return xdg ? join(xdg, 'gh') : join(homedir(), '.config', 'gh');
+}
+
+async function readGhHostsFile(): Promise<string | null> {
+	const file = join(ghConfigDir(), 'hosts.yml');
+	if (!existsSync(file)) return null;
 	try {
-		const raw = await readFile(file, 'utf8');
-		const user = raw.match(/^\s+user:\s*(\S+)/m)?.[1];
-		const gitProtocol = raw.match(/^\s+git_protocol:\s*(\S+)/m)?.[1];
-		return { user, gitProtocol };
+		return await readFile(file, 'utf8');
 	} catch {
-		return {};
+		return null;
 	}
 }
 
-/** Read the GitHub CLI credentials for injection, or null if absent. */
-async function readGhCredentials(): Promise<GhCredentials | null> {
-	const found = await readGhToken();
-	if (!found) return null;
-	const { user, gitProtocol } = await readGhHostMeta();
-	return { token: found.token, user, gitProtocol };
+async function readGhHosts(): Promise<string[]> {
+	const raw = await readGhHostsFile();
+	if (!raw) return [];
+	// These keys get interpolated into a shell script, so only hostname-shaped ones may pass.
+	return parseGhHosts(raw).filter((h) => /^[A-Za-z0-9.-]+$/.test(h));
+}
+
+/** A line parse suffices instead of a YAML dependency, since the token isn't in this file. */
+async function readGhHostMeta(host: string): Promise<{ user?: string; gitProtocol?: string }> {
+	const raw = await readGhHostsFile();
+	if (!raw) return {};
+	const block = ghHostBlock(raw, host);
+	if (!block) return {};
+	const user = block.match(/^\s+user:\s*(\S+)/m)?.[1];
+	const gitProtocol = block.match(/^\s+git_protocol:\s*(\S+)/m)?.[1];
+	return { user, gitProtocol };
+}
+
+/** `github.com` is included unconditionally so the manual/env override works with no `gh` setup. */
+async function readAllGhCredentials(): Promise<GhCredentials[]> {
+	const configured = await readGhHosts();
+	const hosts = [...new Set([GH_HOST, ...configured])];
+	const creds = await Promise.all(
+		hosts.map(async (host): Promise<GhCredentials | null> => {
+			const found = await readGhToken(host);
+			if (!found) return null;
+			const meta = await readGhHostMeta(host);
+			return { host, token: found.token, ...meta };
+		})
+	);
+	return creds.filter((c): c is GhCredentials => c !== null);
 }
 
 /**
- * Authorize the GitHub CLI inside a running container as its remote user. Writes
- * `~/.config/gh/hosts.yml` (token via a scrubbed shell variable, never argv) so `gh` is signed in,
- * then runs `gh auth setup-git` when the binary exists so `git push`/`pull` over
- * HTTPS is authenticated too. If gh isn't installed yet, the staged hosts.yml
- * still authorizes gh once it is.
+ * Staging hosts.yml still authorizes `gh` if it's installed later. The whole file body
+ * rides the single `stdin` channel, because it may hold more than one host's token.
  */
 async function injectGhCredentials(
 	target: ContainerTarget,
-	creds: GhCredentials
+	credsList: GhCredentials[]
 ): Promise<{ ok: boolean; error?: string }> {
-	const protocol = creds.gitProtocol || 'https';
-	// The hosts.yml header (everything but the token) is non-secret, so build it in
-	// JS and pass it via printf; only the token rides in over the scrubbed $CODEBAY_STDIN var.
-	const header =
-		`${GH_HOST}:\n    git_protocol: ${protocol}\n` +
-		(creds.user ? `    user: ${creds.user}\n` : '');
+	const body = credsList
+		.map(({ host, token, user, gitProtocol }) => {
+			const protocol = gitProtocol || 'https';
+			return (
+				`${host}:\n` +
+				`    oauth_token: ${token}\n` +
+				`    git_protocol: ${protocol}\n` +
+				(user ? `    user: ${user}\n` : '')
+			);
+		})
+		.join('');
+	const setupGit = credsList
+		.map(
+			({ host }) =>
+				`command -v gh >/dev/null 2>&1 && gh auth setup-git --hostname ${host} 2>/dev/null || true; `
+		)
+		.join('');
 	const script =
-		'set -e; d=~/.config/gh; mkdir -p "$d"; tok="$CODEBAY_STDIN"; ' +
-		`{ printf '%s' "$1"; printf '    oauth_token: %s\\n' "$tok"; } > "$d/hosts.yml"; ` +
-		'chmod 600 "$d/hosts.yml"; ' +
-		`command -v gh >/dev/null 2>&1 && gh auth setup-git --hostname ${GH_HOST} 2>/dev/null || true`;
-	const res = await execInContainer(target, {
-		script,
-		stdin: creds.token,
-		args: ['gh-inject', header]
-	});
+		'set -e; d=~/.config/gh; mkdir -p "$d"; ' +
+		'printf \'%s\' "$CODEBAY_STDIN" > "$d/hosts.yml"; chmod 600 "$d/hosts.yml"; ' +
+		setupGit;
+	const res = await execInContainer(target, { script, stdin: body, args: ['gh-inject'] });
 	return res.ok ? { ok: true } : { ok: false, error: res.error };
 }
 
-/**
- * Inject the host's GitHub CLI auth so `gh` and git-over-HTTPS work inside the
- * container. Skipped (with a log line) when the host has no credentials.
- */
 export const githubCredentials: Injection = {
 	id: 'github-credentials',
 	label: 'GitHub CLI',
@@ -110,19 +145,21 @@ export const githubCredentials: Injection = {
 	auth: {
 		hint: 'run `gh auth login`',
 		async status() {
-			const found = await readGhToken();
-			return found ? { available: true, source: found.source } : { available: false, source: null };
+			const credsList = await readAllGhCredentials();
+			return credsList.length
+				? { available: true, source: `GitHub CLI — ${credsList.map((c) => c.host).join(', ')}` }
+				: { available: false, source: null };
 		}
 	},
 
 	async apply(target, log) {
-		const creds = await readGhCredentials();
-		if (!creds) {
+		const credsList = await readAllGhCredentials();
+		if (!credsList.length) {
 			log('⚠ No GitHub CLI credentials found on host; skipped gh injection\n');
 			return;
 		}
-		log('Injecting GitHub CLI credentials…\n');
-		const injected = await injectGhCredentials(target, creds);
+		log(`Injecting GitHub CLI credentials for ${credsList.map((c) => c.host).join(', ')}…\n`);
+		const injected = await injectGhCredentials(target, credsList);
 		log(
 			injected.ok
 				? '✓ GitHub CLI authorized in container\n'

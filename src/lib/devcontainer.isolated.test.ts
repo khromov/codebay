@@ -1,8 +1,101 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import {
+	mkdtempSync,
+	rmSync,
+	mkdirSync,
+	writeFileSync,
+	readFileSync,
+	existsSync,
+	lstatSync,
+	statSync,
+	symlinkSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { readDeclaredContainerPorts, writeOverrideConfig } from './devcontainer.server.ts';
+import { isAbsolute, join, relative, sep } from 'node:path';
+import { PUBLISH_HOST } from './config.server.ts';
+import { setOption } from './db.server.ts';
+import {
+	CLAUDE_RESTORE_MOUNT,
+	devcontainerUp,
+	devcontainerUpArgs,
+	devcontainerUpEnv,
+	launchCommandFor,
+	copyWorkspace,
+	overrideConfigPath,
+	readDeclaredContainerPorts,
+	restoreCanonicalConfig,
+	TERMINAL_LAUNCHED_MARKER,
+	writeOverrideConfig
+} from './devcontainer.server.ts';
+
+/** The `-ge <n>` bound the launcher gives the injections-done sentinel. */
+function sentinelWaitSeconds(script: string): number {
+	return Number(/\.codebay-injections-done" \] \|\| \[ "\$i" -ge (\d+) \]/.exec(script)?.[1]);
+}
+
+/**
+ * Every `claude <flags>` launch must sit behind a presence check. Without one, a `claude` the
+ * update injection has momentarily unlinked — or a project image that ships none — reaches the
+ * user as a bare `command not found` right under "Waiting for codebay setup to finish".
+ */
+function expectGuardedClaude(script: string): void {
+	const segments = script.split('claude --');
+	expect(segments.length).toBeGreaterThan(1);
+	for (const before of segments.slice(0, -1)) {
+		expect(before.endsWith('if command -v claude >/dev/null 2>&1; then ')).toBe(true);
+	}
+}
+
+/**
+ * `relaunchSurface` re-runs these after a plain `docker start`, which never re-runs
+ * postStartCommand. If the two ever fork, a restarted instance boots a different surface than a
+ * freshly provisioned one — so pin them to the same string.
+ */
+describe('launchCommandFor', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-launch-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	const postStart = () =>
+		JSON.parse(readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8'))
+			.postStartCommand as string;
+
+	test('terminal mode returns exactly what writeOverrideConfig writes', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		expect(postStart()).toContain(launchCommandFor('terminal'));
+	});
+
+	test('ide mode returns exactly what writeOverrideConfig writes', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'ide');
+		expect(postStart()).toContain(launchCommandFor('ide'));
+	});
+
+	// relaunchSurface re-runs this launcher after the injections have corrected the theme id for
+	// the installed build; an unconditional copy would put the stale staged id back.
+	test('ide launcher seeds code-server settings only when the file is missing', () => {
+		const launch = launchCommandFor('ide');
+		expect(launch).toContain('[ -f ~/.local/share/code-server/User/settings.json ] ||');
+		expect(launch).not.toMatch(/&&\s*cp -f/);
+	});
+
+	test('guards the code-server launch by port, not by a self-matching cmdline pattern', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'ide');
+		// Any `pgrep -f` pattern matching a code-server daemon also matches this launcher's own
+		// argv (it carries the nohup line), so a cmdline guard fires every time and the fallback
+		// launch never runs — leaving no recovery if the feature's entrypoint ever fails.
+		expect(postStart()).toContain('(exec 3<>/dev/tcp/127.0.0.1/8080)');
+		expect(postStart()).not.toContain('pgrep -f');
+	});
+
+	test('the IDE run-once marker has a single definition', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'ide');
+		const task = readFileSync(join(dir, '.vscode', 'tasks.json'), 'utf8');
+		expect(task).toContain(TERMINAL_LAUNCHED_MARKER);
+	});
+});
 
 describe('readDeclaredContainerPorts', () => {
 	let dir: string;
@@ -31,6 +124,11 @@ describe('readDeclaredContainerPorts', () => {
 		const ports = await readDeclaredContainerPorts(dir);
 		// host:container forms contribute their container (last) segment; 8080 is dropped.
 		expect([...ports].sort((a, b) => a - b)).toEqual([3000, 4000, 5173, 9000]);
+	});
+
+	test('excludes both reserved internal ports (8080 code-server, 7681 ttyd)', async () => {
+		writeConfig(JSON.stringify({ forwardPorts: [8080, 7681, 3000] }));
+		expect(await readDeclaredContainerPorts(dir)).toEqual([3000]);
 	});
 
 	test('parses the host:container appPort form and dedupes', async () => {
@@ -72,7 +170,7 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
 		// Create-or-attach: -A doubles as the run-once gate and reattaches the live
 		// session (Claude + scrollback) after the browser reaped the previous PTY.
-		expect(terminal.command).toContain("exec tmux new-session -A -s codebay 'claude");
+		expect(terminal.command).toContain("exec tmux new-session -A -s codebay '");
 		// Guarded on tmux actually being installed, and ordered before the fallback.
 		expect(terminal.command).toContain('command -v tmux');
 		expect(terminal.command.indexOf('tmux')).toBeLessThan(
@@ -80,6 +178,77 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		);
 		// $SHELL must be left for tmux's sh -c, not VS Code's ${...} resolver.
 		expect(terminal.command).toContain('exec "$SHELL" -l');
+	});
+
+	test('holds claude until the injections-done sentinel appears, in both launch paths', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		// A claude that starts mid-injection clobbers the trust keys on its next config rewrite.
+		const tmuxPath = terminal.command.split('.codebay-terminal-launched')[0];
+		const fallbackPath = terminal.command.split('.codebay-terminal-launched')[1];
+		for (const path of [tmuxPath, fallbackPath]) {
+			expect(path).toContain('.codebay-injections-done');
+			expect(path.indexOf('.codebay-injections-done')).toBeLessThan(path.indexOf('claude'));
+		}
+		// Bounded: a boot that never writes the sentinel must still yield a terminal, and say so.
+		expect(terminal.command).toContain('setup did not finish in time');
+	});
+
+	test('waits out an injection phase far longer than a real one', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		// The bug this guards: a 60s bound against a phase measured at 106.5s released the launcher
+		// mid-`npm install -g`, straight into a `claude` the update injection had just unlinked.
+		expect(sentinelWaitSeconds(terminal.command)).toBeGreaterThanOrEqual(300);
+	});
+
+	test('never execs claude without proving it exists first', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		expectGuardedClaude(terminal.command);
+		// And an absent binary drops to a shell with an explanation rather than a bare error.
+		expect(terminal.command).toContain('else echo "codebay: claude is not installed');
+	});
+
+	test('retries a missing claude only while setup is unfinished', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		// Past the sentinel no injection can be mid-reinstall, so a missing binary is permanent and
+		// retrying would just stall the shell on every open of a project image without Claude Code.
+		expect(terminal.command).toContain(
+			'if [ ! -e "$HOME/.codebay-injections-done" ]; then i=0; until command -v claude'
+		);
+	});
+
+	test('keeps the tmux payload free of quoting and glob hazards', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		const payload = terminal.command.slice(
+			terminal.command.indexOf("new-session -A -s codebay '") +
+				"new-session -A -s codebay '".length,
+			terminal.command.indexOf("'; fi; MARK=")
+		);
+		// A `'` would end the tmux command early, `${` would be eaten by VS Code's substitution, and
+		// an unmatched glob makes zsh print "no matches found" on every loop iteration.
+		expect(payload).not.toContain("'");
+		expect(payload).not.toContain('${');
+		expect(payload).not.toMatch(/[*?]/);
+	});
+
+	test('holds claude until the IDE bridge lockfile appears, in both launch paths', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const terminal = readTasks().tasks.find((t: { label: string }) => t.label === 'Terminal');
+		// claude scans ~/.claude/ide/*.lock once at startup, so it must not race the extension host.
+		const tmuxPath = terminal.command.split('.codebay-terminal-launched')[0];
+		const fallbackPath = terminal.command.split('.codebay-terminal-launched')[1];
+		for (const path of [tmuxPath, fallbackPath]) {
+			expect(path).toContain('.claude/ide/');
+			// Ordered after the injections sentinel and before claude launches.
+			expect(path.indexOf('.codebay-injections-done')).toBeLessThan(path.indexOf('.claude/ide/'));
+			expect(path.indexOf('.claude/ide/')).toBeLessThan(path.indexOf('claude --'));
+		}
+		// Bounded: an offline/uninstalled instance (lock never written) must still yield a terminal.
+		expect(terminal.command).toContain('-ge 30');
 	});
 
 	test('falls back to the first-open marker gate when tmux is missing', async () => {
@@ -99,6 +268,19 @@ describe('writeOverrideConfig terminal task + settings', () => {
 	test('disables workspace trust in code-server settings', async () => {
 		await writeOverrideConfig(dir, 8001);
 		expect(readSettings()['security.workspace.trust.enabled']).toBe(false);
+	});
+
+	// Detection must stay ON: with it off, VS Code Web's pre-extension paint skips the preferred
+	// scheme entirely and falls back to a hardcoded light theme. Both preferred themes being dark
+	// is what makes leaving it on safe.
+	test('pins a dark theme on both preferred branches and leaves detection on', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const settings = readSettings();
+		expect(settings['window.autoDetectColorScheme']).toBe(true);
+		expect(settings['window.autoDetectHighContrast']).toBe(false);
+		expect(settings['workbench.colorTheme']).toBe('Default Dark Modern');
+		expect(settings['workbench.preferredDarkColorTheme']).toBe('Default Dark Modern');
+		expect(settings['workbench.preferredLightColorTheme']).toBe('Default Dark Modern');
 	});
 
 	test('preserves an existing unrelated task and appends Terminal', async () => {
@@ -163,19 +345,47 @@ describe('writeOverrideConfig terminal task + settings', () => {
 		expect(install).toContain('command -v tmux');
 		expect(install.trimEnd().endsWith('exit 0')).toBe(true);
 		const config = JSON.parse(
-			readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8')
+			readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8')
 		);
 		// Nested config form → feature path is relative to .devcontainer/.
 		expect(config.features['./codebay-tmux']).toEqual({});
 	});
 
 	test('references the tmux feature relative to a root .devcontainer.json', async () => {
-		writeFileSync(join(dir, '.devcontainer.json'), JSON.stringify({ image: 'debian' }));
+		const original = JSON.stringify({ image: 'debian' });
+		writeFileSync(join(dir, '.devcontainer.json'), original);
 		await writeOverrideConfig(dir, 8001);
-		const config = JSON.parse(readFileSync(join(dir, '.devcontainer.json'), 'utf8'));
-		// Flat config form → path from the workspace root into .devcontainer/.
+		// Flat canonical form → the merged config sits next to it at the workspace root.
+		const config = JSON.parse(readFileSync(join(dir, '.codebay.devcontainer.json'), 'utf8'));
 		expect(config.features['./.devcontainer/codebay-tmux']).toEqual({});
 		expect(existsSync(join(dir, '.devcontainer', 'codebay-tmux', 'install.sh'))).toBe(true);
+		expect(readFileSync(join(dir, '.devcontainer.json'), 'utf8')).toBe(original);
+	});
+
+	test('sources the injected env files before launching claude', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const command = readTasks().tasks[0].command as string;
+		// The injections deliver ANTHROPIC_* through the rc files, which a `bash -c` task never
+		// reads — without this the auto-launched claude ignores the model/LiteLLM settings.
+		for (const file of ['.codebay-claude-env', '.codebay-claude-models-env', '.codebay-host-env']) {
+			expect(command).toContain(`"$HOME/${file}"`);
+		}
+		expect(command.indexOf('.codebay-host-env')).toBeLessThan(command.indexOf('claude --'));
+		// A glob would make zsh print "no matches found" when a file is absent.
+		expect(command).not.toContain('.codebay-*');
+	});
+
+	test('renders the permission mode into the terminal task', async () => {
+		await writeOverrideConfig(dir, 8001);
+		expect(readTasks().tasks[0].command as string).toContain(
+			'claude --dangerously-skip-permissions'
+		);
+
+		await writeOverrideConfig(dir, 8001, [], undefined, 'ide', 'plan');
+		const planned = readTasks().tasks[0].command as string;
+		expect(planned).toContain('claude --permission-mode plan');
+		// The skip flag silently overrides --permission-mode, so the two must never be combined.
+		expect(planned).not.toContain('--dangerously-skip-permissions');
 	});
 
 	test('replaces a malformed tasks.json rather than throwing', async () => {
@@ -187,7 +397,38 @@ describe('writeOverrideConfig terminal task + settings', () => {
 	});
 
 	const readDevcontainer = () =>
-		JSON.parse(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8'));
+		JSON.parse(readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8'));
+
+	test('launches code-server before the backgrounded extension install', async () => {
+		await writeOverrideConfig(dir, 8001);
+		const cmd = readDevcontainer().postStartCommand as string;
+		expect(cmd).toContain('--install-extension anthropic.claude-code');
+		// The download must trail the launch so it never sits on the boot critical path.
+		expect(cmd.indexOf('nohup code-server')).toBeLessThan(cmd.indexOf('--install-extension'));
+		// Fully detached (redirects + </dev/null + &) or `devcontainer up` waits on its open pipes.
+		expect(cmd).toContain('>/tmp/code-server-ext.log 2>&1 </dev/null &');
+		// Still ls-guarded so a container restart with the extension present skips the download.
+		expect(
+			cmd.indexOf('ls -d ~/.local/share/code-server/extensions/anthropic.claude-code-')
+		).toBeLessThan(cmd.indexOf('--install-extension'));
+	});
+
+	test('the blocking-install escape hatch restores the install-before-launch order', async () => {
+		setOption('advanced_blocking_ext_install', '1');
+		try {
+			await writeOverrideConfig(dir, 8001);
+			const cmd = readDevcontainer().postStartCommand as string;
+			expect(cmd.indexOf('--install-extension')).toBeLessThan(cmd.indexOf('nohup code-server'));
+			// Foreground on purpose — no detach, so `up` waits and the first window has the extension.
+			expect(cmd).not.toContain('</dev/null &');
+			// The ls-guard still skips the download when the extension survived a rebuild.
+			expect(
+				cmd.indexOf('ls -d ~/.local/share/code-server/extensions/anthropic.claude-code-')
+			).toBeLessThan(cmd.indexOf('--install-extension'));
+		} finally {
+			setOption('advanced_blocking_ext_install', '0');
+		}
+	});
 
 	test('injects the provided default image and reports it when the folder has no config', async () => {
 		const { imageSource } = await writeOverrideConfig(dir, 8001, [], 'my/custom:42');
@@ -208,15 +449,31 @@ describe('writeOverrideConfig terminal task + settings', () => {
 
 	test('preserves string values containing ,} while still stripping real trailing commas', async () => {
 		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
-		// The postCreateCommand value contains `,}` inside the string; the object also
-		// has a genuine trailing comma before `}`. The JSONC stripper must drop the
-		// real trailing comma without touching the one inside the string literal.
 		writeFileSync(
 			join(dir, '.devcontainer', 'devcontainer.json'),
 			'{\n  "image": "ships/own:1",\n  "postCreateCommand": "echo {a,}",\n}'
 		);
 		await writeOverrideConfig(dir, 8001);
 		expect(readDevcontainer().postCreateCommand).toBe('echo {a,}');
+	});
+
+	test('renders appPort with code-server pinned to loopback and forwards on PUBLISH_HOST', async () => {
+		await writeOverrideConfig(dir, 8001, [{ host_port: 8002, container_port: 3000 }]);
+		expect(readDevcontainer().appPort).toEqual([
+			// code-server never leaves loopback — it runs with auth disabled.
+			'127.0.0.1:8001:8080',
+			`${PUBLISH_HOST}:8002:3000`
+		]);
+	});
+
+	test('discards a user-authored appPort instead of merging it', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1', appPort: ['9999:9999'] })
+		);
+		await writeOverrideConfig(dir, 8001);
+		expect(readDevcontainer().appPort).toEqual(['127.0.0.1:8001:8080']);
 	});
 
 	test('installs the Node + Claude Code features for the default config', async () => {
@@ -259,9 +516,18 @@ describe('writeOverrideConfig local git excludes', () => {
 		await writeOverrideConfig(dir, 8001);
 		const text = readExclude();
 		expect(text).toContain('# >>> codebay (auto-generated) >>>');
+		expect(text).toContain('/.devcontainer/codebay.devcontainer.json');
+		expect(text).toContain('/.codebay.devcontainer.json');
 		expect(text).toContain('/.devcontainer/code-server-settings.json');
 		expect(text).toContain('/.devcontainer/devcontainer-lock.json');
+		expect(text).toContain('/.devcontainer-lock.json');
 		expect(text).toContain('/.vscode/tasks.json');
+	});
+
+	test('excludes codebay-inbox (the upload feature drop folder)', async () => {
+		mkdirSync(join(dir, '.git'), { recursive: true });
+		await writeOverrideConfig(dir, 8001);
+		expect(readExclude()).toContain('/codebay-inbox/');
 	});
 
 	test('is idempotent — the manager block appears once across reruns', async () => {
@@ -285,4 +551,717 @@ describe('writeOverrideConfig local git excludes', () => {
 		await writeOverrideConfig(dir, 8001);
 		expect(existsSync(join(dir, '.git'))).toBe(false);
 	});
+});
+
+describe('writeOverrideConfig separate config file', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-sep-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	test('never touches the project devcontainer.json and reports where it wrote', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		const original = '{\n  // project-owned\n  "image": "ships/own:1",\n}\n';
+		writeFileSync(join(dir, '.devcontainer', 'devcontainer.json'), original);
+		const { configPath, overrideConfigPath } = await writeOverrideConfig(dir, 8001);
+		expect(readFileSync(join(dir, '.devcontainer', 'devcontainer.json'), 'utf8')).toBe(original);
+		expect(overrideConfigPath).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
+		// Only the project's own config may reach --config; the CLI rejects any other basename.
+		expect(configPath).toBe(join(dir, '.devcontainer', 'devcontainer.json'));
+		const merged = JSON.parse(readFileSync(overrideConfigPath, 'utf8'));
+		expect(merged.image).toBe('ships/own:1');
+		expect(merged.appPort).toEqual(['127.0.0.1:8001:8080']);
+	});
+
+	test('a config-less project gets only the codebay config, never a canonical one', async () => {
+		const { imageSource, configPath, overrideConfigPath } = await writeOverrideConfig(
+			dir,
+			8001,
+			[],
+			'my/custom:42'
+		);
+		expect(imageSource).toBe('my/custom:42');
+		expect(overrideConfigPath).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
+		// Nothing for --config to point at; the CLI then bases resolution on `.devcontainer/` anyway.
+		expect(configPath).toBeNull();
+		expect(existsSync(join(dir, '.devcontainer', 'devcontainer.json'))).toBe(false);
+		expect(existsSync(join(dir, '.devcontainer.json'))).toBe(false);
+	});
+
+	test('rebuilds do not chain the launch command onto itself', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1', postStartCommand: 'echo hi' })
+		);
+		await writeOverrideConfig(dir, 8001);
+		await writeOverrideConfig(dir, 8001);
+		const merged = JSON.parse(
+			readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8')
+		);
+		const launch = launchCommandFor('ide');
+		// The legacy in-place scheme re-read its own output, appending the launch on every rebuild.
+		expect((merged.postStartCommand as string).split(launch)).toHaveLength(2);
+		expect(merged.postStartCommand).toStartWith('echo hi && ');
+	});
+
+	test('overrideConfigPath tracks the canonical form', () => {
+		expect(overrideConfigPath(dir)).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
+		writeFileSync(join(dir, '.devcontainer.json'), '{}');
+		expect(overrideConfigPath(dir)).toBe(join(dir, '.codebay.devcontainer.json'));
+		// A nested config wins over the flat one, mirroring the CLI's lookup order.
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(join(dir, '.devcontainer', 'devcontainer.json'), '{}');
+		expect(overrideConfigPath(dir)).toBe(join(dir, '.devcontainer', 'codebay.devcontainer.json'));
+	});
+
+	test('what goes to --config always has a filename the CLI accepts', async () => {
+		// The CLI tests --config against this exact regex and refuses to boot otherwise — which is
+		// why the Codebay-owned file rides --override-config instead of --config.
+		const accepted = /\/\.?devcontainer\.json$/;
+		// The CLI applies that regex to a URI path, not to the raw argument, so a Windows path is
+		// slash-normalized long before the check (verified: --config with backslashes reports
+		// `"path":"/C:/…/devcontainer.json"`). Mirror that, or this asserts only the host separator.
+		const asUriPath = (p: string) => p.replaceAll(sep, '/');
+		const forms = [
+			['.devcontainer', 'devcontainer.json'],
+			['.devcontainer.json'],
+			['.devcontainer', 'app', 'devcontainer.json']
+		];
+		for (const form of forms) {
+			rmSync(dir, { recursive: true, force: true });
+			mkdirSync(join(dir, ...form.slice(0, -1)), { recursive: true });
+			writeFileSync(join(dir, ...form), '{}');
+			const { configPath, overrideConfigPath } = await writeOverrideConfig(dir, 8001);
+			expect(asUriPath(configPath!)).toMatch(accepted);
+			expect(asUriPath(overrideConfigPath)).not.toMatch(accepted);
+		}
+	});
+
+	test('the flat form keeps both configs at the workspace root', async () => {
+		writeFileSync(join(dir, '.devcontainer.json'), JSON.stringify({ image: 'ships/own:1' }));
+		const { configPath, overrideConfigPath } = await writeOverrideConfig(dir, 8001);
+		expect(overrideConfigPath).toBe(join(dir, '.codebay.devcontainer.json'));
+		expect(configPath).toBe(join(dir, '.devcontainer.json'));
+	});
+
+	test('discovers the spec subfolder form and merges beside it', async () => {
+		mkdirSync(join(dir, '.devcontainer', 'app'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'app', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1' })
+		);
+		const { imageSource, configPath, overrideConfigPath } = await writeOverrideConfig(dir, 8001);
+		// Booting the default image here would silently override the project's declared one.
+		expect(imageSource).toBe('local');
+		expect(overrideConfigPath).toBe(join(dir, '.devcontainer', 'app', 'codebay.devcontainer.json'));
+		// The CLI's own lookup skips the subfolder form, so --config must name it explicitly or the
+		// `./codebay-tmux` paths below would resolve against `.devcontainer/` instead.
+		expect(configPath).toBe(join(dir, '.devcontainer', 'app', 'devcontainer.json'));
+		const merged = JSON.parse(readFileSync(overrideConfigPath, 'utf8'));
+		expect(merged.image).toBe('ships/own:1');
+		// Features stage beside the subfolder config — the CLI only promises `./`-descendant paths.
+		expect(merged.features['./codebay-tmux']).toEqual({});
+		expect(existsSync(join(dir, '.devcontainer', 'app', 'codebay-tmux', 'install.sh'))).toBe(true);
+	});
+
+	// What legacy versions appended to the canonical file's postStartCommand.
+	const legacyLaunch =
+		'bash -c "mkdir -p ~/.local/share/code-server/User; nohup code-server --bind-addr 0.0.0.0:8080 --auth none \\"$PWD\\" >/tmp/code-server.log 2>&1 &"';
+
+	test('strips legacy in-place injections from an un-restorable canonical before merging', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({
+				image: 'ships/own:1',
+				features: {
+					'ghcr.io/coder/devcontainer-features/code-server:1': { host: '0.0.0.0', auth: 'none' },
+					'./codebay-tmux': {},
+					'ghcr.io/devcontainers/features/go:1': {}
+				},
+				postStartCommand: `npm run prep && ${legacyLaunch}`
+			})
+		);
+		await writeOverrideConfig(dir, 8001);
+		const merged = JSON.parse(
+			readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8')
+		);
+		// Exactly the user's own command plus the current launcher — no double-chained launch.
+		expect(merged.postStartCommand).toBe(`npm run prep && ${launchCommandFor('ide')}`);
+		// The project's own feature survives the strip.
+		expect(merged.features['ghcr.io/devcontainers/features/go:1']).toEqual({});
+	});
+
+	test('a legacy canonical whose postStartCommand is only the launcher loses it entirely', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({
+				image: 'ships/own:1',
+				features: { './codebay-tmux': {} },
+				postStartCommand: legacyLaunch
+			})
+		);
+		await writeOverrideConfig(dir, 8001);
+		const merged = JSON.parse(
+			readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8')
+		);
+		expect(merged.postStartCommand).toBe(launchCommandFor('ide'));
+	});
+});
+
+describe('restoreCanonicalConfig', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-restore-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	const git = (...args: string[]) => {
+		const proc = Bun.spawnSync(
+			[
+				'git',
+				'-C',
+				dir,
+				'-c',
+				'user.email=t@t',
+				'-c',
+				'user.name=t',
+				'-c',
+				'commit.gpgsign=false',
+				...args
+			],
+			{ stdout: 'ignore', stderr: 'ignore' }
+		);
+		expect(proc.exitCode).toBe(0);
+	};
+
+	const configFile = () => join(dir, '.devcontainer', 'devcontainer.json');
+	const pristine = JSON.stringify({ image: 'ships/own:1' });
+	// What the legacy scheme left behind: the project's config with the injections baked in.
+	const overwritten = JSON.stringify({
+		image: 'ships/own:1',
+		features: { './codebay-tmux': {} }
+	});
+
+	test('restores a tracked config the legacy scheme overwrote, stashing a backup', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(configFile(), pristine);
+		git('init');
+		git('add', '.');
+		git('commit', '-m', 'init');
+		writeFileSync(configFile(), overwritten);
+		expect(await restoreCanonicalConfig(dir)).toBe('restored');
+		expect(readFileSync(configFile(), 'utf8')).toBe(pristine);
+		// The discarded file may have held user edits on top of the injection — it must survive.
+		expect(readFileSync(configFile() + '.codebay-backup', 'utf8')).toBe(overwritten);
+	});
+
+	test('deletes an untracked fingerprinted config (created for a config-less project)', async () => {
+		git('init');
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(configFile(), overwritten);
+		expect(await restoreCanonicalConfig(dir)).toBe('deleted');
+		expect(existsSync(configFile())).toBe(false);
+		expect(readFileSync(configFile() + '.codebay-backup', 'utf8')).toBe(overwritten);
+	});
+
+	test('reports none (not restored) when the injection itself was committed', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(configFile(), overwritten);
+		git('init');
+		git('add', '.');
+		git('commit', '-m', 'committed with injection baked in');
+		// git checkout is a no-op here — pretending it restored anything would mislead the boot log.
+		expect(await restoreCanonicalConfig(dir)).toBe('none');
+		expect(readFileSync(configFile(), 'utf8')).toBe(overwritten);
+		expect(existsSync(configFile() + '.codebay-backup')).toBe(false);
+	});
+
+	test('never touches a config without the injection fingerprint', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(configFile(), pristine);
+		git('init');
+		expect(await restoreCanonicalConfig(dir)).toBe('none');
+		expect(readFileSync(configFile(), 'utf8')).toBe(pristine);
+	});
+
+	test('leaves a fingerprinted config alone outside a git repo', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(configFile(), overwritten);
+		expect(await restoreCanonicalConfig(dir)).toBe('none');
+		expect(readFileSync(configFile(), 'utf8')).toBe(overwritten);
+	});
+
+	test('returns none when there is no config at all', async () => {
+		expect(await restoreCanonicalConfig(dir)).toBe('none');
+	});
+});
+
+describe('writeOverrideConfig terminal mode', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-term-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	const readDevcontainer = () =>
+		JSON.parse(readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8'));
+	const readLaunch = () => readFileSync(join(dir, '.devcontainer', 'codebay-terminal.sh'), 'utf8');
+
+	test('swaps code-server for the ttyd feature, keeping tmux', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const features = readDevcontainer().features;
+		expect(features['ghcr.io/coder/devcontainer-features/code-server:1']).toBeUndefined();
+		expect(features['./codebay-ttyd']).toEqual({});
+		expect(features['./codebay-tmux']).toEqual({});
+	});
+
+	test('maps the host port to ttyd (7681), not code-server (8080)', async () => {
+		await writeOverrideConfig(
+			dir,
+			8001,
+			[{ host_port: 8002, container_port: 3000 }],
+			undefined,
+			'terminal'
+		);
+		expect(readDevcontainer().appPort).toEqual([
+			'127.0.0.1:8001:7681',
+			`${PUBLISH_HOST}:8002:3000`
+		]);
+	});
+
+	test('launches ttyd (writable, process-guarded) from the staged launcher script', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const cmd = readDevcontainer().postStartCommand as string;
+		expect(cmd).toContain('ttyd --port 7681');
+		expect(cmd).toContain('--writable');
+		expect(cmd).toContain('.devcontainer/codebay-terminal.sh');
+		// No code-server anywhere in a terminal-mode boot.
+		expect(cmd).not.toContain('code-server');
+	});
+
+	test('the launcher bails when ttyd is missing, so a late install needs its own relaunch', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const cmd = readDevcontainer().postStartCommand as string;
+		// postStartCommand runs before the injection that installs ttyd as a fallback, so a failed
+		// build-time install leaves this a no-op — provision() relaunches afterwards to cover it.
+		expect(cmd).toContain('command -v ttyd >/dev/null 2>&1 || exit 0');
+	});
+
+	test('guards the ttyd launch by process name, not by a self-matching cmdline pattern', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const cmd = readDevcontainer().postStartCommand as string;
+		expect(cmd).toContain('pgrep -x ttyd');
+		// `pgrep -f` matches the launch shell's own cmdline, so the guard would fire every time
+		// and ttyd would never start (nothing ever listening on 7681).
+		expect(cmd).not.toContain('pgrep -f');
+	});
+
+	test('the launcher runs claude under tmux and waits on the injections sentinel', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const script = readLaunch();
+		expect(script.startsWith('#!/usr/bin/env bash')).toBe(true);
+		expect(script).toContain('tmux new-session -A -s codebay');
+		expect(script).toContain('claude --dangerously-skip-permissions');
+		// Holds claude until injections finish, same as the code-server terminal task.
+		expect(script).toContain('.codebay-injections-done');
+		expect(script.indexOf('.codebay-injections-done')).toBeLessThan(script.indexOf('claude'));
+		// No code-server extension host to race, so no IDE-bridge wait.
+		expect(script).not.toContain('.claude/ide/');
+	});
+
+	test('gives the sentinel the same generous bound and guards claude, in both branches', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const script = readLaunch();
+		expect(sentinelWaitSeconds(script)).toBeGreaterThanOrEqual(300);
+		expect(script).toContain('setup did not finish in time');
+		// Both the tmux session command and the bare-shell fallback launch claude.
+		expectGuardedClaude(script);
+	});
+
+	test('sources the injected env files before launching claude', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const script = readLaunch();
+		for (const file of ['.codebay-claude-env', '.codebay-claude-models-env', '.codebay-host-env']) {
+			expect(script).toContain(`"$HOME/${file}"`);
+		}
+		// ttyd runs `bash <script>` and tmux runs its command via `$SHELL -c`, so nothing here
+		// reads the rc files the injections write to — the sourcing must be explicit.
+		expect(script.indexOf('.codebay-host-env')).toBeLessThan(script.indexOf('claude --'));
+		expect(script).not.toContain('.codebay-*');
+	});
+
+	test('renders the permission mode into the launcher', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal', 'plan');
+		const script = readLaunch();
+		expect(script).toContain('claude --permission-mode plan');
+		// The skip flag silently overrides --permission-mode, so the two must never be combined.
+		expect(script).not.toContain('--dangerously-skip-permissions');
+	});
+
+	test('serves the split view by letting the URL pick the session', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		// Without --url-arg ttyd drops the `?arg=` the shell pane sends, and both panes would
+		// attach to the same claude session.
+		expect(readDevcontainer().postStartCommand as string).toContain('--url-arg');
+
+		const script = readLaunch();
+		expect(script).toContain('tmux new-session -A -s codebay-shell');
+		// The scratch shell must not sit behind claude's boot sentinel — it opens on demand.
+		expect(script.indexOf('codebay-shell')).toBeLessThan(
+			script.indexOf('.codebay-injections-done')
+		);
+		// `$1` is attacker-supplied via the URL, so it may only ever be compared, never run.
+		expect(script).toContain('[ "$1" = "shell" ]');
+		expect(script).not.toContain('eval');
+	});
+
+	test('stages the codebay-ttyd feature with a best-effort install script', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const meta = JSON.parse(
+			readFileSync(join(dir, '.devcontainer', 'codebay-ttyd', 'devcontainer-feature.json'), 'utf8')
+		);
+		expect(meta.id).toBe('codebay-ttyd');
+		const install = readFileSync(join(dir, '.devcontainer', 'codebay-ttyd', 'install.sh'), 'utf8');
+		expect(install.startsWith('#!/bin/sh\n')).toBe(true);
+		expect(install).toContain('command -v ttyd');
+		expect(install.trimEnd().endsWith('exit 0')).toBe(true);
+	});
+
+	test('skips the code-server settings file and the VS Code Terminal task', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		expect(existsSync(join(dir, '.devcontainer', 'code-server-settings.json'))).toBe(false);
+		expect(existsSync(join(dir, '.vscode', 'tasks.json'))).toBe(false);
+	});
+
+	test('excludes the terminal-mode artifacts from git', async () => {
+		mkdirSync(join(dir, '.git'), { recursive: true });
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const text = readFileSync(join(dir, '.git', 'info', 'exclude'), 'utf8');
+		expect(text).toContain('/.devcontainer/codebay-ttyd/');
+		expect(text).toContain('/.devcontainer/codebay-claude/');
+		expect(text).toContain('/.devcontainer/codebay-terminal.sh');
+	});
+
+	test('installs Claude Code even when the source ships its own config', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1' })
+		);
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const features = readDevcontainer().features;
+		// The launcher *is* `claude`, so unlike IDE mode terminal mode can't defer tooling to the
+		// project's config — a bare shell would defeat the whole "just Claude in a terminal" point.
+		expect(features['./codebay-claude']).toBeDefined();
+		// But not via the upstream features: their nvm-based Node install fails outright on any
+		// project image that sets NPM_CONFIG_PREFIX. The local feature sniffs instead.
+		expect(features['ghcr.io/devcontainers/features/node:1']).toBeUndefined();
+		expect(features['ghcr.io/anthropics/devcontainer-features/claude-code:1.0']).toBeUndefined();
+		// gh is a plain package install with no such hazard, so it stays.
+		expect(features['ghcr.io/devcontainers/features/github-cli:1']).toBeDefined();
+	});
+
+	test('stages the codebay-claude feature with a best-effort, nvm-free install script', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1' })
+		);
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const featureDir = join(dir, '.devcontainer', 'codebay-claude');
+		const meta = JSON.parse(readFileSync(join(featureDir, 'devcontainer-feature.json'), 'utf8'));
+		expect(meta.id).toBe('codebay-claude');
+		const install = readFileSync(join(featureDir, 'install.sh'), 'utf8');
+		expect(install.startsWith('#!/bin/sh\n')).toBe(true);
+		expect(install).toContain('command -v claude');
+		expect(install).not.toContain('nvm');
+		// Wrapped so a failed install can never break the build; the injection retries at boot.
+		expect(install.trimEnd().endsWith('exit 0')).toBe(true);
+		// Windows has no exec bit to set, and none is needed: the CLI runs `chmod +x ./install.sh`
+		// inside the image build, so the host mode never reaches the feature.
+		if (process.platform !== 'win32') {
+			expect(statSync(join(featureDir, 'install.sh')).mode & 0o111).toBeGreaterThan(0);
+		}
+	});
+
+	test('uses the upstream Claude features, not the local one, for the default image', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'terminal');
+		const features = readDevcontainer().features;
+		expect(features['ghcr.io/anthropics/devcontainer-features/claude-code:1.0']).toBeDefined();
+		expect(features['./codebay-claude']).toBeUndefined();
+		expect(existsSync(join(dir, '.devcontainer', 'codebay-claude'))).toBe(false);
+	});
+
+	test('never stages the codebay-claude feature in IDE mode', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1' })
+		);
+		await writeOverrideConfig(dir, 8001);
+		expect(readDevcontainer().features['./codebay-claude']).toBeUndefined();
+		expect(existsSync(join(dir, '.devcontainer', 'codebay-claude'))).toBe(false);
+	});
+});
+
+describe('writeOverrideConfig containerEnv', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-env-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	const readDevcontainer = () =>
+		JSON.parse(readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8'));
+
+	test('renders the provided env vars as containerEnv', async () => {
+		await writeOverrideConfig(dir, 8001, [], undefined, 'ide', 'default', [
+			{ name: 'FOO', value: 'bar' },
+			{ name: 'TOKEN', value: 'sk-secret' }
+		]);
+		expect(readDevcontainer().containerEnv).toEqual({ FOO: 'bar', TOKEN: 'sk-secret' });
+	});
+
+	test('adds no containerEnv key when there are no env vars', async () => {
+		await writeOverrideConfig(dir, 8001);
+		expect(readDevcontainer().containerEnv).toBeUndefined();
+	});
+
+	test('merges over a project-declared containerEnv, letting configured names win', async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({ image: 'ships/own:1', containerEnv: { KEEP: 'me', FOO: 'old' } })
+		);
+		await writeOverrideConfig(dir, 8001, [], undefined, 'ide', 'default', [
+			{ name: 'FOO', value: 'new' }
+		]);
+		expect(readDevcontainer().containerEnv).toEqual({ KEEP: 'me', FOO: 'new' });
+	});
+});
+
+describe('writeOverrideConfig claude restore mount', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'codebay-mount-'));
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	const readDevcontainer = () =>
+		JSON.parse(readFileSync(join(dir, '.devcontainer', 'codebay.devcontainer.json'), 'utf8'));
+
+	const write = (dirArg = '/data/instances/x/claude') =>
+		writeOverrideConfig(dir, 8001, [], undefined, 'ide', 'default', [], dirArg);
+
+	test('mounts the mirror read-only so a rebuilt container can restore from it', async () => {
+		await write();
+		expect(readDevcontainer().mounts).toEqual([
+			`source=/data/instances/x/claude,target=${CLAUDE_RESTORE_MOUNT},type=bind,readonly`
+		]);
+	});
+
+	test('adds no mounts key when no restore dir is given', async () => {
+		await writeOverrideConfig(dir, 8001);
+		expect(readDevcontainer().mounts).toBeUndefined();
+	});
+
+	test("keeps the project's own mounts, in both string and object form", async () => {
+		mkdirSync(join(dir, '.devcontainer'), { recursive: true });
+		writeFileSync(
+			join(dir, '.devcontainer', 'devcontainer.json'),
+			JSON.stringify({
+				image: 'ships/own:1',
+				mounts: [
+					'source=/host/cache,target=/cache,type=bind',
+					{ source: 'named-vol', target: '/var/lib/docker', type: 'volume' }
+				]
+			})
+		);
+		await write();
+		const mounts = readDevcontainer().mounts;
+		expect(mounts).toHaveLength(3);
+		expect(mounts[0]).toBe('source=/host/cache,target=/cache,type=bind');
+		expect(mounts[1]).toEqual({ source: 'named-vol', target: '/var/lib/docker', type: 'volume' });
+	});
+
+	test('re-renders its own entry rather than accumulating one per rebuild', async () => {
+		await write('/data/instances/x/claude');
+		await write('/data/instances/moved/claude');
+		const mounts = readDevcontainer().mounts;
+		expect(mounts).toHaveLength(1);
+		expect(mounts[0]).toContain('source=/data/instances/moved/claude,');
+	});
+
+	test('normalizes a Windows source path to forward slashes', async () => {
+		await write('C:\\Users\\me\\.codebay\\instances\\x\\claude');
+		expect(readDevcontainer().mounts[0]).toBe(
+			`source=C:/Users/me/.codebay/instances/x/claude,target=${CLAUDE_RESTORE_MOUNT},type=bind,readonly`
+		);
+	});
+});
+
+describe('devcontainerUp args and env', () => {
+	test('builds the baseline up args without cache-busting by default', () => {
+		const args = devcontainerUpArgs('/ws/dir');
+		expect(args.slice(1)).toEqual([
+			'up',
+			'--workspace-folder',
+			'/ws/dir',
+			'--remove-existing-container'
+		]);
+	});
+
+	test('appends --build-no-cache only when noCache is set', () => {
+		expect(devcontainerUpArgs('/ws/dir', { noCache: true })).toContain('--build-no-cache');
+		expect(devcontainerUpArgs('/ws/dir', {})).not.toContain('--build-no-cache');
+	});
+
+	test('passes each config path under its own flag, and only when given', () => {
+		const configPath = '/ws/dir/.devcontainer/devcontainer.json';
+		const overrideConfigPath = '/ws/dir/.devcontainer/codebay.devcontainer.json';
+		const args = devcontainerUpArgs('/ws/dir', { configPath, overrideConfigPath });
+		expect(args[args.indexOf('--config') + 1]).toBe(configPath);
+		expect(args[args.indexOf('--override-config') + 1]).toBe(overrideConfigPath);
+		expect(devcontainerUpArgs('/ws/dir', { overrideConfigPath })).not.toContain('--config');
+		expect(devcontainerUpArgs('/ws/dir', {})).not.toContain('--override-config');
+	});
+
+	test('enables BuildKit as a default the caller environment can override', () => {
+		const prev = process.env.DOCKER_BUILDKIT;
+		try {
+			delete process.env.DOCKER_BUILDKIT;
+			expect(devcontainerUpEnv().DOCKER_BUILDKIT).toBe('1');
+			expect(devcontainerUpEnv().COMPOSE_DOCKER_CLI_BUILD).toBe('1');
+			// An explicit user opt-out must win over our default.
+			process.env.DOCKER_BUILDKIT = '0';
+			expect(devcontainerUpEnv().DOCKER_BUILDKIT).toBe('0');
+		} finally {
+			if (prev === undefined) delete process.env.DOCKER_BUILDKIT;
+			else process.env.DOCKER_BUILDKIT = prev;
+		}
+	});
+
+	test('the no-buildkit escape hatch drops both forced env defaults', () => {
+		const prev = process.env.DOCKER_BUILDKIT;
+		setOption('advanced_no_buildkit', '1');
+		try {
+			delete process.env.DOCKER_BUILDKIT;
+			expect(devcontainerUpEnv().DOCKER_BUILDKIT).toBeUndefined();
+			expect(devcontainerUpEnv().COMPOSE_DOCKER_CLI_BUILD).toBeUndefined();
+		} finally {
+			setOption('advanced_no_buildkit', '0');
+			if (prev === undefined) delete process.env.DOCKER_BUILDKIT;
+			else process.env.DOCKER_BUILDKIT = prev;
+		}
+	});
+});
+
+describe('devcontainerUp cwd', () => {
+	let workspace: string;
+
+	beforeEach(() => {
+		workspace = mkdtempSync(join(tmpdir(), 'codebay-bunfig-'));
+		writeFileSync(join(workspace, 'bunfig.toml'), 'preload = ["./evil.ts"]\n');
+		writeFileSync(join(workspace, 'evil.ts'), 'throw new Error("workspace preload ran");\n');
+	});
+	afterEach(() => rmSync(workspace, { recursive: true, force: true }));
+
+	// The devcontainer CLI's `node` shebang resolves to Bun, which loads `bunfig.toml` from cwd.
+	test('spawns from outside the workspace, so its bunfig.toml preload never runs', async () => {
+		let cwd: string | undefined;
+		const spawn = spyOn(Bun, 'spawn').mockImplementation(((
+			_cmd: string[],
+			opts: { cwd?: string }
+		) => {
+			cwd = opts.cwd;
+			return {
+				stdout: new Response('').body,
+				stderr: new Response('').body,
+				exited: Promise.resolve(1)
+			};
+		}) as unknown as typeof Bun.spawn);
+		try {
+			await expect(devcontainerUp(workspace, () => {})).rejects.toThrow('did not return a result');
+		} finally {
+			spawn.mockRestore();
+		}
+
+		expect(cwd).toBeDefined();
+		const rel = relative(workspace, cwd!);
+		expect(rel.startsWith('..') || isAbsolute(rel)).toBe(true);
+
+		const script = join(workspace, 'cli.js');
+		writeFileSync(script, 'console.log("ok");\n');
+		const run = (dir: string) =>
+			Bun.spawnSync([process.execPath, script], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });
+		// Sanity: the fixture really does break a Bun process started inside the workspace.
+		expect(run(workspace).exitCode).not.toBe(0);
+		const safe = run(cwd!);
+		expect(safe.stderr.toString()).not.toContain('workspace preload ran');
+		expect(safe.exitCode).toBe(0);
+	});
+});
+
+describe('copyWorkspace', () => {
+	let source: string;
+	let dest: string;
+
+	beforeEach(() => {
+		source = mkdtempSync(join(tmpdir(), 'codebay-copy-src-'));
+		dest = join(mkdtempSync(join(tmpdir(), 'codebay-copy-dst-')), 'workspace');
+	});
+	afterEach(() => {
+		rmSync(source, { recursive: true, force: true });
+		rmSync(dest, { recursive: true, force: true });
+	});
+
+	test('copies the tree, skipping ignored basenames', async () => {
+		writeFileSync(join(source, 'keep.txt'), 'keep');
+		mkdirSync(join(source, 'node_modules'));
+		writeFileSync(join(source, 'node_modules', 'dep.js'), 'dep');
+
+		const { dereferencedSymlinks } = await copyWorkspace(source, dest, new Set(['node_modules']));
+
+		expect(readFileSync(join(dest, 'keep.txt'), 'utf8')).toBe('keep');
+		expect(existsSync(join(dest, 'node_modules'))).toBe(false);
+		expect(dereferencedSymlinks).toBe(0);
+	});
+
+	// Skipped on Windows for the very reason the dereference exists: creating the fixture symlink
+	// needs Developer Mode. The `dereference` argument is what makes the behaviour reachable here.
+	test.skipIf(process.platform === 'win32')(
+		'follows symlinks when dereferencing, and reports how many',
+		async () => {
+			writeFileSync(join(source, 'real.txt'), 'contents');
+			symlinkSync(join(source, 'real.txt'), join(source, 'link.txt'));
+
+			const { dereferencedSymlinks } = await copyWorkspace(source, dest, new Set(), true);
+
+			expect(dereferencedSymlinks).toBe(1);
+			expect(lstatSync(join(dest, 'link.txt')).isSymbolicLink()).toBe(false);
+			expect(readFileSync(join(dest, 'link.txt'), 'utf8')).toBe('contents');
+		}
+	);
+
+	test.skipIf(process.platform === 'win32')(
+		'preserves symlinks and counts none when not dereferencing',
+		async () => {
+			writeFileSync(join(source, 'real.txt'), 'contents');
+			symlinkSync(join(source, 'real.txt'), join(source, 'link.txt'));
+
+			const { dereferencedSymlinks } = await copyWorkspace(source, dest, new Set(), false);
+
+			expect(dereferencedSymlinks).toBe(0);
+			expect(lstatSync(join(dest, 'link.txt')).isSymbolicLink()).toBe(true);
+		}
+	);
 });

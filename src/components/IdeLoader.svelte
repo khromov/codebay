@@ -1,13 +1,30 @@
 <script lang="ts">
-	// Dot-matrix "data streaming" loader shown while a code-server iframe boots.
-	// Each tick flips a fixed number of randomly-chosen bits so the readout looks
-	// like flowing data on the LCD-style panel — a steady amount of change every
-	// tick (rather than a per-bit probability, which makes some frames churn and
-	// others barely move) keeps the cadence visually even.
-	// `speed` is a multiplier on the readout's pace: 1 is the default calm cadence,
-	// 2 runs twice as fast, 0.5 half as fast. It scales the tick interval only —
-	// the per-tick churn stays fixed so the cadence reads as even at any speed.
-	let { speed = 1 }: { speed?: number } = $props();
+	import Button from './Button.svelte';
+	import type { InstanceMode } from '../types.ts';
+
+	// A fixed flip count per tick, rather than a per-bit probability, is what keeps
+	// the cadence visually even; `speed` scales only the interval, never the churn.
+	let {
+		speed = 1,
+		mode = 'ide',
+		// Omit both unless the wait could in principle never end.
+		stalledAfterMs,
+		onoverride
+	}: {
+		speed?: number;
+		mode?: InstanceMode;
+		stalledAfterMs?: number;
+		onoverride?: () => void;
+	} = $props();
+
+	const isTerminal = $derived(mode === 'terminal');
+
+	let stalled = $state(false);
+	$effect(() => {
+		if (stalledAfterMs === undefined) return;
+		const timer = setTimeout(() => (stalled = true), stalledAfterMs);
+		return () => clearTimeout(timer);
+	});
 
 	const ROWS = 3;
 	const COLS = 22;
@@ -22,7 +39,7 @@
 	let grid = $state(seed());
 
 	$effect(() => {
-		// Honor reduced-motion: leave a static readout, skip the flicker interval.
+		// Reduced-motion gets a static readout rather than no loader at all.
 		if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
 		const timer = setInterval(() => {
 			const next = grid.map((row) => row.slice());
@@ -44,8 +61,19 @@
 		{/each}
 	</div>
 	<div class="label">
-		Loading editor<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
+		Loading {isTerminal ? 'terminal' : 'editor'}<span class="dot">.</span><span class="dot">.</span
+		><span class="dot">.</span>
 	</div>
+	{#if stalled}
+		<div class="stalled">
+			<p>
+				Waiting for {isTerminal ? 'the terminal' : 'code-server'} to answer inside the container.
+			</p>
+			{#if onoverride}
+				<Button size="sm" onclick={onoverride}>Open anyway</Button>
+			{/if}
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -76,6 +104,22 @@
 		text-transform: uppercase;
 		letter-spacing: 0.18em;
 		color: var(--ink-soft);
+	}
+	/* Held back until the wait looks wedged, so it reads as an explanation, not boot chrome. */
+	.stalled {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 12px;
+		max-width: 34ch;
+		text-align: center;
+	}
+	.stalled p {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: 13px;
+		line-height: 1.5;
+		color: var(--ink-faint);
 	}
 	.dot {
 		animation: blink 1.2s ease-in-out infinite;

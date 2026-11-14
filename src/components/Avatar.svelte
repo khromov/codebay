@@ -1,41 +1,31 @@
 <script lang="ts">
-	import { pickAvatar, decode, type AvatarArt } from '../avatars/index.ts';
+	import { decode, type AvatarArt } from '../avatars/index.ts';
 
-	// `id` selects the artwork (deterministic, stable per instance); `name` is for
-	// accessibility. `art` lets a caller (e.g. the dev gallery) render a specific
-	// sprite instead of picking. `scale` is device-pixels per LED cell — the panel
-	// is always rendered at an integer multiple (10 × scale px) so every pixel
-	// lands on a crisp boundary. e.g. scale 6 → 60×60.
+	// `scale` is device-pixels per LED cell; the panel is always an integer multiple
+	// of it (10 × scale px) so every pixel lands on a crisp boundary.
 	let {
-		id = '',
 		name,
 		scale = 6,
 		art,
 		interactive = false
 	}: {
-		id?: string;
 		name: string;
 		scale?: number;
-		art?: AvatarArt;
+		art?: AvatarArt | null;
 		interactive?: boolean;
 	} = $props();
 
-	// "LCD pressure" gag (only when `interactive`): pressing the panel inverts it
-	// and blooms an oily iridescent splotch from the press point, then springs back
-	// over ~250ms leaving a fading ghost — like squishing a real LCD.
+	// The "LCD pressure" gag: pressing the panel squishes it like a real LCD.
 	let pressed = $state(false);
 	let ghosting = $state(false);
 	let bx = $state('50%');
 	let by = $state('50%');
-	// Driven by the press position so the iridescent sheen shifts as you drag
-	// across the panel: `spin` rotates which hues land where, `hue` shifts the
-	// whole palette. A CSS transition eases between values for a liquid trail.
+	// Driven by press position so the sheen shifts as you drag; a CSS transition eases the trail.
 	let spin = $state(0);
 	let hue = $state(0);
 	let ghostTimer: ReturnType<typeof setTimeout> | undefined;
 
-	// Position the bloom at the pointer (panel-relative percentages) and derive the
-	// palette from where on the panel you are — so every pixel reads a bit different.
+	// Deriving the palette from position is what makes every pixel read a bit different.
 	function aim(e: PointerEvent) {
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		const px = (e.clientX - rect.left) / rect.width;
@@ -57,7 +47,7 @@
 	}
 
 	function onpointermove(e: PointerEvent) {
-		if (pressed) aim(e); // drag the squish point around while held
+		if (pressed) aim(e);
 	}
 
 	function release() {
@@ -72,20 +62,20 @@
 
 	// Clamp to a whole number ≥ 1 — fractional scales would blur the grid.
 	const s = $derived(Math.max(1, Math.round(scale)));
-	// A thin 0.5px gutter reads as a hairline LED gap (a crisp 1 device-pixel on
-	// 2× displays). At 1× the cells are too small to spare any, so dots butt up.
+	// 0.5px is a crisp single device-pixel at 2×; at 1× the cells can't spare any gutter.
 	const gap = $derived(s >= 2 ? 0.5 : 0);
 
-	// 64 on/off cells (0 off / 1 on), row-major, for the chosen 8×8 art.
-	const cells = $derived(decode(art ?? pickAvatar(id)));
-	// Frame the art in a 10×10 panel: the outer ring is unlit LED cells (a bezel
-	// of real dots, not blank padding), the inner 8×8 holds the art. Row-major.
+	// Instance sprites are resolved server-side and handed in as `art`; a missing or unknown one
+	// (null/unset) renders an empty panel rather than a colliding fallback.
+	const resolved = $derived(art ?? null);
+	const cells = $derived(resolved ? decode(resolved) : []);
+	// The 10×10 outer ring is unlit LED cells — a bezel of real dots, not blank padding.
 	const grid = $derived(
 		Array.from({ length: 100 }, (_, i) => {
 			const r = Math.floor(i / 10);
 			const c = i % 10;
 			const inner = r >= 1 && r <= 8 && c >= 1 && c <= 8;
-			return inner ? cells[(r - 1) * 8 + (c - 1)] : 0;
+			return inner ? (cells[(r - 1) * 8 + (c - 1)] ?? 0) : 0;
 		})
 	);
 </script>
@@ -97,7 +87,7 @@
 	class:ghosting
 	role="img"
 	aria-label={name}
-	title={name}
+	title={resolved?.name}
 	style="width:{10 * s}px;height:{10 *
 		s}px;--gap:{gap}px;--bx:{bx};--by:{by};--spin:{spin}deg;--hue:{hue}deg"
 	{onpointerdown}
@@ -107,7 +97,7 @@
 	onlostpointercapture={release}
 >
 	{#each grid as cell, i (i)}
-		<span class="px" class:on={cell === 1}></span>
+		<span class="px" class:on={cell === 1} class:gray={cell === 2}></span>
 	{/each}
 	{#if interactive}
 		<span class="invert" aria-hidden="true"></span>
@@ -116,12 +106,8 @@
 </span>
 
 <style>
-	/* A 10×10 dot-matrix panel: each pixel is its own element. The outer ring is
-     unlit LED cells framing the 8×8 art. The panel is sized to an exact
-     10×scale so each cell is `scale` device-pixels — crisp, no sub-pixel blur.
-     Monochrome LCD styling — lit dots are ink, unlit dots a faint tint. The LED
-     gap is a per-cell gutter (see --gap) so it never throws off the integer
-     cell size. */
+	/* Sized to an exact 10×scale so each cell is a whole number of device-pixels.
+	   The LED gap is a per-cell gutter, which keeps that integer cell size intact. */
 	.avatar {
 		display: grid;
 		grid-template-columns: repeat(10, 1fr);
@@ -136,13 +122,14 @@
 		background-clip: content-box;
 		background-color: var(--rule-soft); /* unlit LED — faint */
 	}
+	.px.gray {
+		background-color: var(--led-gray); /* half-lit LED */
+	}
 	.px.on {
 		background-color: var(--ink);
 	}
 
-	/* --- "LCD pressure" press effect (opt-in via `interactive`) --- */
-	/* Register the palette vars as <angle> so they can be smoothly transitioned —
-     plain custom properties don't interpolate. */
+	/* Registered as <angle> because plain custom properties don't interpolate. */
 	@property --hue {
 		syntax: '<angle>';
 		inherits: false;
@@ -158,10 +145,8 @@
 		cursor: pointer;
 		touch-action: none; /* a touch-press shouldn't scroll the page */
 	}
-	/* Localized inversion: a white layer in `difference` blend mode inverts whatever
-     is behind it, and a radial alpha mask centered on the press point makes that
-     inversion strongest at the center and fade to nothing toward the edges — so
-     only a disc around your finger flips, like the pressure spot on a real LCD. */
+	/* A white `difference` layer inverts what's behind it; the radial mask is what
+	   confines the inversion to a disc around the press point. */
 	.invert {
 		position: absolute;
 		inset: 0;
@@ -190,8 +175,7 @@
 		transition: opacity 250ms ease-out;
 	}
 
-	/* The squished-crystal splotch: a dark blotch + an oily iridescent ring, both
-     centered on the press point (--bx/--by), blended over the inverted pixels. */
+	/* The squished-crystal splotch, centered on --bx/--by over the inverted pixels. */
 	.bloom {
 		position: absolute;
 		inset: 0;

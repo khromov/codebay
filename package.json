@@ -1,11 +1,11 @@
 {
 	"name": "codebay",
-	"version": "0.1.0",
+	"version": "0.17.0",
 	"description": "Web UI for spinning up isolated devcontainer instances from any local folder, each with a browser-based VS Code (code-server) — built for parallel Claude Code workflows.",
 	"type": "module",
 	"license": "MIT",
 	"author": "Stanislav Khromov",
-	"homepage": "https://github.com/khromov/servbay#readme",
+	"homepage": "https://github.com/khromov/codebay#readme",
 	"bugs": {
 		"url": "https://github.com/khromov/codebay/issues"
 	},
@@ -28,9 +28,11 @@
 	"files": [
 		"bin",
 		"src",
+		"!src/**/*.test.ts",
 		"public",
 		"migrations",
 		".mochi",
+		"!.mochi/dev",
 		"svelte.config.js",
 		"README.md",
 		"LICENSE"
@@ -39,52 +41,59 @@
 		"access": "public"
 	},
 	"engines": {
-		"bun": ">=1.3.13"
+		"bun": ">=1.3.14"
 	},
 	"scripts": {
 		"build": "mochi-framework build",
 		"start": "bun src/index.ts",
-		"prod": "bun run build && PORT=6969 bun run start",
-		"dev": "MODE=development DISABLE_OPEN_BROWSER=1 DATA_DIR=./.codebay bun src/index.ts",
+		"prod": "bun run build && bun run start",
+		"dev": "MODE=development DISABLE_OPEN_BROWSER=1 DATA_DIR=./.codebay HOST=0.0.0.0 bun src/index.ts",
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
 		"test": "bun test",
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
-		"checks": "bun run format && bun run typecheck && bun run test",
+		"checks": "bun run format && eslint . && bun run typecheck && bun run test",
 		"clean": "rimraf .mochi",
 		"gen:chimes": "bun scripts/gen-chimes.ts",
 		"debug:tokens": "bun scripts/debug-tokens.ts",
-		"update:mochi": "bash scripts/update-mochi.sh"
+		"verify:package": "bun scripts/verify-package.ts"
 	},
 	"dependencies": {
-		"@devcontainers/cli": "^0.87.0",
-		"@fontsource-variable/doto": "^5.2.10",
-		"@fontsource-variable/jetbrains-mono": "^5.2.8",
-		"@lucide/svelte": "^1.21.0",
+		"@devcontainers/cli": "^0.88.0",
+		"@fontsource-variable/doto": "^5.3.0",
+		"@fontsource-variable/jetbrains-mono": "^5.3.0",
+		"@lucide/svelte": "^1.48.0",
+		"@tmcp/adapter-valibot": "^0.1.6",
+		"@tmcp/transport-http": "^0.9.0",
+		"@xterm/addon-fit": "^0.11.0",
+		"@xterm/xterm": "^6.0.0",
 		"@zihaolam/bun-sqlite-migrations": "^1.0.3",
 		"dockerode": "^5.0.1",
-		"mochi-framework": "file:./vendor/mochi-framework",
-		"svelte": "^5.56.4",
-		"svelte-french-toast": "^1.2.0"
+		"mochi-framework": "^0.9.1",
+		"svelte": "^5.57.1",
+		"svelte-french-toast": "^1.2.0",
+		"tmcp": "^1.20.0",
+		"valibot": "^1.5.0"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
 		"@types/bun": "1.3.14",
 		"@types/dockerode": "^4.0.1",
-		"eslint": "^10.6.0",
-		"eslint-plugin-svelte": "^3.20.0",
-		"globals": "^17.7.0",
-		"prettier": "^3.9.4",
+		"eslint": "^10.11.0",
+		"eslint-plugin-svelte": "^3.23.0",
+		"globals": "^17.12.0",
+		"prettier": "^3.9.9",
 		"prettier-plugin-svelte": "^4.1.1",
-		"svelte-check": "4.6.0",
+		"svelte-check": "4.7.4",
 		"typescript": "^6.0.3",
-		"typescript-eslint": "^8.62.1"
+		"typescript-eslint": "^8.70.1"
 	},
-	"overrides": {
+	"resolutions": {
 		"msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*",
-		"svelte": "5.56.4"
+		"nodemailer": "^10.1.4",
+		"svelte": "5.57.1"
 	},
 	"patchedDependencies": {
-		"svelte-check@4.6.0": "patches/svelte-check@4.6.0.patch"
+		"svelte-check@4.7.4": "patches/svelte-check@4.7.4.patch"
 	}
 }

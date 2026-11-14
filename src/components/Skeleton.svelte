@@ -1,6 +1,4 @@
 <script lang="ts">
-	// A shimmering placeholder bar shown while live data loads. `variant` picks a
-	// preset shape; `width` overrides the width for one-offs.
 	let {
 		variant = 'text',
 		width

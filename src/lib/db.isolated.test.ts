@@ -13,7 +13,16 @@ import type { InstanceRow } from './db.server.ts';
 
 const db = await import('./db.server.ts');
 
-afterAll(() => rmSync(dataDir, { recursive: true, force: true }));
+afterAll(() => {
+	// force: covers ENOENT only. Windows raises EBUSY here whenever this file's DATA_DIR won the
+	// race to open the globalThis-pinned SQLite handle, which is never closed; the OS reaps the
+	// temp dir either way, so a failed unlink must not fail the suite.
+	try {
+		rmSync(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+	} catch {
+		// Best-effort: it lives under the OS temp dir.
+	}
+});
 
 function makeInstance(id: string, hostPort: number): InstanceRow {
 	return {
@@ -29,7 +38,11 @@ function makeInstance(id: string, hostPort: number): InstanceRow {
 		created_at: Date.now(),
 		bridge_token: 'tok',
 		remote_user: null,
-		image_source: null
+		image_source: null,
+		avatar: null,
+		mode: 'ide',
+		terminal_split: 0,
+		config_migrated: 1
 	};
 }
 
@@ -80,6 +93,14 @@ describe('options key/value helpers', () => {
 		db.setOption('default_image', 'other/image:2');
 		expect(db.getOption('default_image')).toBe('other/image:2');
 	});
+
+	test('instance_filter round-trips through the option store', () => {
+		expect(db.getOption('instance_filter')).toBeNull();
+		db.setOption('instance_filter', 'active');
+		expect(db.getOption('instance_filter')).toBe('active');
+		db.setOption('instance_filter', 'stopped');
+		expect(db.getOption('instance_filter')).toBe('stopped');
+	});
 });
 
 describe('updateInstance image_source + insert round-trip', () => {
@@ -90,5 +111,19 @@ describe('updateInstance image_source + insert round-trip', () => {
 		expect(db.getInstance('img')?.image_source).toBe('local');
 		db.updateInstance('img', { image_source: 'mcr.microsoft.com/devcontainers/universal:2' });
 		expect(db.getInstance('img')?.image_source).toBe('mcr.microsoft.com/devcontainers/universal:2');
+	});
+
+	test('terminal_split defaults to closed and round-trips', () => {
+		db.insertInstance(makeInstance('split', 8102));
+		expect(db.getInstance('split')?.terminal_split).toBe(0);
+		db.updateInstance('split', { terminal_split: 1 });
+		expect(db.getInstance('split')?.terminal_split).toBe(1);
+	});
+
+	test('avatar persists through insert; null when unset', () => {
+		db.insertInstance(makeInstance('no-avatar', 8103));
+		expect(db.getInstance('no-avatar')?.avatar).toBeNull();
+		db.insertInstance({ ...makeInstance('has-avatar', 8104), avatar: 'octopus' });
+		expect(db.getInstance('has-avatar')?.avatar).toBe('octopus');
 	});
 });

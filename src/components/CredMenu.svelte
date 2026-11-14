@@ -9,9 +9,6 @@
 
 	let credOpen = $state(false);
 
-	// Aggregate auth status: green when every provider is authorized, red when none
-	// are, amber when some (but not all) are — e.g. Claude Code is signed in but no
-	// GitHub token was found, or git identity isn't configured yet.
 	const authedCount = $derived(auth.filter((a) => a.available).length);
 	const credState = $derived(
 		authedCount === auth.length ? 'ok' : authedCount === 0 ? 'error' : 'warn'
@@ -28,7 +25,6 @@
 		}
 	}
 
-	// Close the credentials dropdown on an outside click or Escape.
 	$effect(() => {
 		if (!credOpen) return;
 		const onClick = (e: MouseEvent) => {
@@ -92,13 +88,14 @@
 		height: 32px;
 		font-size: 14px;
 		line-height: 1;
-		border: 1px solid var(--ink);
-		background: var(--ink);
-		color: var(--bg);
+		border: 1px solid var(--fill);
+		background: var(--fill);
+		color: var(--fill-ink);
 		cursor: pointer;
 	}
 	.cred:hover {
 		background: var(--bg);
+		border-color: var(--edge);
 		color: var(--ink);
 	}
 	/* Auth states: ok = muted green, warn = tasteful yellow, error = outline-only. */
@@ -124,6 +121,7 @@
 	}
 	.cred.error {
 		background: var(--bg);
+		border-color: var(--edge);
 		color: var(--ink);
 	}
 	.cred-dropdown {
@@ -150,11 +148,11 @@
 		cursor: pointer;
 	}
 	.cred-row:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.cred-row:hover .cred-state {
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.dot {
 		flex: none;

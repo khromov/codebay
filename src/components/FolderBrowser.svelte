@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { BrowseResult, FolderHistoryEntry } from '../types.ts';
+	import type { BrowseResult, FolderHistoryEntry, InstanceMode } from '../types.ts';
 	import { isRepoUrl } from '../lib/repo-url.ts';
+	import { DRIVES_ROOT, DRIVES_ROOT_LABEL } from '../lib/drives.ts';
+	import Terminal from '@lucide/svelte/icons/terminal';
+	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import X from '@lucide/svelte/icons/x';
 	import FolderClock from '@lucide/svelte/icons/folder-clock';
 	import GitBranch from '@lucide/svelte/icons/git-branch';
@@ -12,9 +15,22 @@
 
 	let {
 		onpick,
-		onclose
-	}: { onpick: (source: string, opts?: { branch?: string }) => void; onclose: () => void } =
-		$props();
+		onclose,
+		defaultMode = 'ide',
+		initialMode = null
+	}: {
+		onpick: (source: string, opts?: { branch?: string; mode?: InstanceMode }) => void;
+		onclose: () => void;
+		defaultMode?: InstanceMode;
+		/** Opens pinned to this mode — set by the dashboard's mode shortcut button. */
+		initialMode?: InstanceMode | null;
+	} = $props();
+
+	// Follows the global default live — settings opens in its own popup, so the toggle there can
+	// move while this picker is open. An explicit choice here wins and is never yanked back.
+	// svelte-ignore state_referenced_locally
+	let modeOverride = $state<InstanceMode | null>(initialMode);
+	const mode = $derived(modeOverride ?? defaultMode);
 
 	let result = $state<BrowseResult | null>(null);
 	let loading = $state(true);
@@ -30,7 +46,7 @@
 
 	function cloneRepoUrl() {
 		if (!repoValid) return;
-		onpick(repoUrl.trim(), { branch: repoBranch.trim() || undefined });
+		onpick(repoUrl.trim(), { branch: repoBranch.trim() || undefined, mode });
 	}
 
 	const filtered = $derived(
@@ -38,6 +54,9 @@
 			? result.entries.filter((e) => e.name.toLowerCase().includes(query.trim().toLowerCase()))
 			: []
 	);
+
+	// The virtual drive list is a chooser, not a folder — nothing in it can be handed to an instance.
+	const atDrivesRoot = $derived(result?.path === DRIVES_ROOT);
 
 	const shownHistory = $derived(showAll ? history : history.slice(0, 5));
 
@@ -103,6 +122,32 @@
 			<button class="x" onclick={onclose} aria-label="Close"><X size={16} /></button>
 		</div>
 
+		<div class="mode">
+			<div class="mode-label">Editor</div>
+			<div class="mode-toggle" role="group" aria-label="Editor mode">
+				<button
+					type="button"
+					class="mode-btn"
+					class:active={mode === 'ide'}
+					aria-pressed={mode === 'ide'}
+					onclick={() => (modeOverride = 'ide')}
+				>
+					<LayoutTemplate size={15} />
+					Full IDE
+				</button>
+				<button
+					type="button"
+					class="mode-btn"
+					class:active={mode === 'terminal'}
+					aria-pressed={mode === 'terminal'}
+					onclick={() => (modeOverride = 'terminal')}
+				>
+					<Terminal size={15} />
+					Terminal
+				</button>
+			</div>
+		</div>
+
 		<div class="clone">
 			<div class="clone-label">Clone a Git repository</div>
 			<div class="clone-row">
@@ -139,7 +184,7 @@
 		</div>
 
 		<div class="crumbs">
-			<code>{result?.path ?? '…'}</code>
+			<code>{atDrivesRoot ? DRIVES_ROOT_LABEL : (result?.path ?? '…')}</code>
 		</div>
 
 		{#if history.length > 0}
@@ -147,7 +192,7 @@
 				<div class="recent-label">Recent</div>
 				{#each shownHistory as entry (entry.source_path)}
 					<div class="recent-row">
-						<button class="recent-pick" onclick={() => onpick(entry.source_path)}>
+						<button class="recent-pick" onclick={() => onpick(entry.source_path, { mode })}>
 							<span class="icon">
 								{#if isRepoUrl(entry.source_path)}<GitBranch size={16} />{:else}<FolderClock
 										size={16}
@@ -221,13 +266,13 @@
 							<span class="ename">{entry.name}</span>
 							{#if entry.hasDevcontainer}<span class="badge">devcontainer</span>{/if}
 						</button>
-						<button class="pick-inline" onclick={() => onpick(entry.path)}>Select</button>
+						<button class="pick-inline" onclick={() => onpick(entry.path, { mode })}>Select</button>
 					</div>
 				{/each}
 			{/if}
 		</div>
 
-		{#if result && !result.hasDevcontainer}
+		{#if result && !result.hasDevcontainer && !atDrivesRoot}
 			<div class="warn">
 				<TriangleAlert size={15} />
 				<span
@@ -238,8 +283,16 @@
 		{/if}
 
 		<div class="foot">
-			<span class="hint">Browse to a folder, then select this folder or any subfolder.</span>
-			<button class="primary" disabled={!result} onclick={() => result && onpick(result.path)}>
+			<span class="hint"
+				>{atDrivesRoot
+					? 'Pick a drive to browse.'
+					: 'Browse to a folder, then select this folder or any subfolder.'}</span
+			>
+			<button
+				class="primary"
+				disabled={!result || atDrivesRoot}
+				onclick={() => result && !atDrivesRoot && onpick(result.path, { mode })}
+			>
 				Select this folder
 			</button>
 		</div>
@@ -250,7 +303,7 @@
 	.overlay {
 		position: fixed;
 		inset: 0;
-		background: color-mix(in srgb, var(--ink) 50%, transparent);
+		background: var(--scrim);
 		display: grid;
 		place-items: center;
 		padding: 24px;
@@ -263,15 +316,15 @@
 		flex-direction: column;
 		background: var(--bg-card);
 		overflow: hidden;
-		box-shadow: 8px 8px 0 var(--ink);
+		box-shadow: 8px 8px 0 var(--shadow);
 	}
 	.head {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		padding: 14px 18px;
-		border-bottom: 1px solid var(--ink);
-		background: var(--ink);
+		border-bottom: 1px solid var(--fill);
+		background: var(--fill);
 	}
 	.head h2 {
 		margin: 0;
@@ -280,7 +333,7 @@
 		font-size: 17px;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.x {
 		display: inline-flex;
@@ -288,10 +341,49 @@
 		border: none;
 		background: none;
 		cursor: pointer;
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.x:hover {
 		opacity: 0.7;
+	}
+	.mode {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 12px 18px;
+		border-bottom: 1px solid var(--rule-soft);
+	}
+	.mode-label {
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--ink-faint);
+	}
+	.mode-toggle {
+		display: flex;
+		border: 1px solid var(--edge);
+	}
+	.mode-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-family: var(--font-mono);
+		font-weight: 700;
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 7px 14px;
+		border: none;
+		background: var(--bg);
+		color: var(--ink);
+		cursor: pointer;
+	}
+	.mode-btn + .mode-btn {
+		border-left: 1px solid var(--edge);
+	}
+	.mode-btn.active {
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.clone {
 		padding: 12px 18px;
@@ -341,18 +433,19 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		padding: 8px 14px;
-		border: 1px solid var(--ink);
-		background: var(--ink);
-		color: var(--bg);
+		border: 1px solid var(--fill);
+		background: var(--fill);
+		color: var(--fill-ink);
 		cursor: pointer;
 		white-space: nowrap;
 	}
 	.clone-btn:hover:not(:disabled) {
 		background: var(--bg-card);
+		border-color: var(--edge);
 		color: var(--ink);
 	}
 	.clone-btn:disabled {
-		opacity: 0.4;
+		opacity: var(--dim);
 		cursor: not-allowed;
 	}
 	.crumbs {
@@ -373,8 +466,7 @@
 	.recent {
 		padding: 8px;
 		border-bottom: 1px solid var(--rule-soft);
-		/* Don't let the folder list squish this; grow with content up to ~half the
-       picker, then scroll. */
+		/* Fixed so the folder list can't squish it. */
 		flex-shrink: 0;
 		max-height: 40vh;
 		overflow: auto;
@@ -407,11 +499,12 @@
 		color: var(--ink);
 	}
 	.recent-pick:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
-	.recent-pick:hover .recent-path {
-		color: var(--bg);
+	.recent-pick:hover .recent-path,
+	.recent-pick:hover .icon {
+		color: var(--fill-ink);
 	}
 	.recent-text {
 		display: flex;
@@ -451,8 +544,8 @@
 		opacity: 1;
 	}
 	.recent-x:hover {
-		color: var(--bg);
-		background: var(--ink);
+		color: var(--fill-ink);
+		background: var(--fill);
 	}
 	.recent-toggle {
 		margin: 4px 6px 2px;
@@ -520,11 +613,11 @@
 		color: var(--ink);
 	}
 	.row .nav:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.row .nav:hover .icon {
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.ename {
 		overflow: hidden;
@@ -539,12 +632,12 @@
 		letter-spacing: 0.08em;
 		color: var(--ink);
 		background: transparent;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 2px 5px;
 	}
 	.row .nav:hover .badge {
-		color: var(--bg);
-		border-color: var(--bg);
+		color: var(--fill-ink);
+		border-color: var(--fill-ink);
 	}
 	.pick-inline {
 		font-family: var(--font-mono);
@@ -553,14 +646,15 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		padding: 6px 10px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg-card);
 		cursor: pointer;
 		color: var(--ink);
 	}
 	.pick-inline:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 	.muted {
 		padding: 18px;
@@ -589,8 +683,7 @@
 	.warn code {
 		font-family: var(--font-mono);
 		font-size: 0.9em;
-		/* Intentional white glint to lift the code chip off the amber warn bg — not a palette token. */
-		background: rgba(255, 255, 255, 0.35);
+		background: var(--warn-chip);
 		border: 1px solid var(--warn-line);
 		padding: 0 5px;
 	}
@@ -600,7 +693,7 @@
 		justify-content: space-between;
 		gap: 12px;
 		padding: 14px 18px;
-		border-top: 1px solid var(--ink);
+		border-top: 1px solid var(--edge);
 	}
 	.hint {
 		font-family: var(--font-mono);
@@ -614,18 +707,19 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		padding: 9px 16px;
-		border: 1px solid var(--ink);
-		background: var(--ink);
-		color: var(--bg);
+		border: 1px solid var(--fill);
+		background: var(--fill);
+		color: var(--fill-ink);
 		cursor: pointer;
 		white-space: nowrap;
 	}
 	.primary:hover:not(:disabled) {
 		background: var(--bg-card);
+		border-color: var(--edge);
 		color: var(--ink);
 	}
 	.primary:disabled {
-		opacity: 0.4;
+		opacity: var(--dim);
 		cursor: not-allowed;
 	}
 	.icon {

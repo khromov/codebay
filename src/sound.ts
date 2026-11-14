@@ -1,7 +1,6 @@
 import { soundEnabled } from './settings.ts';
 
-/** Chime name → URL of its pre-rendered WAV (served from `public/sounds/`).
- * Generate/refresh these files with `bun run gen:chimes`. */
+/** Regenerate these WAVs with `bun run gen:chimes`. */
 const SOUNDS = {
 	done: '/sounds/done.wav', // brighter ascending pair
 	waiting: '/sounds/waiting.wav' // lower, more insistent
@@ -9,7 +8,6 @@ const SOUNDS = {
 
 type Chime = keyof typeof SOUNDS;
 
-/** Lazily-created <audio> elements, one per chime, reused across plays. */
 const elements: Partial<Record<Chime, HTMLAudioElement>> = {};
 let unlocked = false;
 
@@ -24,9 +22,7 @@ function element(name: Chime): HTMLAudioElement | null {
 	return el;
 }
 
-/** Prime each chime so later programmatic playback is allowed. Call from a
- * user-gesture handler — browsers block audio until the page has been
- * interacted with. A silent play/pause inside the gesture satisfies that. */
+/** Must be called from a user-gesture handler — a silent play/pause is what satisfies the browser. */
 export function unlockAudio(): void {
 	if (unlocked || typeof window === 'undefined') return;
 	unlocked = true;
@@ -48,7 +44,6 @@ export function unlockAudio(): void {
 	}
 }
 
-/** Play a short attention chime, unless the user has muted sound. */
 export function playChime(state: Chime): void {
 	if (!soundEnabled()) {
 		console.log(`[chime] playChime(${state}) — skipped (sound disabled in settings)`);
@@ -65,7 +60,6 @@ export function playChime(state: Chime): void {
 		);
 	}
 	el.currentTime = 0;
-	// Rejects if the page hasn't been interacted with yet; nothing to do but ignore.
 	void el
 		.play()
 		.then(() => console.log(`[chime] playChime(${state}) — playing`))

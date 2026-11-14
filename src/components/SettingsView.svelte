@@ -4,93 +4,533 @@
 	import Power from '@lucide/svelte/icons/power';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import Volume2 from '@lucide/svelte/icons/volume-2';
+	import Keyboard from '@lucide/svelte/icons/keyboard';
+	import PawPrint from '@lucide/svelte/icons/paw-print';
 	import SunMoon from '@lucide/svelte/icons/sun-moon';
 	import ThemePicker from './ThemePicker.svelte';
 	import Layers from '@lucide/svelte/icons/layers';
+	import Upload from '@lucide/svelte/icons/upload';
+	import FolderMinus from '@lucide/svelte/icons/folder-minus';
+	import FolderCog from '@lucide/svelte/icons/folder-cog';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Hammer from '@lucide/svelte/icons/hammer';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import UserCog from '@lucide/svelte/icons/user-cog';
+	import Cpu from '@lucide/svelte/icons/cpu';
+	import Variable from '@lucide/svelte/icons/variable';
+	import KeySquare from '@lucide/svelte/icons/key-square';
+	import Plus from '@lucide/svelte/icons/plus';
+	import X from '@lucide/svelte/icons/x';
+	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
+	import ListOrdered from '@lucide/svelte/icons/list-ordered';
+	import Boxes from '@lucide/svelte/icons/boxes';
+	import Puzzle from '@lucide/svelte/icons/puzzle';
+	import Plug from '@lucide/svelte/icons/plug';
 	import { Toaster } from 'svelte-french-toast';
-	import { soundEnabled, setSoundEnabled } from '../settings.ts';
+	import { TOAST_OPTIONS } from '../toast.ts';
+	import { flushSync } from 'svelte';
+	import { enhance } from 'mochi-framework';
+	import type { MochiEnhanceOptions } from 'mochi-framework';
+	import {
+		soundEnabled,
+		setSoundEnabled,
+		tabShortcutsEnabled,
+		setTabShortcutsEnabled
+	} from '../settings.ts';
 	import { playChime, unlockAudio } from '../sound.ts';
-	import { apiPost } from '../api.ts';
 	import Button from './Button.svelte';
 	import CoinButton from './CoinButton.svelte';
-	import AvatarEditor from './AvatarEditor.svelte';
+	import Avatar from './Avatar.svelte';
+	import { avatars, findAvatar, type AvatarArt } from '../avatars/index.ts';
+	import {
+		CLAUDE_PERMISSION_MODES,
+		CLAUDE_EFFORT_LEVELS,
+		CLAUDE_OUTPUT_STYLES,
+		type ClaudePermissionMode,
+		type ClaudeEffortLevel,
+		type ClaudeOutputStyle,
+		type InstanceMode
+	} from '../types.ts';
+	import Terminal from '@lucide/svelte/icons/terminal';
+	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
+	import ShieldCheck from '@lucide/svelte/icons/shield-check';
+	import Gauge from '@lucide/svelte/icons/gauge';
+	import MessageSquare from '@lucide/svelte/icons/message-square';
+	import ClipboardX from '@lucide/svelte/icons/clipboard-x';
+	import { installPopupBackTrap } from '../lib/popup-nav.ts';
+
+	/** Every settings form action fails with the same `{ error }` shape. */
+	type ActionFailure = { error: string };
 
 	let {
+		pet,
+		defaultMode,
+		claudePermissionMode,
+		claudeEffortLevel,
+		claudeOutputStyle,
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
+		workspaceUploadEnabled,
+		copyIgnorePatterns,
+		builtinCopyIgnore,
+		claudeConfigDir,
+		mcpEnabled,
+		mcpToken,
+		mcpUrl,
+		mcpPrAttribution,
+		gitIdentityEnabled,
+		gitIdentityName,
+		gitIdentityEmail,
 		dockerArch,
 		manualTokensEnabled,
 		githubTokenSet,
-		claudeTokenSet
+		claudeTokenSet,
+		customEndpointEnabled,
+		customEndpointBaseUrl,
+		customEndpointTokenSet,
+		customEndpointOpusModel,
+		customEndpointSonnetModel,
+		customEndpointHaikuModel,
+		customEndpointSmallFastModel,
+		customEndpointModel,
+		manualModelOverrideEnabled,
+		manualOpusModel,
+		manualSonnetModel,
+		manualHaikuModel,
+		manualSmallFastModel,
+		manualModel,
+		hostEnvVarsEnabled,
+		hostEnvVarNames,
+		hostEnvVarPresence,
+		customEnvVarsEnabled,
+		customEnvVarNames,
+		advancedSerialInjections,
+		advancedNoBuildkit,
+		advancedBlockingExtInstall,
+		version
 	}: {
+		pet?: AvatarArt;
+		defaultMode: InstanceMode;
+		claudePermissionMode: ClaudePermissionMode;
+		claudeEffortLevel: ClaudeEffortLevel;
+		claudeOutputStyle: ClaudeOutputStyle;
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
+		workspaceUploadEnabled: boolean;
+		copyIgnorePatterns: string;
+		builtinCopyIgnore: string;
+		claudeConfigDir: string;
+		mcpEnabled: boolean;
+		mcpToken: string;
+		mcpUrl: string;
+		mcpPrAttribution: boolean;
+		gitIdentityEnabled: boolean;
+		gitIdentityName: string;
+		gitIdentityEmail: string;
 		dockerArch: string | null;
 		manualTokensEnabled: boolean;
 		githubTokenSet: boolean;
 		claudeTokenSet: boolean;
+		customEndpointEnabled: boolean;
+		customEndpointBaseUrl: string;
+		customEndpointTokenSet: boolean;
+		customEndpointOpusModel: string;
+		customEndpointSonnetModel: string;
+		customEndpointHaikuModel: string;
+		customEndpointSmallFastModel: string;
+		customEndpointModel: string;
+		manualModelOverrideEnabled: boolean;
+		manualOpusModel: string;
+		manualSonnetModel: string;
+		manualHaikuModel: string;
+		manualSmallFastModel: string;
+		manualModel: string;
+		hostEnvVarsEnabled: boolean;
+		hostEnvVarNames: string[];
+		hostEnvVarPresence: Record<string, boolean>;
+		customEnvVarsEnabled: boolean;
+		customEnvVarNames: string[];
+		advancedSerialInjections: boolean;
+		advancedNoBuildkit: boolean;
+		advancedBlockingExtInstall: boolean;
+		version: string;
 	} = $props();
 
-	// Initialize from localStorage on the client; defaults to on during SSR.
+	// Defaults to on during SSR, where localStorage doesn't exist.
 	let sound = $state(soundEnabled());
+	let tabShortcuts = $state(tabShortcutsEnabled());
+
+	// DB-backed, so it initializes from the prop. Undefined is the off state — the header keeps its box logo.
+	// svelte-ignore state_referenced_locally
+	let petArt = $state(pet);
+	let savingPet = $state(false);
+	let petError = $state<string | null>(null);
 
 	let shuttingDown = $state(false);
+
+	$effect(() => installPopupBackTrap());
+
+	/** Only settleable after hydration — SSR has no origin to judge. */
+	let insecure = $state<{ origin: string; tunnel: string } | null>(null);
+	$effect(() => {
+		if (window.isSecureContext) return;
+		const port = location.port || '80';
+		insecure = {
+			origin: location.origin,
+			tunnel: `ssh -L ${port}:localhost:${port} ${location.hostname}`
+		};
+	});
+
+	/** Reused by every plain save form below; only the per-control state setters differ. */
+	function saveOpts<Success extends Record<string, unknown> = Record<string, unknown>>(handlers: {
+		setSaving: (v: boolean) => void;
+		setError: (v: string | null) => void;
+		setMsg?: (v: string | null) => void;
+		onSuccess: (data: Success | undefined) => void;
+		confirmMessage?: string;
+	}): MochiEnhanceOptions<Success, ActionFailure> {
+		return {
+			onPending: handlers.setSaving,
+			submit: ({ cancel }) => {
+				if (handlers.confirmMessage && !confirm(handlers.confirmMessage)) {
+					cancel();
+					return;
+				}
+				handlers.setError(null);
+				handlers.setMsg?.(null);
+				return ({ result }) => {
+					if (result.type === 'success') {
+						handlers.onSuccess(result.data);
+					} else if (result.type === 'failure') {
+						handlers.setError(result.data?.error ?? 'Request failed');
+					} else if (result.type === 'error') {
+						handlers.setError('Network error. Try again.');
+					}
+				};
+			}
+		};
+	}
+
+	/**
+	 * The optimistic flip is free: `onchange` fires before submit, so `formData`
+	 * already carries the new value. Failure reverts to the opposite of what was sent.
+	 */
+	function toggleOpts<Success extends Record<string, unknown> = Record<string, unknown>>(handlers: {
+		set: (v: boolean) => void;
+		setSaving: (v: boolean) => void;
+		setError: (v: string | null) => void;
+		onSuccess?: (data: Success | undefined) => void;
+	}): MochiEnhanceOptions<Success, ActionFailure> {
+		return {
+			onPending: handlers.setSaving,
+			submit: ({ formData }) => {
+				const intended = formData.get('enabled') === 'on';
+				handlers.setError(null);
+				return ({ result }) => {
+					if (result.type === 'success') {
+						handlers.onSuccess?.(result.data);
+						return;
+					}
+					handlers.set(!intended);
+					handlers.setError(
+						result.type === 'failure'
+							? (result.data?.error ?? 'Request failed')
+							: 'Network error. Try again.'
+					);
+				};
+			}
+		};
+	}
+
+	// DB-backed, so it initializes from the prop; a per-instance choice in the picker overrides it.
+	// svelte-ignore state_referenced_locally
+	let modeChoice = $state<InstanceMode>(defaultMode);
+	let savingMode = $state(false);
+	let modeError = $state<string | null>(null);
+	let modeFormEl: HTMLFormElement | undefined;
+
+	const defaultModeOpts = saveOpts<{ mode: InstanceMode }>({
+		setSaving: (v) => (savingMode = v),
+		setError: (v) => (modeError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.mode) modeChoice = data.mode;
+		}
+	});
+
+	// Set the bound hidden value then resubmit, mirroring the image reset (flushSync before requestSubmit).
+	function chooseMode(next: InstanceMode) {
+		if (next === modeChoice) return;
+		flushSync(() => (modeChoice = next));
+		modeFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let permissionChoice = $state<ClaudePermissionMode>(claudePermissionMode);
+	let savingPermission = $state(false);
+	let permissionError = $state<string | null>(null);
+	let permissionFormEl: HTMLFormElement | undefined;
+
+	const permissionModeOpts = saveOpts<{ mode: ClaudePermissionMode }>({
+		setSaving: (v) => (savingPermission = v),
+		setError: (v) => (permissionError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.mode) permissionChoice = data.mode;
+		}
+	});
+
+	const PERMISSION_LABELS: Record<ClaudePermissionMode, string> = {
+		default: 'Default',
+		manual: 'Manual',
+		auto: 'Auto',
+		plan: 'Plan'
+	};
+
+	function choosePermissionMode(next: ClaudePermissionMode) {
+		if (next === permissionChoice) return;
+		flushSync(() => (permissionChoice = next));
+		permissionFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let effortChoice = $state<ClaudeEffortLevel>(claudeEffortLevel);
+	let savingEffort = $state(false);
+	let effortError = $state<string | null>(null);
+	let effortFormEl: HTMLFormElement | undefined;
+
+	const effortLevelOpts = saveOpts<{ level: ClaudeEffortLevel }>({
+		setSaving: (v) => (savingEffort = v),
+		setError: (v) => (effortError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.level) effortChoice = data.level;
+		}
+	});
+
+	const EFFORT_LABELS: Record<ClaudeEffortLevel, string> = {
+		low: 'Low',
+		medium: 'Medium',
+		high: 'High',
+		xhigh: 'X-High',
+		max: 'Max'
+	};
+
+	function chooseEffort(next: ClaudeEffortLevel) {
+		if (next === effortChoice) return;
+		flushSync(() => (effortChoice = next));
+		effortFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let outputStyleChoice = $state<ClaudeOutputStyle>(claudeOutputStyle);
+	let savingOutputStyle = $state(false);
+	let outputStyleError = $state<string | null>(null);
+	let outputStyleFormEl: HTMLFormElement | undefined;
+
+	const outputStyleOpts = saveOpts<{ style: ClaudeOutputStyle }>({
+		setSaving: (v) => (savingOutputStyle = v),
+		setError: (v) => (outputStyleError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.style) outputStyleChoice = data.style;
+		}
+	});
+
+	const OUTPUT_STYLE_LABELS: Record<ClaudeOutputStyle, string> = {
+		default: 'Default',
+		none: 'None',
+		Concise: 'Concise'
+	};
+
+	function chooseOutputStyle(next: ClaudeOutputStyle) {
+		if (next === outputStyleChoice) return;
+		flushSync(() => (outputStyleChoice = next));
+		outputStyleFormEl?.requestSubmit();
+	}
 
 	// svelte-ignore state_referenced_locally
 	let image = $state(defaultImage);
 	let savingImage = $state(false);
 	let imageError = $state<string | null>(null);
 	let imageSaved = $state(false);
+	let imageFormEl: HTMLFormElement | undefined;
 
-	async function persistImage(value: string) {
-		if (!value) {
-			imageError = 'Enter an image reference';
-			return;
-		}
-		imageError = null;
-		imageSaved = false;
-		savingImage = true;
-		try {
-			await apiPost('/api/settings/default-image', { image: value });
-			image = value;
+	const imageOpts = saveOpts<{ image: string }>({
+		setSaving: (v) => (savingImage = v),
+		setError: (v) => (imageError = v),
+		setMsg: (v) => (imageSaved = !!v),
+		onSuccess: (data) => {
+			image = data?.image ?? image;
 			imageSaved = true;
-		} catch (err) {
-			imageError = (err as Error).message;
-		} finally {
-			savingImage = false;
+		}
+	});
+
+	// Setting the bound value then resubmitting keeps this a one-form control.
+	function resetImage() {
+		// flushSync forces the bind:value DOM update to happen before requestSubmit
+		// reads the input's value via FormData — otherwise it would submit the stale value.
+		flushSync(() => (image = builtinImage));
+		imageFormEl?.requestSubmit();
+	}
+
+	// Unlike the image field, an empty value is valid here — it means "copy everything".
+	// svelte-ignore state_referenced_locally
+	let copyIgnore = $state(copyIgnorePatterns);
+	let savingCopyIgnore = $state(false);
+	let copyIgnoreError = $state<string | null>(null);
+	let copyIgnoreSaved = $state(false);
+	let copyIgnoreFormEl: HTMLFormElement | undefined;
+
+	const copyIgnoreOpts = saveOpts<{ patterns: string }>({
+		setSaving: (v) => (savingCopyIgnore = v),
+		setError: (v) => (copyIgnoreError = v),
+		setMsg: (v) => (copyIgnoreSaved = !!v),
+		onSuccess: (data) => {
+			copyIgnore = data?.patterns ?? copyIgnore;
+			copyIgnoreSaved = true;
+		}
+	});
+
+	function resetCopyIgnore() {
+		flushSync(() => (copyIgnore = builtinCopyIgnore));
+		copyIgnoreFormEl?.requestSubmit();
+	}
+
+	// Blank means "use ~/.claude" — the host dir the Claude config injections read from.
+	// svelte-ignore state_referenced_locally
+	let claudeDir = $state(claudeConfigDir);
+	let savingClaudeDir = $state(false);
+	let claudeDirError = $state<string | null>(null);
+	let claudeDirSaved = $state(false);
+	let claudeDirFormEl: HTMLFormElement | undefined;
+
+	const claudeDirOpts = saveOpts<{ dir: string }>({
+		setSaving: (v) => (savingClaudeDir = v),
+		setError: (v) => (claudeDirError = v),
+		setMsg: (v) => (claudeDirSaved = !!v),
+		onSuccess: (data) => {
+			claudeDir = data?.dir ?? claudeDir;
+			claudeDirSaved = true;
+		}
+	});
+
+	function resetClaudeDir() {
+		flushSync(() => (claudeDir = ''));
+		claudeDirFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let mcp = $state(mcpEnabled);
+	// Unlike every other secret here this one round-trips to the client — a human has to copy it.
+	// svelte-ignore state_referenced_locally
+	let mcpTokenValue = $state(mcpToken);
+	let savingMcpToggle = $state(false);
+	let mcpToggleError = $state<string | null>(null);
+	let savingMcpToken = $state(false);
+	let mcpTokenError = $state<string | null>(null);
+	let mcpCopied = $state<string | null>(null);
+
+	const mcpToggleOpts = toggleOpts<{ enabled: boolean; token: string }>({
+		set: (v) => (mcp = v),
+		setSaving: (v) => (savingMcpToggle = v),
+		setError: (v) => (mcpToggleError = v),
+		onSuccess: (data) => (mcpTokenValue = data?.token ?? '')
+	});
+
+	const mcpTokenOpts = saveOpts<{ token: string }>({
+		setSaving: (v) => (savingMcpToken = v),
+		setError: (v) => (mcpTokenError = v),
+		onSuccess: (data) => (mcpTokenValue = data?.token ?? ''),
+		confirmMessage:
+			'Regenerate the MCP token? Any agent already configured with the current token will stop working.'
+	});
+
+	// svelte-ignore state_referenced_locally
+	let mcpAttribution = $state(mcpPrAttribution);
+	let savingMcpAttribution = $state(false);
+	let mcpAttributionError = $state<string | null>(null);
+
+	const mcpAttributionOpts = toggleOpts({
+		set: (v) => (mcpAttribution = v),
+		setSaving: (v) => (savingMcpAttribution = v),
+		setError: (v) => (mcpAttributionError = v)
+	});
+
+	const mcpCommand = $derived(
+		`claude mcp add --transport http codebay ${mcpUrl} --header "Authorization: Bearer ${mcpTokenValue}"`
+	);
+
+	async function copyMcp(label: string, text: string) {
+		try {
+			await navigator.clipboard.writeText(text);
+			mcpCopied = label;
+			setTimeout(() => (mcpCopied = null), 1500);
+		} catch {
+			mcpTokenError = 'Could not copy — select the text and copy it manually.';
 		}
 	}
 
-	function saveImage(e: Event) {
-		e.preventDefault();
-		void persistImage(image.trim());
-	}
+	// svelte-ignore state_referenced_locally
+	let gitIdentity = $state(gitIdentityEnabled);
+	let savingGitToggle = $state(false);
+	let gitToggleError = $state<string | null>(null);
 
-	// Restore the built-in default image and persist it.
-	function resetImage() {
-		image = builtinImage;
-		void persistImage(builtinImage);
-	}
+	const gitIdentityToggleOpts = toggleOpts({
+		set: (v) => (gitIdentity = v),
+		setSaving: (v) => (savingGitToggle = v),
+		setError: (v) => (gitToggleError = v)
+	});
 
-	// Build cache — the DB-backed "disable cache" flag is the source of truth (unlike
-	// the localStorage sound toggle), so initialize from the prop and persist on change.
+	// Both fields must be saved together — a lone name or email doesn't count as an override.
+	// svelte-ignore state_referenced_locally
+	let gitName = $state(gitIdentityName);
+	// svelte-ignore state_referenced_locally
+	let gitEmail = $state(gitIdentityEmail);
+	let savingGitIdentity = $state(false);
+	let gitIdentityError = $state<string | null>(null);
+	let gitIdentitySaved = $state(false);
+
+	const gitIdentityOpts = saveOpts<{ name: string; email: string }>({
+		setSaving: (v) => (savingGitIdentity = v),
+		setError: (v) => (gitIdentityError = v),
+		setMsg: (v) => (gitIdentitySaved = !!v),
+		onSuccess: (data) => {
+			gitName = data?.name ?? gitName;
+			gitEmail = data?.email ?? gitEmail;
+			gitIdentitySaved = true;
+		}
+	});
+
+	// DB-backed rather than localStorage, so it initializes from the prop.
 	// svelte-ignore state_referenced_locally
 	let noCache = $state(disableBuildCache);
 	let savingCache = $state(false);
 	let cacheError = $state<string | null>(null);
 
+	const buildCacheToggleOpts = toggleOpts({
+		set: (v) => (noCache = v),
+		setSaving: (v) => (savingCache = v),
+		setError: (v) => (cacheError = v)
+	});
+
+	// DB-backed rather than localStorage, so it initializes from the prop.
+	// svelte-ignore state_referenced_locally
+	let workspaceUpload = $state(workspaceUploadEnabled);
+	let savingUpload = $state(false);
+	let uploadError = $state<string | null>(null);
+
+	const uploadToggleOpts = toggleOpts({
+		set: (v) => (workspaceUpload = v),
+		setSaving: (v) => (savingUpload = v),
+		setError: (v) => (uploadError = v)
+	});
+
 	let clearing = $state(false);
 	let clearMsg = $state<string | null>(null);
 	let clearError = $state<string | null>(null);
-
-	let rebuilding = $state(false);
-	let rebuildMsg = $state<string | null>(null);
-	let rebuildError = $state<string | null>(null);
 
 	function formatBytes(n: number): string {
 		if (n <= 0) return '0 B';
@@ -99,62 +539,85 @@
 		return `${(n / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 	}
 
-	async function toggleBuildCache(on: boolean) {
-		noCache = on;
-		cacheError = null;
-		savingCache = true;
-		try {
-			await apiPost('/api/settings/disable-build-cache', { enabled: on });
-		} catch (err) {
-			noCache = !on; // revert the optimistic flip on failure
-			cacheError = (err as Error).message;
-		} finally {
-			savingCache = false;
+	const clearCacheOpts = saveOpts<{ spaceReclaimed: number }>({
+		setSaving: (v) => (clearing = v),
+		setError: (v) => (clearError = v),
+		setMsg: (v) => (clearMsg = v),
+		onSuccess: (data) => {
+			clearMsg = `Cleared — freed ${formatBytes(data?.spaceReclaimed ?? 0)}.`;
 		}
-	}
+	});
 
-	async function clearBuildCache() {
-		clearError = null;
-		clearMsg = null;
-		clearing = true;
-		try {
-			const res = (await apiPost('/api/settings/clear-build-cache')) as { spaceReclaimed?: number };
-			clearMsg = `Cleared — freed ${formatBytes(res?.spaceReclaimed ?? 0)}.`;
-		} catch (err) {
-			clearError = (err as Error).message;
-		} finally {
-			clearing = false;
-		}
-	}
+	let rebuilding = $state(false);
+	let rebuildMsg = $state<string | null>(null);
+	let rebuildError = $state<string | null>(null);
 
-	async function rebuildAllNoCache() {
-		if (
-			!confirm(
-				'Rebuild every running container from scratch (no build cache)? Each will restart and may take a while.'
-			)
-		)
-			return;
-		rebuildError = null;
-		rebuildMsg = null;
-		rebuilding = true;
-		try {
-			const res = (await apiPost('/api/instances/rebuild-all-no-cache')) as { count?: number };
-			const n = res?.count ?? 0;
+	const rebuildAllOpts = saveOpts<{ count: number }>({
+		setSaving: (v) => (rebuilding = v),
+		setError: (v) => (rebuildError = v),
+		setMsg: (v) => (rebuildMsg = v),
+		confirmMessage:
+			'Rebuild every running container from scratch (no build cache)? Each will restart and may take a while.',
+		onSuccess: (data) => {
+			const n = data?.count ?? 0;
 			rebuildMsg = n === 0 ? 'No running containers to rebuild.' : `Rebuilding ${n} container(s)…`;
-		} catch (err) {
-			rebuildError = (err as Error).message;
-		} finally {
-			rebuilding = false;
 		}
-	}
+	});
 
-	// Manual credential tokens. The DB is the source of truth; initialize the toggle
-	// from the prop. Token values are never sent to the client — we only know whether
-	// each is already set (to show a "saved" placeholder) and never render the secret.
+	// DB-backed advanced escape hatches, so they initialize from the props.
+	// svelte-ignore state_referenced_locally
+	let serialInjections = $state(advancedSerialInjections);
+	let savingSerial = $state(false);
+	let serialError = $state<string | null>(null);
+	const serialOpts = toggleOpts({
+		set: (v) => (serialInjections = v),
+		setSaving: (v) => (savingSerial = v),
+		setError: (v) => (serialError = v)
+	});
+
+	// svelte-ignore state_referenced_locally
+	let noBuildkit = $state(advancedNoBuildkit);
+	let savingBuildkit = $state(false);
+	let buildkitError = $state<string | null>(null);
+	const buildkitOpts = toggleOpts({
+		set: (v) => (noBuildkit = v),
+		setSaving: (v) => (savingBuildkit = v),
+		setError: (v) => (buildkitError = v)
+	});
+
+	// svelte-ignore state_referenced_locally
+	let blockingExtInstall = $state(advancedBlockingExtInstall);
+	let savingBlocking = $state(false);
+	let blockingError = $state<string | null>(null);
+	const blockingOpts = toggleOpts({
+		set: (v) => (blockingExtInstall = v),
+		setSaving: (v) => (savingBlocking = v),
+		setError: (v) => (blockingError = v)
+	});
+
+	let clearingVer = $state(false);
+	let verMsg = $state<string | null>(null);
+	let verError = $state<string | null>(null);
+	const clearVersionOpts = saveOpts({
+		setSaving: (v) => (clearingVer = v),
+		setError: (v) => (verError = v),
+		setMsg: (v) => (verMsg = v),
+		onSuccess: () => {
+			verMsg = 'Cleared — the next instance boot re-checks the registry.';
+		}
+	});
+
+	// Token values never reach the client; only whether each is set, for the placeholder.
 	// svelte-ignore state_referenced_locally
 	let manualTokens = $state(manualTokensEnabled);
 	let savingManualToggle = $state(false);
 	let manualToggleError = $state<string | null>(null);
+
+	const manualTokensToggleOpts = toggleOpts({
+		set: (v) => (manualTokens = v),
+		setSaving: (v) => (savingManualToggle = v),
+		setError: (v) => (manualToggleError = v)
+	});
 
 	// svelte-ignore state_referenced_locally
 	let ghSaved = $state(githubTokenSet);
@@ -163,6 +626,17 @@
 	let githubMsg = $state<string | null>(null);
 	let githubError = $state<string | null>(null);
 
+	const githubTokenOpts = saveOpts<{ set: boolean }>({
+		setSaving: (v) => (savingGithub = v),
+		setError: (v) => (githubError = v),
+		setMsg: (v) => (githubMsg = v),
+		onSuccess: (data) => {
+			ghSaved = data?.set ?? false;
+			githubToken = '';
+			githubMsg = ghSaved ? 'Saved.' : 'Cleared.';
+		}
+	});
+
 	// svelte-ignore state_referenced_locally
 	let claudeSaved = $state(claudeTokenSet);
 	let claudeToken = $state('');
@@ -170,52 +644,284 @@
 	let claudeMsg = $state<string | null>(null);
 	let claudeError = $state<string | null>(null);
 
-	async function toggleManualTokens(on: boolean) {
-		manualTokens = on;
-		manualToggleError = null;
-		savingManualToggle = true;
-		try {
-			await apiPost('/api/settings/manual-tokens', { enabled: on });
-		} catch (err) {
-			manualTokens = !on; // revert the optimistic flip on failure
-			manualToggleError = (err as Error).message;
-		} finally {
-			savingManualToggle = false;
-		}
-	}
-
-	async function saveGithubToken(e: Event) {
-		e.preventDefault();
-		githubError = null;
-		githubMsg = null;
-		savingGithub = true;
-		try {
-			await apiPost('/api/settings/manual-tokens', { githubToken: githubToken.trim() });
-			ghSaved = githubToken.trim().length > 0;
-			githubToken = '';
-			githubMsg = ghSaved ? 'Saved.' : 'Cleared.';
-		} catch (err) {
-			githubError = (err as Error).message;
-		} finally {
-			savingGithub = false;
-		}
-	}
-
-	async function saveClaudeToken(e: Event) {
-		e.preventDefault();
-		claudeError = null;
-		claudeMsg = null;
-		savingClaude = true;
-		try {
-			await apiPost('/api/settings/manual-tokens', { claudeToken: claudeToken.trim() });
-			claudeSaved = claudeToken.trim().length > 0;
+	const claudeTokenOpts = saveOpts<{ set: boolean }>({
+		setSaving: (v) => (savingClaude = v),
+		setError: (v) => (claudeError = v),
+		setMsg: (v) => (claudeMsg = v),
+		onSuccess: (data) => {
+			claudeSaved = data?.set ?? false;
 			claudeToken = '';
 			claudeMsg = claudeSaved ? 'Saved.' : 'Cleared.';
-		} catch (err) {
-			claudeError = (err as Error).message;
-		} finally {
-			savingClaude = false;
 		}
+	});
+
+	// As with manual tokens, the token value never comes back from the server.
+	// svelte-ignore state_referenced_locally
+	let customEndpoint = $state(customEndpointEnabled);
+	let savingCustomToggle = $state(false);
+	let customToggleError = $state<string | null>(null);
+
+	const customEndpointToggleOpts = toggleOpts({
+		set: (v) => (customEndpoint = v),
+		setSaving: (v) => (savingCustomToggle = v),
+		setError: (v) => (customToggleError = v),
+		// Enabling LiteLLM disables the manual override server-side; keep the UI in sync.
+		onSuccess: (data) => {
+			if ((data as { enabled?: boolean } | undefined)?.enabled) manualModelOverride = false;
+		}
+	});
+
+	// svelte-ignore state_referenced_locally
+	let customBaseUrl = $state(customEndpointBaseUrl);
+	let savingCustomBaseUrl = $state(false);
+	let customBaseUrlMsg = $state<string | null>(null);
+	let customBaseUrlError = $state<string | null>(null);
+
+	const customBaseUrlOpts = saveOpts<{ set: boolean }>({
+		setSaving: (v) => (savingCustomBaseUrl = v),
+		setError: (v) => (customBaseUrlError = v),
+		setMsg: (v) => (customBaseUrlMsg = v),
+		onSuccess: (data) => {
+			customBaseUrlMsg = data?.set ? 'Saved.' : 'Cleared.';
+		}
+	});
+
+	let customToken = $state('');
+	// svelte-ignore state_referenced_locally
+	let customTokenSaved = $state(customEndpointTokenSet);
+	let savingCustomToken = $state(false);
+	let customTokenMsg = $state<string | null>(null);
+	let customTokenError = $state<string | null>(null);
+
+	const customTokenOpts = saveOpts<{ set: boolean }>({
+		setSaving: (v) => (savingCustomToken = v),
+		setError: (v) => (customTokenError = v),
+		setMsg: (v) => (customTokenMsg = v),
+		onSuccess: (data) => {
+			customTokenSaved = data?.set ?? false;
+			customToken = '';
+			customTokenMsg = customTokenSaved ? 'Saved.' : 'Cleared.';
+		}
+	});
+
+	// svelte-ignore state_referenced_locally
+	let customOpusModel = $state(customEndpointOpusModel);
+	// svelte-ignore state_referenced_locally
+	let customSonnetModel = $state(customEndpointSonnetModel);
+	// svelte-ignore state_referenced_locally
+	let customHaikuModel = $state(customEndpointHaikuModel);
+	// svelte-ignore state_referenced_locally
+	let customSmallFastModel = $state(customEndpointSmallFastModel);
+	// svelte-ignore state_referenced_locally
+	let customDefaultModel = $state(customEndpointModel);
+	let savingCustomModels = $state(false);
+	let customModelsMsg = $state<string | null>(null);
+	let customModelsError = $state<string | null>(null);
+
+	const customModelsOpts = saveOpts({
+		setSaving: (v) => (savingCustomModels = v),
+		setError: (v) => (customModelsError = v),
+		setMsg: (v) => (customModelsMsg = v),
+		onSuccess: () => {
+			customModelsMsg = 'Saved.';
+		}
+	});
+
+	// svelte-ignore state_referenced_locally
+	let manualModelOverride = $state(manualModelOverrideEnabled);
+	let savingManualModelToggle = $state(false);
+	let manualModelToggleError = $state<string | null>(null);
+
+	const manualModelToggleOpts = toggleOpts({
+		set: (v) => (manualModelOverride = v),
+		setSaving: (v) => (savingManualModelToggle = v),
+		setError: (v) => (manualModelToggleError = v),
+		// Enabling this disables LiteLLM server-side; mirror that here so the UI stays consistent.
+		onSuccess: (data) => {
+			if ((data as { enabled?: boolean } | undefined)?.enabled) customEndpoint = false;
+		}
+	});
+
+	// svelte-ignore state_referenced_locally
+	let manualOpus = $state(manualOpusModel);
+	// svelte-ignore state_referenced_locally
+	let manualSonnet = $state(manualSonnetModel);
+	// svelte-ignore state_referenced_locally
+	let manualHaiku = $state(manualHaikuModel);
+	// svelte-ignore state_referenced_locally
+	let manualSmallFast = $state(manualSmallFastModel);
+	// svelte-ignore state_referenced_locally
+	let manualDefault = $state(manualModel);
+	let savingManualModels = $state(false);
+	let manualModelsMsg = $state<string | null>(null);
+	let manualModelsError = $state<string | null>(null);
+
+	const manualModelsOpts = saveOpts({
+		setSaving: (v) => (savingManualModels = v),
+		setError: (v) => (manualModelsError = v),
+		setMsg: (v) => (manualModelsMsg = v),
+		onSuccess: () => {
+			manualModelsMsg = 'Saved.';
+		}
+	});
+
+	// LiteLLM is incompatible with both manual tokens and the manual model override.
+	let litellmBlocker = $derived(
+		manualTokens ? 'Set tokens manually' : manualModelOverride ? 'Override models manually' : null
+	);
+
+	// Only names round-trip; `hostEnvPresence` is refreshed from each save response so a
+	// newly-added name doesn't read as "missing" until the next full page load.
+	// svelte-ignore state_referenced_locally
+	let hostEnvVars = $state(hostEnvVarsEnabled);
+	let savingHostEnvToggle = $state(false);
+	let hostEnvToggleError = $state<string | null>(null);
+
+	const hostEnvVarsToggleOpts = toggleOpts<{ presence: Record<string, boolean> }>({
+		set: (v) => (hostEnvVars = v),
+		setSaving: (v) => (savingHostEnvToggle = v),
+		setError: (v) => (hostEnvToggleError = v),
+		onSuccess: (data) => {
+			hostEnvPresence = data?.presence ?? {};
+		}
+	});
+
+	// svelte-ignore state_referenced_locally
+	let hostEnvNames = $state([...hostEnvVarNames]);
+	// svelte-ignore state_referenced_locally
+	let hostEnvPresence = $state({ ...hostEnvVarPresence });
+	let newHostEnvName = $state('');
+	let savingHostEnvNames = $state(false);
+	let hostEnvNamesMsg = $state<string | null>(null);
+	let hostEnvNamesError = $state<string | null>(null);
+
+	/**
+	 * Add form: submits every existing name (as hidden inputs) plus the free-text
+	 * input, all under the repeated `names` field — the last entry is always the
+	 * typed value. Validated and normalized (uppercased, deduped) here, in the
+	 * submit callback, by mutating `formData` directly before the fetch fires —
+	 * mirrors the old client-side pre-check without a second code path.
+	 */
+	const addHostEnvOpts: MochiEnhanceOptions<{ presence: Record<string, boolean> }, ActionFailure> =
+		{
+			onPending: (v) => (savingHostEnvNames = v),
+			submit: ({ formData, cancel }) => {
+				hostEnvNamesError = null;
+				hostEnvNamesMsg = null;
+				const existing = formData.getAll('names').map(String);
+				const typed = existing.pop() ?? '';
+				const name = typed.trim().toUpperCase();
+				if (!name) {
+					cancel();
+					return;
+				}
+				if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+					hostEnvNamesError = `Invalid variable name: ${name}`;
+					cancel();
+					return;
+				}
+				newHostEnvName = '';
+				if (existing.includes(name)) {
+					cancel();
+					return;
+				}
+				const names = [...existing, name];
+				formData.delete('names');
+				for (const n of names) formData.append('names', n);
+				return ({ result }) => {
+					if (result.type === 'success') {
+						hostEnvNames = names;
+						hostEnvPresence = result.data?.presence ?? {};
+						hostEnvNamesMsg = 'Saved.';
+					} else if (result.type === 'failure') {
+						hostEnvNamesError = result.data?.error ?? 'Request failed';
+					} else if (result.type === 'error') {
+						hostEnvNamesError = 'Network error. Try again.';
+					}
+				};
+			}
+		};
+
+	/** Remove form (one per row): submits every name except this one. */
+	function removeHostEnvOpts(name: string) {
+		return saveOpts<{ presence: Record<string, boolean> }>({
+			setSaving: (v) => (savingHostEnvNames = v),
+			setError: (v) => (hostEnvNamesError = v),
+			setMsg: (v) => (hostEnvNamesMsg = v),
+			onSuccess: (data) => {
+				hostEnvNames = hostEnvNames.filter((n) => n !== name);
+				hostEnvPresence = data?.presence ?? {};
+			}
+		});
+	}
+
+	// svelte-ignore state_referenced_locally
+	let customEnvEnabled = $state(customEnvVarsEnabled);
+	let savingCustomEnvToggle = $state(false);
+	let customEnvToggleError = $state<string | null>(null);
+
+	const customEnvVarsToggleOpts = toggleOpts({
+		set: (v) => (customEnvEnabled = v),
+		setSaving: (v) => (savingCustomEnvToggle = v),
+		setError: (v) => (customEnvToggleError = v)
+	});
+
+	// Only names round-trip; the secret values live server-side and are shown here as a placeholder.
+	// svelte-ignore state_referenced_locally
+	let customEnvNames = $state([...customEnvVarNames]);
+	let newCustomEnvName = $state('');
+	let newCustomEnvValue = $state('');
+	let savingCustomEnv = $state(false);
+	let customEnvMsg = $state<string | null>(null);
+	let customEnvError = $state<string | null>(null);
+
+	/**
+	 * Add/update one var: name + secret value are submitted alone (the client never holds the other
+	 * secrets to resubmit), so re-adding an existing name upserts its value server-side.
+	 */
+	const addCustomEnvOpts: MochiEnhanceOptions<{ names: string[] }, ActionFailure> = {
+		onPending: (v) => (savingCustomEnv = v),
+		submit: ({ formData, cancel }) => {
+			customEnvError = null;
+			customEnvMsg = null;
+			const name = String(formData.get('name') ?? '').trim();
+			const value = String(formData.get('value') ?? '');
+			if (!name || !value) {
+				customEnvError = !name ? 'Name is required.' : 'Value is required.';
+				cancel();
+				return;
+			}
+			if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+				customEnvError = `Invalid variable name: ${name}`;
+				cancel();
+				return;
+			}
+			formData.set('name', name);
+			return ({ result }) => {
+				if (result.type === 'success') {
+					customEnvNames = result.data?.names ?? customEnvNames;
+					newCustomEnvName = '';
+					newCustomEnvValue = '';
+					customEnvMsg = 'Saved.';
+				} else if (result.type === 'failure') {
+					customEnvError = result.data?.error ?? 'Request failed';
+				} else if (result.type === 'error') {
+					customEnvError = 'Network error. Try again.';
+				}
+			};
+		}
+	};
+
+	/** Remove form (one per row): posts just this var's name. */
+	function removeCustomEnvOpts(name: string) {
+		return saveOpts<{ names: string[] }>({
+			setSaving: (v) => (savingCustomEnv = v),
+			setError: (v) => (customEnvError = v),
+			setMsg: (v) => (customEnvMsg = v),
+			onSuccess: (data) => {
+				customEnvNames = data?.names ?? customEnvNames.filter((n) => n !== name);
+			}
+		});
 	}
 
 	function toggleSound(on: boolean) {
@@ -226,30 +932,53 @@
 		if (on) playChime('done');
 	}
 
-	// Easter egg: the coin in the corner opens a pixel editor for drawing (and
-	// contributing) a new avatar sprite.
-	let avatarEditorOpen = $state(false);
-
-	function openAvatarEditor() {
-		unlockAudio();
-		if (sound) playChime('done');
-		avatarEditorOpen = true;
+	function toggleTabShortcuts(on: boolean) {
+		tabShortcuts = on;
+		setTabShortcutsEnabled(on);
 	}
 
-	async function deleteAndShutdown() {
-		if (
-			!confirm(
-				'Delete the database, remove all instances and their containers, and shut down the server? This cannot be undone.'
-			)
-		)
-			return;
-		shuttingDown = true;
-		try {
-			await apiPost('/api/shutdown');
-		} catch {
-			// The server exits mid-response, so a network error here is expected.
+	// State is object-shaped (the chosen sprite), so this can't reuse the boolean `toggleOpts`.
+	const petToggleOpts: MochiEnhanceOptions<{ enabled: boolean; name?: string }, ActionFailure> = {
+		onPending: (v) => (savingPet = v),
+		submit: () => {
+			petError = null;
+			return ({ result }) => {
+				if (result.type === 'success') {
+					petArt = result.data?.name ? findAvatar(result.data.name) : undefined;
+					return;
+				}
+				petError =
+					result.type === 'failure'
+						? (result.data?.error ?? 'Request failed')
+						: 'Network error. Try again.';
+			};
 		}
+	};
+
+	function petChooseOpts(art: AvatarArt) {
+		return saveOpts<{ name: string }>({
+			setSaving: (v) => (savingPet = v),
+			setError: (v) => (petError = v),
+			onSuccess: (data) => {
+				petArt = (data?.name ? findAvatar(data.name) : undefined) ?? art;
+			}
+		});
 	}
+
+	// The server exits mid-flight, so a dropped connection means success here too.
+	const shutdownOpts: MochiEnhanceOptions<Record<string, never>, ActionFailure> = {
+		submit: ({ cancel }) => {
+			if (
+				!confirm(
+					'Delete the database, remove all instances and their containers, and shut down the server? This cannot be undone.'
+				)
+			) {
+				cancel();
+				return;
+			}
+			shuttingDown = true;
+		}
+	};
 </script>
 
 <div class="page">
@@ -258,10 +987,211 @@
 	</AppBar>
 
 	<main class="content">
+		{#if insecure}
+			<section class="card">
+				<div class="row">
+					<div class="label">
+						<ClipboardX size={20} />
+						<div class="text">
+							<div class="name">Copying out of a terminal may not work on this address</div>
+							<div class="desc">
+								Browsers hand out clipboard access only on a secure origin, and
+								<code>{insecure.origin}</code> isn't one — so a copy out of an instance's VS Code
+								terminal reaches nothing (codebay's own terminal falls back to a legacy copy that
+								usually still works). Either open codebay through <code>localhost</code> (<code
+									>{insecure.tunnel}</code
+								>), or allow this exact origin under
+								<code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>.
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+		{/if}
+
 		<section class="card">
-			<form class="row image-row" onsubmit={saveImage}>
+			<form
+				class="row"
+				method="POST"
+				action="?/defaultMode"
+				bind:this={modeFormEl}
+				{@attach enhance(defaultModeOpts)}
+			>
 				<div class="label">
-					<Container size={18} />
+					<Terminal size={20} />
+					<div class="text">
+						<div class="name">Default editor</div>
+						<div class="desc">
+							What new instances start in. <strong>Full IDE</strong> serves browser VS Code;
+							<strong>Terminal</strong> is lighter — just Claude Code in a terminal, no code-server. You
+							can override this per instance when creating one.
+						</div>
+					</div>
+				</div>
+				<input type="hidden" name="mode" value={modeChoice} />
+				<div class="mode-toggle" role="group" aria-label="Default editor mode">
+					<button
+						type="button"
+						class="mode-btn"
+						class:active={modeChoice === 'ide'}
+						aria-pressed={modeChoice === 'ide'}
+						disabled={savingMode}
+						onclick={() => chooseMode('ide')}
+					>
+						<LayoutTemplate size={15} />
+						Full IDE
+					</button>
+					<button
+						type="button"
+						class="mode-btn"
+						class:active={modeChoice === 'terminal'}
+						aria-pressed={modeChoice === 'terminal'}
+						disabled={savingMode}
+						onclick={() => chooseMode('terminal')}
+					>
+						<Terminal size={15} />
+						Terminal
+					</button>
+				</div>
+			</form>
+			{#if modeError}
+				<div class="sub"><div class="msg error">{modeError}</div></div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/claudePermissionMode"
+				bind:this={permissionFormEl}
+				{@attach enhance(permissionModeOpts)}
+			>
+				<div class="label">
+					<ShieldCheck size={20} />
+					<div class="text">
+						<div class="name">Claude permission mode</div>
+						<div class="desc">
+							The mode Claude Code starts in inside new instances. <strong>Default</strong> runs
+							<code>--dangerously-skip-permissions</code>, which never prompts; the other three pass
+							<code>--permission-mode</code> instead, because the skip flag overrides them. Applies on
+							create and rebuild, not to already-running instances.
+						</div>
+					</div>
+				</div>
+				<input type="hidden" name="mode" value={permissionChoice} />
+				<div class="mode-toggle" role="group" aria-label="Claude permission mode">
+					{#each CLAUDE_PERMISSION_MODES as option (option)}
+						<button
+							type="button"
+							class="mode-btn"
+							class:active={permissionChoice === option}
+							aria-pressed={permissionChoice === option}
+							disabled={savingPermission}
+							onclick={() => choosePermissionMode(option)}
+						>
+							{PERMISSION_LABELS[option]}
+						</button>
+					{/each}
+				</div>
+			</form>
+			{#if permissionError}
+				<div class="sub"><div class="msg error">{permissionError}</div></div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/claudeEffortLevel"
+				bind:this={effortFormEl}
+				{@attach enhance(effortLevelOpts)}
+			>
+				<div class="label">
+					<Gauge size={20} />
+					<div class="text">
+						<div class="name">Claude effort level</div>
+						<div class="desc">
+							The default reasoning effort Claude Code starts new sessions at inside instances,
+							written to <code>~/.claude/settings.json</code>. Applies on create and rebuild, not to
+							already-running instances.
+						</div>
+					</div>
+				</div>
+				<input type="hidden" name="level" value={effortChoice} />
+				<div class="mode-toggle" role="group" aria-label="Claude effort level">
+					{#each CLAUDE_EFFORT_LEVELS as option (option)}
+						<button
+							type="button"
+							class="mode-btn"
+							class:active={effortChoice === option}
+							aria-pressed={effortChoice === option}
+							disabled={savingEffort}
+							onclick={() => chooseEffort(option)}
+						>
+							{EFFORT_LABELS[option]}
+						</button>
+					{/each}
+				</div>
+			</form>
+			{#if effortError}
+				<div class="sub"><div class="msg error">{effortError}</div></div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/claudeOutputStyle"
+				bind:this={outputStyleFormEl}
+				{@attach enhance(outputStyleOpts)}
+			>
+				<div class="label">
+					<MessageSquare size={20} />
+					<div class="text">
+						<div class="name">Claude output style</div>
+						<div class="desc">
+							The output style Claude Code starts new sessions in, written to
+							<code>~/.claude/settings.json</code>. <strong>Default</strong> inherits your host
+							<code>~/.claude/settings.json</code> (including any custom styles);
+							<strong>None</strong>
+							forces it off. Applies on create and rebuild, not to already-running instances.
+						</div>
+					</div>
+				</div>
+				<input type="hidden" name="style" value={outputStyleChoice} />
+				<div class="mode-toggle" role="group" aria-label="Claude output style">
+					{#each CLAUDE_OUTPUT_STYLES as option (option)}
+						<button
+							type="button"
+							class="mode-btn"
+							class:active={outputStyleChoice === option}
+							aria-pressed={outputStyleChoice === option}
+							disabled={savingOutputStyle}
+							onclick={() => chooseOutputStyle(option)}
+						>
+							{OUTPUT_STYLE_LABELS[option]}
+						</button>
+					{/each}
+				</div>
+			</form>
+			{#if outputStyleError}
+				<div class="sub"><div class="msg error">{outputStyleError}</div></div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row image-row"
+				method="POST"
+				action="?/defaultImage"
+				bind:this={imageFormEl}
+				{@attach enhance(imageOpts)}
+			>
+				<div class="label">
+					<Container size={20} />
 					<div class="text">
 						<div class="name">
 							Default container image
@@ -278,6 +1208,7 @@
 				<div class="image-controls">
 					<input
 						type="text"
+						name="image"
 						class="image-input"
 						bind:value={image}
 						spellcheck="false"
@@ -313,9 +1244,350 @@
 		</section>
 
 		<section class="card">
-			<div class="row">
+			<form
+				class="row image-row"
+				method="POST"
+				action="?/copyIgnorePatterns"
+				bind:this={copyIgnoreFormEl}
+				{@attach enhance(copyIgnoreOpts)}
+			>
 				<div class="label">
-					<Layers size={18} />
+					<FolderMinus size={20} />
+					<div class="text">
+						<div class="name">Skip when copying a local folder</div>
+						<div class="desc">
+							Comma-separated folder/file names excluded when copying a local source folder into a
+							new instance's workspace. Leave blank to copy everything. Only applies to local
+							folders — cloning a Git repo URL is unaffected.
+						</div>
+					</div>
+				</div>
+				<div class="image-controls">
+					<input
+						type="text"
+						name="patterns"
+						class="image-input"
+						bind:value={copyIgnore}
+						spellcheck="false"
+						autocapitalize="off"
+						autocorrect="off"
+						placeholder="node_modules, .venv, dist"
+					/>
+					<Button type="submit" disabled={savingCopyIgnore}>Save</Button>
+					<Button
+						type="button"
+						icon={RotateCcw}
+						disabled={savingCopyIgnore}
+						onclick={resetCopyIgnore}
+						title="Reset to default ({builtinCopyIgnore})"
+						aria-label="Reset to default copy-ignore patterns"
+					/>
+				</div>
+				{#if copyIgnoreError}
+					<div class="msg error">{copyIgnoreError}</div>
+				{:else if copyIgnoreSaved}
+					<div class="msg ok">Saved.</div>
+				{/if}
+			</form>
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/workspaceUploadToggle"
+				{@attach enhance(uploadToggleOpts)}
+			>
+				<div class="label">
+					<Upload size={20} />
+					<div class="text">
+						<div class="name">Drop files into the workspace</div>
+						<div class="desc">
+							Drag-and-drop or paste files and images onto an instance to save them under
+							<code>codebay-inbox/</code> in its workspace (git-excluded). The in-container path is shown
+							so Claude can Read it. Turn off to drop straight into VS Code's explorer instead. Off by
+							default.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={workspaceUpload}
+						disabled={savingUpload}
+						onchange={(e) => {
+							workspaceUpload = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if uploadError}
+				<div class="sub"><div class="msg error">{uploadError}</div></div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row image-row"
+				method="POST"
+				action="?/claudeConfigDir"
+				bind:this={claudeDirFormEl}
+				{@attach enhance(claudeDirOpts)}
+			>
+				<div class="label">
+					<FolderCog size={20} />
+					<div class="text">
+						<div class="name">Claude config directory</div>
+						<div class="desc">
+							Host directory the Claude Code injections read from — credentials, statusLine, output
+							styles, and global skills / <code>CLAUDE.md</code>. Leave blank to use
+							<code>~/.claude</code>. Takes effect for instances created from now on.
+						</div>
+					</div>
+				</div>
+				<div class="image-controls">
+					<input
+						type="text"
+						name="dir"
+						class="image-input"
+						bind:value={claudeDir}
+						spellcheck="false"
+						autocapitalize="off"
+						autocorrect="off"
+						placeholder="~/.claude"
+					/>
+					<Button type="submit" disabled={savingClaudeDir}>Save</Button>
+					<Button
+						type="button"
+						icon={RotateCcw}
+						disabled={savingClaudeDir}
+						onclick={resetClaudeDir}
+						title="Reset to default (~/.claude)"
+						aria-label="Reset to default Claude config directory"
+					/>
+				</div>
+				{#if claudeDirError}
+					<div class="msg error">{claudeDirError}</div>
+				{:else if claudeDirSaved}
+					<div class="msg ok">Saved.</div>
+				{/if}
+			</form>
+		</section>
+
+		<section class="card">
+			<form class="row" method="POST" action="?/mcpToggle" {@attach enhance(mcpToggleOpts)}>
+				<div class="label">
+					<Plug size={20} />
+					<div class="text">
+						<div class="name">MCP server</div>
+						<div class="desc">
+							Expose Codebay to other AI agents over MCP, so they can create sandboxes, run Claude
+							Code in them non-interactively and read back the result. Off by default; the endpoint
+							404s until you turn it on, then authenticates with the bearer token below.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={mcp}
+						disabled={savingMcpToggle}
+						onchange={(e) => {
+							mcp = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if mcpToggleError}
+				<div class="sub"><div class="msg error">{mcpToggleError}</div></div>
+			{/if}
+
+			{#if mcp}
+				<div class="row divided">
+					<div class="label">
+						<div class="text">
+							<div class="name">Token</div>
+							<div class="desc">
+								Anything holding this token can create containers and run agents with your GitHub
+								and Claude credentials. Treat it like a password.
+							</div>
+						</div>
+					</div>
+					<div class="model-fields">
+						<label class="model-row">
+							<span class="model-label">Bearer</span>
+							<input
+								type="text"
+								class="image-input"
+								value={mcpTokenValue}
+								readonly
+								spellcheck="false"
+								onfocus={(e) => e.currentTarget.select()}
+							/>
+						</label>
+						<div class="mcp-actions">
+							<Button type="button" onclick={() => copyMcp('token', mcpTokenValue)}>
+								{mcpCopied === 'token' ? 'Copied' : 'Copy token'}
+							</Button>
+							<Button type="button" onclick={() => copyMcp('command', mcpCommand)}>
+								{mcpCopied === 'command' ? 'Copied' : 'Copy claude mcp add'}
+							</Button>
+							<form method="POST" action="?/mcpRegenerateToken" {@attach enhance(mcpTokenOpts)}>
+								<Button type="submit" disabled={savingMcpToken}>
+									{savingMcpToken ? 'Regenerating…' : 'Regenerate'}
+								</Button>
+							</form>
+						</div>
+						<code class="mcp-command">{mcpCommand}</code>
+						{#if mcpTokenError}
+							<div class="msg error">{mcpTokenError}</div>
+						{/if}
+					</div>
+				</div>
+
+				<form
+					class="row divided"
+					method="POST"
+					action="?/mcpPrAttributionToggle"
+					{@attach enhance(mcpAttributionOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Credit Codebay on pull requests</div>
+							<div class="desc">
+								Append a one-line footer to the body of every pull request an agent opens through
+								<code>create_pr</code>. Off by default — an attribution line on your PRs is yours to
+								opt into.
+							</div>
+						</div>
+					</div>
+					<label class="switch">
+						<input
+							type="checkbox"
+							name="enabled"
+							checked={mcpAttribution}
+							disabled={savingMcpAttribution}
+							onchange={(e) => {
+								mcpAttribution = e.currentTarget.checked;
+								e.currentTarget.form?.requestSubmit();
+							}}
+						/>
+						<span class="track"><span class="thumb"></span></span>
+					</label>
+				</form>
+				{#if mcpAttributionError}
+					<div class="sub"><div class="msg error">{mcpAttributionError}</div></div>
+				{/if}
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/gitIdentityToggle"
+				{@attach enhance(gitIdentityToggleOpts)}
+			>
+				<div class="label">
+					<UserCog size={20} />
+					<div class="text">
+						<div class="name">Override git identity</div>
+						<div class="desc">
+							Inject a name and email as <code>git config --global user.name/user.email</code> in every
+							new container, taking precedence over the host's own git config. When off, each container
+							falls back to the host's identity.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={gitIdentity}
+						disabled={savingGitToggle}
+						onchange={(e) => {
+							gitIdentity = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if gitToggleError}
+				<div class="sub"><div class="msg error">{gitToggleError}</div></div>
+			{/if}
+
+			{#if gitIdentity}
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/gitIdentityOverride"
+					{@attach enhance(gitIdentityOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Identity</div>
+							<div class="desc">
+								Both fields are required — leave either blank and the container falls back to the
+								host's identity.
+							</div>
+						</div>
+					</div>
+					<div class="model-fields">
+						<label class="model-row">
+							<span class="model-label">Name</span>
+							<input
+								type="text"
+								name="name"
+								class="image-input"
+								bind:value={gitName}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								placeholder="Jane Doe"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Email</span>
+							<input
+								type="text"
+								name="email"
+								class="image-input"
+								bind:value={gitEmail}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								placeholder="jane@example.com"
+							/>
+						</label>
+						<div class="model-save-row">
+							<Button type="submit" disabled={savingGitIdentity}>Save</Button>
+						</div>
+					</div>
+					{#if gitIdentityError}
+						<div class="msg error">{gitIdentityError}</div>
+					{:else if gitIdentitySaved}
+						<div class="msg ok">Saved.</div>
+					{/if}
+				</form>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/disableBuildCache"
+				{@attach enhance(buildCacheToggleOpts)}
+			>
+				<div class="label">
+					<Layers size={20} />
 					<div class="text">
 						<div class="name">Disable build cache</div>
 						<div class="desc">
@@ -327,20 +1599,29 @@
 				<label class="switch">
 					<input
 						type="checkbox"
+						name="enabled"
 						checked={noCache}
 						disabled={savingCache}
-						onchange={(e) => toggleBuildCache(e.currentTarget.checked)}
+						onchange={(e) => {
+							noCache = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
 					/>
 					<span class="track"><span class="thumb"></span></span>
 				</label>
-			</div>
+			</form>
 			{#if cacheError}
 				<div class="sub"><div class="msg error">{cacheError}</div></div>
 			{/if}
 
-			<div class="row divided">
+			<form
+				class="row divided"
+				method="POST"
+				action="?/clearBuildCache"
+				{@attach enhance(clearCacheOpts)}
+			>
 				<div class="label">
-					<Trash2 size={18} />
+					<Trash2 size={20} />
 					<div class="text">
 						<div class="name">Clear build cache</div>
 						<div class="desc">
@@ -354,19 +1635,24 @@
 						{/if}
 					</div>
 				</div>
-				<Button icon={Trash2} disabled={clearing} onclick={clearBuildCache}>
+				<Button type="submit" icon={Trash2} disabled={clearing}>
 					{clearing ? 'Clearing…' : 'Clear cache'}
 				</Button>
-			</div>
+			</form>
 
-			<div class="row divided">
+			<form
+				class="row divided"
+				method="POST"
+				action="?/rebuildAllNoCache"
+				{@attach enhance(rebuildAllOpts)}
+			>
 				<div class="label">
-					<Hammer size={18} />
+					<Hammer size={20} />
 					<div class="text">
 						<div class="name">Rebuild running containers (no cache)</div>
 						<div class="desc">
-							Re-run <code>devcontainer up --build-no-cache</code> for every currently-running instance.
-							In-container edits are kept; stopped instances are left alone.
+							Rebuild every currently-running instance from scratch, without using any cached image
+							layers. In-container edits are kept; stopped instances are left alone.
 						</div>
 						{#if rebuildError}
 							<div class="msg error">{rebuildError}</div>
@@ -375,42 +1661,68 @@
 						{/if}
 					</div>
 				</div>
-				<Button icon={Hammer} disabled={rebuilding} onclick={rebuildAllNoCache}>
+				<Button type="submit" icon={Hammer} disabled={rebuilding}>
 					{rebuilding ? 'Starting…' : 'Rebuild all'}
 				</Button>
-			</div>
+			</form>
 		</section>
 
-		<section class="card">
-			<div class="row">
+		<section class="card" class:disabled-card={customEndpoint}>
+			<form
+				class="row"
+				method="POST"
+				action="?/manualTokensToggle"
+				{@attach enhance(manualTokensToggleOpts)}
+			>
 				<div class="label">
-					<KeyRound size={18} />
+					<KeyRound size={20} />
 					<div class="text">
-						<div class="name">Set tokens manually</div>
+						<div class="name">
+							Set tokens manually
+							{#if customEndpoint}
+								<span class="arch" title="Disabled while LiteLLM + Bedrock mode is on"
+									>disabled</span
+								>
+							{/if}
+						</div>
 						<div class="desc">
-							Provide GitHub and Claude Code tokens yourself instead of discovering them from this
-							machine. Useful on a headless server or when signed in as a different identity. A
-							token set here is injected into every new container and overrides host credential
-							discovery.
+							{#if customEndpoint}
+								Not available while LiteLLM + Bedrock mode is enabled — Claude credentials are
+								provided by the LiteLLM endpoint instead.
+							{:else}
+								Provide GitHub and Claude Code tokens yourself instead of discovering them from this
+								machine. Useful on a headless server or when signed in as a different identity. A
+								token set here is injected into every new container and overrides host credential
+								discovery.
+							{/if}
 						</div>
 					</div>
 				</div>
 				<label class="switch">
 					<input
 						type="checkbox"
+						name="enabled"
 						checked={manualTokens}
-						disabled={savingManualToggle}
-						onchange={(e) => toggleManualTokens(e.currentTarget.checked)}
+						disabled={savingManualToggle || customEndpoint}
+						onchange={(e) => {
+							manualTokens = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
 					/>
 					<span class="track"><span class="thumb"></span></span>
 				</label>
-			</div>
+			</form>
 			{#if manualToggleError}
 				<div class="sub"><div class="msg error">{manualToggleError}</div></div>
 			{/if}
 
-			{#if manualTokens}
-				<form class="row divided token-row" onsubmit={saveGithubToken}>
+			{#if manualTokens && !customEndpoint}
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/githubToken"
+					{@attach enhance(githubTokenOpts)}
+				>
 					<div class="label">
 						<div class="text">
 							<div class="name">GitHub token</div>
@@ -425,6 +1737,7 @@
 					<div class="image-controls">
 						<input
 							type="password"
+							name="githubToken"
 							class="image-input"
 							bind:value={githubToken}
 							spellcheck="false"
@@ -442,22 +1755,28 @@
 					{/if}
 				</form>
 
-				<form class="row divided token-row" onsubmit={saveClaudeToken}>
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/claudeToken"
+					{@attach enhance(claudeTokenOpts)}
+				>
 					<div class="label">
 						<div class="text">
 							<div class="name">Claude Code token</div>
 							<div class="desc">
-								Paste the OAuth <code>accessToken</code>. macOS:
-								<code>security find-generic-password -s "Claude Code-credentials" -w</code> — copy
-								the <code>accessToken</code> field. Linux:
-								<code>cat ~/.claude/.credentials.json</code> — copy the <code>accessToken</code>.
-								Leave blank and Save to clear.
+								macOS / Linux: run <code>claude setup-token</code> to mint a long-lived token and
+								paste it here. Copying a live login out of the keychain or
+								<code>~/.claude/.credentials.json</code> works too, but that credential rotates —
+								the first <code>claude</code> to refresh it signs the other one out. Leave blank and Save
+								to clear.
 							</div>
 						</div>
 					</div>
 					<div class="image-controls">
 						<input
 							type="password"
+							name="claudeToken"
 							class="image-input"
 							bind:value={claudeToken}
 							spellcheck="false"
@@ -477,10 +1796,574 @@
 			{/if}
 		</section>
 
+		<section class="card" class:disabled-card={litellmBlocker}>
+			<form
+				class="row"
+				method="POST"
+				action="?/customEndpointToggle"
+				{@attach enhance(customEndpointToggleOpts)}
+			>
+				<div class="label">
+					<KeyRound size={20} />
+					<div class="text">
+						<div class="name">
+							LiteLLM + Bedrock
+							{#if litellmBlocker}
+								<span class="arch" title="Disabled while {litellmBlocker} is on">disabled</span>
+							{/if}
+						</div>
+						<div class="desc">
+							{#if litellmBlocker}
+								Not available while "{litellmBlocker}" is enabled — these modes are mutually
+								incompatible.
+							{:else}
+								Route <code>claude</code> through a LiteLLM proxy fronting AWS Bedrock instead of Anthropic's
+								default API. When enabled, the Bedrock endpoint variables are injected into every new
+								container, host OAuth credentials are not used, and "Set tokens manually" is disabled.
+							{/if}
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={customEndpoint}
+						disabled={savingCustomToggle || !!litellmBlocker}
+						onchange={(e) => {
+							customEndpoint = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if customToggleError}
+				<div class="sub"><div class="msg error">{customToggleError}</div></div>
+			{/if}
+
+			{#if customEndpoint}
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/customBaseUrl"
+					{@attach enhance(customBaseUrlOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Base URL</div>
+							<div class="desc">
+								The LiteLLM proxy endpoint, e.g.
+								<code>https://litellm.example.com/bedrock</code>. Passed as
+								<code>ANTHROPIC_BEDROCK_BASE_URL</code>.
+							</div>
+						</div>
+					</div>
+					<div class="image-controls">
+						<input
+							type="text"
+							name="baseUrl"
+							class="image-input"
+							bind:value={customBaseUrl}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							autocomplete="off"
+							placeholder="https://litellm.example.com/bedrock"
+						/>
+						<Button type="submit" disabled={savingCustomBaseUrl}>Save</Button>
+					</div>
+					{#if customBaseUrlError}
+						<div class="msg error">{customBaseUrlError}</div>
+					{:else if customBaseUrlMsg}
+						<div class="msg ok">{customBaseUrlMsg}</div>
+					{/if}
+				</form>
+
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/customToken"
+					{@attach enhance(customTokenOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Auth token</div>
+							<div class="desc">
+								Your LiteLLM API key. Passed as <code>ANTHROPIC_AUTH_TOKEN</code>. Leave blank and
+								Save to clear.
+							</div>
+						</div>
+					</div>
+					<div class="image-controls">
+						<input
+							type="password"
+							name="token"
+							class="image-input"
+							bind:value={customToken}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							autocomplete="off"
+							placeholder={customTokenSaved ? '•••••••• (saved)' : 'sk-…'}
+						/>
+						<Button type="submit" disabled={savingCustomToken}>Save</Button>
+					</div>
+					{#if customTokenError}
+						<div class="msg error">{customTokenError}</div>
+					{:else if customTokenMsg}
+						<div class="msg ok">{customTokenMsg}</div>
+					{/if}
+				</form>
+
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/customModels"
+					{@attach enhance(customModelsOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Model IDs</div>
+							<div class="desc">
+								Model aliases to use for each tier. Prefilled with defaults from the reference
+								launcher script. Leave a field as-is to keep its current value.
+							</div>
+						</div>
+					</div>
+					<div class="model-fields">
+						<label class="model-row">
+							<span class="model-label">Opus</span>
+							<input
+								type="text"
+								name="opusModel"
+								class="image-input"
+								bind:value={customOpusModel}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Sonnet</span>
+							<input
+								type="text"
+								name="sonnetModel"
+								class="image-input"
+								bind:value={customSonnetModel}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Haiku</span>
+							<input
+								type="text"
+								name="haikuModel"
+								class="image-input"
+								bind:value={customHaikuModel}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Small/fast</span>
+							<input
+								type="text"
+								name="smallFastModel"
+								class="image-input"
+								bind:value={customSmallFastModel}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Default</span>
+							<input
+								type="text"
+								name="defaultModel"
+								class="image-input"
+								bind:value={customDefaultModel}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<div class="model-save-row">
+							<Button type="submit" disabled={savingCustomModels}>Save models</Button>
+						</div>
+					</div>
+					{#if customModelsError}
+						<div class="msg error">{customModelsError}</div>
+					{:else if customModelsMsg}
+						<div class="msg ok">{customModelsMsg}</div>
+					{/if}
+				</form>
+			{/if}
+		</section>
+
+		<section class="card" class:disabled-card={customEndpoint}>
+			<form
+				class="row"
+				method="POST"
+				action="?/manualModelToggle"
+				{@attach enhance(manualModelToggleOpts)}
+			>
+				<div class="label">
+					<Cpu size={18} />
+					<div class="text">
+						<div class="name">
+							Override models manually
+							{#if customEndpoint}
+								<span class="arch" title="Disabled while LiteLLM + Bedrock is on">disabled</span>
+							{/if}
+						</div>
+						<div class="desc">
+							{#if customEndpoint}
+								Not available while "LiteLLM + Bedrock" is enabled — these modes are mutually
+								incompatible.
+							{:else}
+								Pin which model <code>claude</code> uses on the standard (subscription) path. Only
+								the fields you fill are injected into new containers as
+								<code>ANTHROPIC_*_MODEL</code>
+								variables; blanks fall through to Claude Code's own defaults.
+							{/if}
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={manualModelOverride}
+						disabled={savingManualModelToggle || customEndpoint}
+						onchange={(e) => {
+							manualModelOverride = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if manualModelToggleError}
+				<div class="sub"><div class="msg error">{manualModelToggleError}</div></div>
+			{/if}
+
+			{#if manualModelOverride}
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/manualModels"
+					{@attach enhance(manualModelsOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Model IDs</div>
+							<div class="desc">
+								A model name or alias per tier, e.g. <code>opusplan</code>, <code>opus</code>,
+								<code>sonnet</code>, or a full
+								<code>claude-…</code> id. Leave a field blank to skip it.
+							</div>
+						</div>
+					</div>
+					<div class="model-fields">
+						<label class="model-row">
+							<span class="model-label">Opus</span>
+							<input
+								type="text"
+								name="opusModel"
+								class="image-input"
+								bind:value={manualOpus}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Sonnet</span>
+							<input
+								type="text"
+								name="sonnetModel"
+								class="image-input"
+								bind:value={manualSonnet}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Haiku</span>
+							<input
+								type="text"
+								name="haikuModel"
+								class="image-input"
+								bind:value={manualHaiku}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Small/fast</span>
+							<input
+								type="text"
+								name="smallFastModel"
+								class="image-input"
+								bind:value={manualSmallFast}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<label class="model-row">
+							<span class="model-label">Default</span>
+							<input
+								type="text"
+								name="defaultModel"
+								class="image-input"
+								bind:value={manualDefault}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								autocomplete="off"
+							/>
+						</label>
+						<div class="model-save-row">
+							<Button type="submit" disabled={savingManualModels}>Save models</Button>
+						</div>
+					</div>
+					{#if manualModelsError}
+						<div class="msg error">{manualModelsError}</div>
+					{:else if manualModelsMsg}
+						<div class="msg ok">{manualModelsMsg}</div>
+					{/if}
+				</form>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/hostEnvVarsToggle"
+				{@attach enhance(hostEnvVarsToggleOpts)}
+			>
+				<div class="label">
+					<Variable size={20} />
+					<div class="text">
+						<div class="name">Host environment variables</div>
+						<div class="desc">
+							Forward selected environment variables from this machine into every new container's
+							interactive shells. Values are read from this process's own environment at container
+							start and are never shown here or stored — only the variable names are saved.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={hostEnvVars}
+						disabled={savingHostEnvToggle}
+						onchange={(e) => {
+							hostEnvVars = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if hostEnvToggleError}
+				<div class="sub"><div class="msg error">{hostEnvToggleError}</div></div>
+			{/if}
+
+			{#if hostEnvVars}
+				<div class="row divided var-row">
+					<div class="var-list">
+						{#each hostEnvNames as name (name)}
+							<form
+								class="var-item"
+								method="POST"
+								action="?/hostEnvVarNames"
+								{@attach enhance(removeHostEnvOpts(name))}
+							>
+								{#each hostEnvNames.filter((n) => n !== name) as other (other)}
+									<input type="hidden" name="names" value={other} />
+								{/each}
+								<span class="var-name">{name}</span>
+								<span
+									class="var-status"
+									class:present={hostEnvPresence[name]}
+									title={hostEnvPresence[name]
+										? 'Set on this host — will be injected'
+										: 'Not set on this host — will be skipped'}
+								>
+									{hostEnvPresence[name] ? 'set' : 'missing'}
+								</span>
+								<button
+									type="submit"
+									class="var-remove"
+									disabled={savingHostEnvNames}
+									aria-label={`Remove ${name}`}
+								>
+									<X size={13} />
+								</button>
+							</form>
+						{:else}
+							<div class="var-empty">No variables added yet.</div>
+						{/each}
+					</div>
+					<form
+						class="var-add"
+						method="POST"
+						action="?/hostEnvVarNames"
+						{@attach enhance(addHostEnvOpts)}
+					>
+						{#each hostEnvNames as name (name)}
+							<input type="hidden" name="names" value={name} />
+						{/each}
+						<input
+							type="text"
+							name="names"
+							class="image-input"
+							bind:value={newHostEnvName}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							autocomplete="off"
+							placeholder="AWS_ACCESS_KEY_ID"
+						/>
+						<Button type="submit" icon={Plus} disabled={savingHostEnvNames}>Add</Button>
+					</form>
+					{#if hostEnvNamesError}
+						<div class="msg error">{hostEnvNamesError}</div>
+					{:else if hostEnvNamesMsg}
+						<div class="msg ok">{hostEnvNamesMsg}</div>
+					{/if}
+				</div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
+				class="row"
+				method="POST"
+				action="?/customEnvVarsToggle"
+				{@attach enhance(customEnvVarsToggleOpts)}
+			>
+				<div class="label">
+					<KeySquare size={20} />
+					<div class="text">
+						<div class="name">Custom environment variables</div>
+						<div class="desc">
+							Inject your own <code>NAME=value</code> pairs into every new container as
+							<code>containerEnv</code>, available to all processes. Values are secret — stored
+							locally, masked in the build log, and never shown here after saving. Re-add a name to
+							update its value.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={customEnvEnabled}
+						disabled={savingCustomEnvToggle}
+						onchange={(e) => {
+							customEnvEnabled = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if customEnvToggleError}
+				<div class="sub"><div class="msg error">{customEnvToggleError}</div></div>
+			{/if}
+
+			{#if customEnvEnabled}
+				<div class="row divided var-row">
+					<div class="var-list">
+						{#each customEnvNames as name (name)}
+							<form
+								class="var-item"
+								method="POST"
+								action="?/removeCustomEnvVar"
+								{@attach enhance(removeCustomEnvOpts(name))}
+							>
+								<input type="hidden" name="name" value={name} />
+								<span class="var-name">{name}</span>
+								<span class="var-status present" title="Set — injected into every new container">
+									•••• saved
+								</span>
+								<button
+									type="submit"
+									class="var-remove"
+									disabled={savingCustomEnv}
+									aria-label={`Remove ${name}`}
+								>
+									<X size={13} />
+								</button>
+							</form>
+						{:else}
+							<div class="var-empty">No variables added yet.</div>
+						{/each}
+					</div>
+					<form
+						class="var-add"
+						method="POST"
+						action="?/setCustomEnvVar"
+						{@attach enhance(addCustomEnvOpts)}
+					>
+						<input
+							type="text"
+							name="name"
+							class="image-input"
+							bind:value={newCustomEnvName}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							autocomplete="off"
+							placeholder="MY_SECRET"
+						/>
+						<input
+							type="password"
+							name="value"
+							class="image-input"
+							bind:value={newCustomEnvValue}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							autocomplete="off"
+							placeholder="value"
+						/>
+						<Button type="submit" icon={Plus} disabled={savingCustomEnv}>Add</Button>
+					</form>
+					{#if customEnvError}
+						<div class="msg error">{customEnvError}</div>
+					{:else if customEnvMsg}
+						<div class="msg ok">{customEnvMsg}</div>
+					{/if}
+				</div>
+			{/if}
+		</section>
+
 		<section class="card">
 			<div class="row">
 				<div class="label">
-					<SunMoon size={18} />
+					<SunMoon size={20} />
 					<div class="text">
 						<div class="name">Theme</div>
 						<div class="desc">
@@ -495,7 +2378,7 @@
 		<section class="card">
 			<div class="row">
 				<div class="label">
-					<Volume2 size={18} />
+					<Volume2 size={20} />
 					<div class="text">
 						<div class="name">Attention sound</div>
 						<div class="desc">
@@ -514,10 +2397,216 @@
 			</div>
 		</section>
 
-		<section class="card danger-card">
+		<section class="card">
 			<div class="row">
 				<div class="label">
-					<Power size={18} />
+					<Keyboard size={20} />
+					<div class="text">
+						<div class="name">Tab keyboard shortcuts</div>
+						<div class="desc">
+							Jump between open instance tabs with <code>Alt</code>+<code>1</code>–<code>9</code> (9 is
+							always the last tab). Turn off to leave those keystrokes to the editor.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						checked={tabShortcuts}
+						onchange={(e) => toggleTabShortcuts(e.currentTarget.checked)}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</div>
+		</section>
+
+		<section class="card">
+			<form class="row" method="POST" action="?/petToggle" {@attach enhance(petToggleOpts)}>
+				<div class="label">
+					<PawPrint size={18} />
+					<div class="text">
+						<div class="name">Pet logo</div>
+						<div class="desc">Swap the box in the header for a pixel pet.</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={!!petArt}
+						disabled={savingPet}
+						onchange={(e) => e.currentTarget.form?.requestSubmit()}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if petError}
+				<div class="sub"><div class="msg error">{petError}</div></div>
+			{/if}
+			{#if petArt}
+				<div class="sub pets">
+					{#each avatars as art (art.name)}
+						<form method="POST" action="?/petChoose" {@attach enhance(petChooseOpts(art))}>
+							<input type="hidden" name="name" value={art.name} />
+							<button
+								type="submit"
+								class="pet"
+								class:selected={art.name === petArt.name}
+								disabled={savingPet}
+								title={art.name}
+								aria-label={art.name}
+								aria-pressed={art.name === petArt.name}
+							>
+								<Avatar {art} name={art.name} scale={4} />
+							</button>
+						</form>
+					{/each}
+				</div>
+			{/if}
+		</section>
+
+		<section class="card">
+			<details class="advanced">
+				<summary>
+					<SlidersHorizontal size={20} />
+					<span class="name">Advanced</span>
+					<span class="hint">escape hatches — defaults are right for almost everyone</span>
+				</summary>
+
+				<form
+					class="row divided"
+					method="POST"
+					action="?/serialInjectionsToggle"
+					{@attach enhance(serialOpts)}
+				>
+					<div class="label">
+						<ListOrdered size={20} />
+						<div class="text">
+							<div class="name">Serial boot injections</div>
+							<div class="desc">
+								Run boot injections one at a time instead of in parallel stages. Slower boot; useful
+								when diagnosing injection interference.
+							</div>
+						</div>
+					</div>
+					<label class="switch">
+						<input
+							type="checkbox"
+							name="enabled"
+							checked={serialInjections}
+							disabled={savingSerial}
+							onchange={(e) => {
+								serialInjections = e.currentTarget.checked;
+								e.currentTarget.form?.requestSubmit();
+							}}
+						/>
+						<span class="track"><span class="thumb"></span></span>
+					</label>
+				</form>
+				{#if serialError}
+					<div class="sub"><div class="msg error">{serialError}</div></div>
+				{/if}
+
+				<form
+					class="row divided"
+					method="POST"
+					action="?/noBuildkitToggle"
+					{@attach enhance(buildkitOpts)}
+				>
+					<div class="label">
+						<Boxes size={20} />
+						<div class="text">
+							<div class="name">Don't force BuildKit</div>
+							<div class="desc">
+								Skip setting <code>DOCKER_BUILDKIT=1</code> for container builds and let the daemon's
+								default builder decide. For daemons where forcing BuildKit breaks builds.
+							</div>
+						</div>
+					</div>
+					<label class="switch">
+						<input
+							type="checkbox"
+							name="enabled"
+							checked={noBuildkit}
+							disabled={savingBuildkit}
+							onchange={(e) => {
+								noBuildkit = e.currentTarget.checked;
+								e.currentTarget.form?.requestSubmit();
+							}}
+						/>
+						<span class="track"><span class="thumb"></span></span>
+					</label>
+				</form>
+				{#if buildkitError}
+					<div class="sub"><div class="msg error">{buildkitError}</div></div>
+				{/if}
+
+				<form
+					class="row divided"
+					method="POST"
+					action="?/blockingExtInstallToggle"
+					{@attach enhance(blockingOpts)}
+				>
+					<div class="label">
+						<Puzzle size={20} />
+						<div class="text">
+							<div class="name">Blocking IDE extension install</div>
+							<div class="desc">
+								Install the Claude Code IDE extension before code-server starts, so the first window
+								always has it active. Slower first boot.
+							</div>
+						</div>
+					</div>
+					<label class="switch">
+						<input
+							type="checkbox"
+							name="enabled"
+							checked={blockingExtInstall}
+							disabled={savingBlocking}
+							onchange={(e) => {
+								blockingExtInstall = e.currentTarget.checked;
+								e.currentTarget.form?.requestSubmit();
+							}}
+						/>
+						<span class="track"><span class="thumb"></span></span>
+					</label>
+				</form>
+				{#if blockingError}
+					<div class="sub"><div class="msg error">{blockingError}</div></div>
+				{/if}
+
+				<form
+					class="row divided"
+					method="POST"
+					action="?/clearVersionCache"
+					{@attach enhance(clearVersionOpts)}
+				>
+					<div class="label">
+						<Trash2 size={20} />
+						<div class="text">
+							<div class="name">Clear claude-code version cache</div>
+							<div class="desc">
+								Forget the cached latest-version check; the next instance boot asks the npm registry
+								again.
+							</div>
+							{#if verError}
+								<div class="msg error">{verError}</div>
+							{:else if verMsg}
+								<div class="msg ok">{verMsg}</div>
+							{/if}
+						</div>
+					</div>
+					<Button type="submit" icon={Trash2} disabled={clearingVer}>
+						{clearingVer ? 'Clearing…' : 'Clear cache'}
+					</Button>
+				</form>
+			</details>
+		</section>
+
+		<section class="card danger-card">
+			<form class="row" method="POST" action="?/shutdown" {@attach enhance(shutdownOpts)}>
+				<div class="label">
+					<Power size={20} />
 					<div class="text">
 						<div class="name">Delete database, containers, and shut down</div>
 						<div class="desc">
@@ -529,27 +2618,19 @@
 				{#if shuttingDown}
 					<span class="shutting">Server is shutting down — you can close this tab.</span>
 				{:else}
-					<Button variant="danger" onclick={deleteAndShutdown}>Delete &amp; shut down</Button>
+					<Button type="submit" variant="danger">Delete &amp; shut down</Button>
 				{/if}
-			</div>
+			</form>
 		</section>
 
-		<CoinButton onclick={openAvatarEditor} />
-	</main>
+		<CoinButton />
 
-	{#if avatarEditorOpen}
-		<AvatarEditor onclose={() => (avatarEditorOpen = false)} />
-	{/if}
+		<div class="version">Codebay v{version}</div>
+	</main>
 </div>
 
-<!-- The Settings page renders outside AppShell (which hosts the app-wide
-     Toaster), so the avatar editor's copy toast needs its own mount. -->
-<Toaster
-	toastOptions={{
-		style:
-			'border:1px solid var(--ink); background:var(--bg-card); color:var(--ink); box-shadow:4px 4px 0 var(--ink); font-family:var(--font-mono); font-size:13px;'
-	}}
-/>
+<!-- Settings renders outside AppShell, which hosts the app-wide Toaster. -->
+<Toaster toastOptions={TOAST_OPTIONS} />
 
 <style>
 	.page {
@@ -585,10 +2666,48 @@
 	.danger-card {
 		border-color: var(--danger);
 	}
+	details.advanced > summary {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 14px 16px;
+		cursor: pointer;
+		list-style: none;
+		font-family: var(--font-mono);
+	}
+	details.advanced > summary::-webkit-details-marker {
+		display: none;
+	}
+	details.advanced > summary .name {
+		font-size: 13px;
+	}
+	details.advanced > summary .hint {
+		color: var(--ink-soft);
+		font-size: 12px;
+	}
+	/* The chevron affordance a hidden native marker would otherwise provide. */
+	details.advanced > summary::after {
+		content: '▸';
+		margin-left: auto;
+		color: var(--ink-soft);
+	}
+	details.advanced[open] > summary::after {
+		content: '▾';
+	}
+	.disabled-card {
+		opacity: 0.55;
+		pointer-events: none;
+	}
 	/* Keep the action button on one line; in the flex row it would otherwise shrink and wrap. */
 	.danger-card :global(.btn) {
 		flex: none;
 		white-space: nowrap;
+	}
+	.version {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		letter-spacing: 0.08em;
+		color: var(--ink-soft);
 	}
 	.shutting {
 		flex: none;
@@ -606,7 +2725,6 @@
 		gap: 16px;
 		padding: 18px 18px;
 	}
-	/* Secondary rows stacked inside one card, separated by a hairline rule. */
 	.row.divided {
 		border-top: 1px solid var(--rule);
 		align-items: flex-start;
@@ -615,7 +2733,6 @@
 		flex: none;
 		white-space: nowrap;
 	}
-	/* Inline message tucked under a row (e.g. a toggle's error), matching row padding. */
 	.sub {
 		padding: 0 18px 14px;
 	}
@@ -633,6 +2750,10 @@
 		gap: 12px;
 		color: var(--ink);
 		min-width: 0;
+	}
+	/* Keep the leading icon at its intrinsic size; the flex row would otherwise shrink busier glyphs below 18px. */
+	.label > :global(svg) {
+		flex: none;
 	}
 	.text {
 		min-width: 0;
@@ -669,7 +2790,6 @@
 		color: var(--ink-faint);
 		line-height: 1.4;
 	}
-	/* Default-image editor: input + Save, stacked under the label on narrow widths. */
 	.image-row {
 		flex-wrap: wrap;
 	}
@@ -716,7 +2836,70 @@
 	.msg.ok {
 		color: var(--ink-soft);
 	}
-	/* Switch */
+	/* auto-fill so the grid reflows as the catalog grows, with no column count to keep in sync. */
+	.pets {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+		gap: 6px;
+	}
+	/* Each pet is wrapped in its own form; let the button stay the grid item. */
+	.pets form {
+		display: contents;
+	}
+	.pet:disabled {
+		cursor: progress;
+	}
+	.pet {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 4px;
+		appearance: none;
+		background: transparent;
+		border: 1px solid transparent;
+		cursor: pointer;
+	}
+	.pet:hover {
+		border-color: var(--rule);
+	}
+	.pet.selected {
+		border-color: var(--attn-done);
+		background: var(--switch-on-bg);
+	}
+	.pet:focus-visible {
+		outline: 2px solid var(--ink);
+		outline-offset: 1px;
+	}
+	.mode-toggle {
+		display: flex;
+		flex: none;
+		border: 1px solid var(--edge);
+	}
+	.mode-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-family: var(--font-mono);
+		font-weight: 700;
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 7px 14px;
+		border: none;
+		background: var(--bg);
+		color: var(--ink);
+		cursor: pointer;
+	}
+	.mode-btn + .mode-btn {
+		border-left: 1px solid var(--edge);
+	}
+	.mode-btn.active {
+		background: var(--fill);
+		color: var(--fill-ink);
+	}
+	.mode-btn:disabled {
+		cursor: not-allowed;
+	}
 	.switch {
 		position: relative;
 		flex: none;
@@ -759,5 +2942,118 @@
 	.switch input:focus-visible + .track {
 		outline: 2px solid var(--ink);
 		outline-offset: 2px;
+	}
+	.model-fields {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		flex: 1;
+		min-width: 220px;
+	}
+	.mcp-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	/* The registration line is long and unbreakable, so it scrolls rather than widening the card. */
+	.mcp-command {
+		display: block;
+		overflow-x: auto;
+		white-space: pre;
+		padding: 6px 8px;
+		border: 1px solid var(--edge);
+		background: var(--panel);
+		font-size: 11px;
+		line-height: 1.5;
+	}
+	.model-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.model-label {
+		flex: none;
+		width: 72px;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		color: var(--ink-soft);
+		text-align: right;
+	}
+	.model-row .image-input {
+		flex: 1;
+	}
+	.model-save-row {
+		display: flex;
+		justify-content: flex-end;
+		margin-top: 4px;
+	}
+	.var-row {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 10px;
+	}
+	.var-list {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.var-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 8px;
+		background: var(--bg);
+		border: 1px solid var(--rule);
+	}
+	.var-name {
+		flex: 1;
+		min-width: 0;
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--ink);
+		word-break: break-all;
+	}
+	.var-status {
+		flex: none;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		letter-spacing: 0.04em;
+		color: var(--danger);
+	}
+	.var-status.present {
+		color: var(--ink-soft);
+	}
+	.var-remove {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		padding: 0;
+		color: var(--ink-soft);
+		background: transparent;
+		border: 1px solid var(--rule);
+		cursor: pointer;
+	}
+	.var-remove:hover:not(:disabled) {
+		color: var(--danger);
+		border-color: var(--danger);
+	}
+	.var-remove:disabled {
+		opacity: var(--dim);
+		cursor: not-allowed;
+	}
+	.var-empty {
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--ink-faint);
+	}
+	.var-add {
+		display: flex;
+		gap: 8px;
+	}
+	.var-add :global(.btn) {
+		flex: none;
 	}
 </style>

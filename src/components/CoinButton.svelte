@@ -1,12 +1,9 @@
 <script lang="ts">
-	// The easter-egg trigger: a little arcade "NEW!" coin idly flipping between
-	// two decorative pixel rules. The coin is itself a dot-matrix sprite — drawn
-	// in the same medium the editor it opens lets you draw in. (The theme bans
-	// border-radius globally, so "round" here means round in pixels.)
+	// The theme bans border-radius globally, so "round" here means round in pixels.
 	import type { AvatarArt } from '../avatars/types.ts';
 	import Avatar from './Avatar.svelte';
 
-	let { onclick }: { onclick: () => void } = $props();
+	let { href = '/avatars' }: { href?: string } = $props();
 
 	const coinArt: AvatarArt = {
 		name: 'coin',
@@ -25,12 +22,12 @@
 
 <div class="coin-row">
 	<span class="pixel-line" aria-hidden="true"></span>
-	<button class="coin-btn" {onclick} aria-label="Draw your own avatar" title="Draw your own avatar">
+	<a class="coin-btn" {href} aria-label="Draw your own avatar" title="Draw your own avatar">
 		<span class="new" aria-hidden="true">New</span>
 		<span class="coin" aria-hidden="true">
 			<Avatar art={coinArt} name="coin" scale={3} />
 		</span>
-	</button>
+	</a>
 	<span class="pixel-line" aria-hidden="true"></span>
 </div>
 
@@ -59,6 +56,7 @@
 		border: none;
 		background: none;
 		cursor: pointer;
+		text-decoration: none;
 	}
 	.new {
 		font-family: var(--font-mono);
@@ -71,22 +69,20 @@
 	}
 	.coin {
 		display: block;
-		box-shadow: 2px 2px 0 var(--ink);
+		box-shadow: 2px 2px 0 var(--shadow);
 		animation: coin-spin 2.6s ease-in-out infinite;
 	}
-	/* Hovering "catches" the coin: the spin stops (it would otherwise override
-	   the transform) and it presses into its shadow. */
+	/* The spin has to stop, or it would override the press transform. */
 	.coin-btn:hover .coin {
 		animation: none;
 		transform: translate(1px, 1px);
-		box-shadow: 1px 1px 0 var(--ink);
+		box-shadow: 1px 1px 0 var(--shadow);
 	}
 	.coin-btn:focus-visible {
 		outline: 2px solid var(--ink);
 		outline-offset: 2px;
 	}
-	/* One edge-on flip per cycle, holding face-out most of the time. The sprite
-	   is symmetric, so the mirrored "back" reads as the same coin. */
+	/* The sprite is symmetric, so the mirrored "back" reads as the same coin. */
 	@keyframes coin-spin {
 		0%,
 		55% {

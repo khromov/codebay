@@ -1,53 +1,53 @@
 <script lang="ts">
 	import Check from '@lucide/svelte/icons/check';
 	import X from '@lucide/svelte/icons/x';
-	import type { InstanceHealth } from '../types.ts';
+	import type { InstanceHealth, InstanceMode } from '../types.ts';
 	import Skeleton from './Skeleton.svelte';
-
-	// The two checks intrinsic to every instance, independent of any injection.
-	// Shown live, as the inactive fallback, and counted toward the skeleton rows.
-	const FIXED_CHECKS = ['Container running', 'Code-server reachable'] as const;
 
 	let {
 		health = null,
 		lastFetchedAt = null,
 		active = true,
-		injectionChecks = 0
+		injectionChecks = 0,
+		mode = 'ide'
 	}: {
 		/** Latest health snapshot, or null while the first check is pending. */
 		health?: InstanceHealth | null;
 		/** Epoch ms of the last successful health fetch, for the "updated Ns ago" readout. */
 		lastFetchedAt?: number | null;
-		/** Whether the container is running. When false, the panel is grayed out
-		 *  rather than showing a skeleton loader (no health checks are coming). */
+		/** When false, no checks are coming — the panel grays out rather than showing a loader. */
 		active?: boolean;
-		/** How many injection-backed health checks to expect (registry-derived,
-		 *  passed from the server) so the skeleton renders one row per real check
-		 *  before the first snapshot arrives. */
+		/** Registry-derived, so the skeleton renders one row per real check. */
 		injectionChecks?: number;
+		/** Terminal instances serve ttyd, not code-server, so the reachability label differs. */
+		mode?: InstanceMode;
 	} = $props();
 
-	// One row per check: a pass/fail flag plus a uniform value word — "OK" when
-	// passing, "—" otherwise (the tick/cross icon already conveys pass vs fail).
-	const checks = $derived.by((): { label: string; ok: boolean; value: string }[] => {
+	// Intrinsic to every instance, independent of any injection. The second label tracks the
+	// served surface — the probe underneath is the same host-port reachability check either way.
+	const FIXED_CHECKS = $derived([
+		'Container running',
+		mode === 'terminal' ? 'Terminal reachable' : 'Code-server reachable'
+	] as const);
+
+	// The value word stays uniform because the tick/cross icon already conveys pass vs fail.
+	// Keyed by id, not label: a repeated label would make the keyed each throw and freeze the panel.
+	const checks = $derived.by((): { key: string; label: string; ok: boolean; value: string }[] => {
 		if (!health) return [];
 		const v = (ok: boolean) => ({ ok, value: ok ? 'OK' : '—' });
 		return [
-			{ label: FIXED_CHECKS[0], ...v(health.containerRunning) },
-			{ label: FIXED_CHECKS[1], ...v(health.codeServerAccessible) },
-			// One row per injection that reports health (e.g. Claude Code, GitHub CLI, Claude hooks).
-			...health.injections.map((i) => ({ label: i.label, ...v(i.ok) }))
+			{ key: 'container', label: FIXED_CHECKS[0], ...v(health.containerRunning) },
+			{ key: 'surface', label: FIXED_CHECKS[1], ...v(health.codeServerAccessible) },
+			...health.injections.map((i) => ({ key: i.id, label: i.label, ...v(i.ok) }))
 		];
 	});
 
-	// Total health rows: the two fixed checks plus one per injection that reports
-	// health. Once a snapshot lands we know the exact count; before then we fall
-	// back to the registry-derived expected count so the skeleton matches.
+	// Before the first snapshot lands, the registry-derived count keeps the skeleton honest.
 	function getNumberOfChecks(): number {
 		return health ? checks.length : FIXED_CHECKS.length + injectionChecks;
 	}
 
-	// Tick a local clock so the "updated Ns ago" readout counts up between polls.
+	// A local clock, so the "updated Ns ago" readout counts up between polls.
 	let now = $state(Date.now());
 	$effect(() => {
 		const timer = setInterval(() => (now = Date.now()), 1000);
@@ -65,7 +65,7 @@
 	<div class="panel-bar">Health</div>
 	<div class="health">
 		{#if health}
-			{#each checks as check (check.label)}
+			{#each checks as check (check.key)}
 				<div class="hrow">
 					<span class="box {check.ok ? 'ok' : 'bad'}">
 						{#if check.ok}<Check size={12} strokeWidth={3} />{:else}<X
@@ -104,7 +104,7 @@
 	}
 	/* Container isn't running yet: gray the panel out instead of loading it. */
 	.healthwrap.dim {
-		opacity: 0.5;
+		opacity: var(--dim-panel);
 	}
 	.health {
 		background: var(--bg-card);
@@ -128,15 +128,16 @@
 	.box {
 		width: 16px;
 		height: 16px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		color: var(--ink);
 	}
 	.box.ok {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 	.box.bad {
 		background: transparent;

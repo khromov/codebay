@@ -8,6 +8,7 @@
 		variant = 'default',
 		size = 'md',
 		ghost = false,
+		square = false,
 		icon,
 		iconSize,
 		href,
@@ -20,6 +21,8 @@
 		size?: Size;
 		/** Dashed-outline treatment that fills on hover — used for secondary links. */
 		ghost?: boolean;
+		/** Icon-only: drops the padding for a square that matches the row's button height. */
+		square?: boolean;
 		/** Optional leading icon component, e.g. a lucide icon like `Plus`. */
 		icon?: Component<{ size?: number }>;
 		/** Override the icon size; defaults to a size that scales with `size`. */
@@ -40,6 +43,7 @@
 	<a
 		class="btn {variant} {size}"
 		class:ghost
+		class:square
 		href={disabled ? undefined : href}
 		aria-disabled={disabled || undefined}
 		tabindex={disabled ? -1 : undefined}
@@ -49,7 +53,7 @@
 		{@render children?.()}
 	</a>
 {:else}
-	<button class="btn {variant} {size}" class:ghost {onclick} {disabled} {...rest}>
+	<button class="btn {variant} {size}" class:ghost class:square {onclick} {disabled} {...rest}>
 		{#if Icon}<Icon size={resolvedIconSize} />{/if}
 		{@render children?.()}
 	</button>
@@ -65,26 +69,25 @@
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg-card);
 		color: var(--ink);
 		cursor: pointer;
 		text-decoration: none;
 	}
 	.btn:disabled {
-		opacity: 0.4;
+		opacity: var(--dim);
 		cursor: not-allowed;
 	}
 	/* `disabled` has no native effect on an <a> — the href branch above drops the
      href entirely when disabled, but it still needs the same visual treatment
      and to be excluded from the tab order / assistive-tech actions. */
 	.btn[aria-disabled='true'] {
-		opacity: 0.4;
+		opacity: var(--dim);
 		cursor: not-allowed;
 		pointer-events: none;
 	}
 
-	/* Sizes */
 	.btn.sm {
 		padding: 7px 12px;
 		font-size: 12px;
@@ -98,35 +101,52 @@
 		font-size: 15px;
 	}
 
-	/* Default (outline) variant */
-	.btn.default:hover:not(:disabled) {
-		background: var(--ink);
-		color: var(--bg);
+	/* Sized to match the text button of the same `size`, so the two sit flush in a row. */
+	.btn.square {
+		padding: 0;
+	}
+	.btn.square.sm {
+		width: 30px;
+		height: 30px;
+	}
+	.btn.square.md {
+		width: 35px;
+		height: 35px;
+	}
+	.btn.square.lg {
+		width: 44px;
+		height: 44px;
 	}
 
-	/* Primary (filled) variant */
+	.btn.default:hover:not(:disabled) {
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
+	}
+
 	.btn.primary {
 		font-weight: 700;
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 	.btn.primary:hover:not(:disabled) {
 		background: var(--bg-card);
+		border-color: var(--edge);
 		color: var(--ink);
 	}
 
-	/* Ghost: dashed outline that fills in on hover (secondary links like "Details"). */
 	.btn.ghost {
 		background: transparent;
 		border-style: dashed;
 	}
 	.btn.ghost:hover:not(:disabled) {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 		border-style: solid;
 	}
 
-	/* Danger variant */
 	.btn.danger {
 		color: var(--danger);
 		border-color: var(--danger);

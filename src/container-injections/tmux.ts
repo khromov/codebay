@@ -1,12 +1,8 @@
 import { checkPresence, execInContainer } from '../lib/exec.server.ts';
+import { appendLinesIfAbsent } from '../lib/container-files.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
 
-/**
- * Multi-distro tmux install, run as root. Short-circuits when tmux is already
- * present, so a rebuild re-apply is a no-op. apt-get is the primary path (the
- * default image is Debian/Ubuntu-based); the rest are best-effort for
- * project-supplied images. Exported for the isolated tests.
- */
+/** apt-get is the real path (the default image is Debian); the rest cover project images. */
 export const INSTALL_SCRIPT =
 	'if command -v tmux >/dev/null 2>&1; then exit 0; fi; ' +
 	'export DEBIAN_FRONTEND=noninteractive; ' +
@@ -19,48 +15,27 @@ export const INSTALL_SCRIPT =
 	'command -v tmux >/dev/null 2>&1';
 
 /**
- * Lines appended to the container user's `~/.tmux.conf`. `mouse on` makes the
- * wheel scroll tmux's own scrollback in xterm.js — the feature users actually
- * need — at the cost of tmux owning mouse selection (code-server's
- * copyOnSelection doesn't apply inside tmux); `set-clipboard on` (OSC52) keeps
- * tmux copy reaching the browser clipboard; `status off` hides the status bar
- * — the IDE terminal is a single dedicated session, so the bar only cost a
- * row. Exported for the isolated tests.
+ * `mouse on` buys wheel-scroll and makes tmux — not the browser — own the drag, which is what
+ * survives Claude's screen repaints; `set-clipboard on` then hands the copy to the host via OSC 52,
+ * which `TerminalPane` decodes. `bind m` shadows mark-pane, unused in a single pane.
  */
 export const TMUX_CONF_LINES = [
 	'set -g mouse on',
 	'set -g history-limit 50000',
 	'set -g set-clipboard on',
-	'set -g status off'
+	// Only `xterm*` gets the clipboard feature by default, so an image whose TERM is anything
+	// else silently turns `set-clipboard on` into a no-op.
+	"set -as terminal-overrides ',*:Ms=\\E]52;%p1%s;%p2%s\\007'",
+	'set -g allow-passthrough on',
+	'set -g status off',
+	'bind m set -g mouse \\; display-message "mouse: #{?mouse,on,off}"'
 ];
-
-/**
- * Append each conf line to `~/.tmux.conf`, guarded with `grep -qF` so a
- * re-apply never duplicates a line; `>>` creates the file if absent. The lines
- * are passed as `$@` so no conf text is interpolated into the loop body.
- */
-const CONF_SCRIPT =
-	'h=$(eval echo ~$(id -un)); f="$h/.tmux.conf"; ' +
-	'for line in "$@"; do ' +
-	'grep -qF "$line" "$f" 2>/dev/null || printf \'%s\\n\' "$line" >> "$f"; ' +
-	'done';
 
 const CHECK_SCRIPT = 'command -v tmux >/dev/null 2>&1 && echo 1 || echo 0';
 
 /**
- * Install tmux so the IDE's auto-launched terminal can run inside a persistent
- * named session (see `TERMINAL_TASK` in devcontainer.server.ts): closing the
- * browser only detaches the tmux client, so the Claude process and its
- * scrollback survive code-server reaping the terminal PTY.
- *
- * The primary install happens at image build time via the staged
- * `codebay-tmux` local feature (`writeTmuxFeature` in devcontainer.server.ts,
- * sharing this module's INSTALL_SCRIPT) — containers that firewall egress
- * after start can't reach package mirrors post-up. This injection is the
- * runtime fallback (INSTALL_SCRIPT short-circuits when tmux is already
- * present), writes the user's ~/.tmux.conf, and provides the health row.
- * Install failure is non-fatal — the terminal task guards on `command -v tmux`
- * and falls back to the non-persistent marker-file behavior.
+ * The runtime fallback to the build-time `codebay-tmux` feature, which is the primary
+ * install; failure is non-fatal because the terminal task guards on `command -v tmux`.
  */
 export const tmux: Injection = {
 	id: 'tmux',
@@ -68,8 +43,7 @@ export const tmux: Injection = {
 
 	async apply(target, log) {
 		log('Installing tmux…\n');
-		// Package installation needs root; omitting remoteUser makes execInContainer
-		// run the script as root regardless of the container's remote user.
+		// Omitting remoteUser runs as root, which the package install needs.
 		const install = await execInContainer(
 			{ containerId: target.containerId },
 			{ script: INSTALL_SCRIPT }
@@ -78,10 +52,7 @@ export const tmux: Injection = {
 			log(`⚠ tmux install failed: ${install.error} — terminal falls back to non-persistent mode\n`);
 			return;
 		}
-		const conf = await execInContainer(target, {
-			script: CONF_SCRIPT,
-			args: ['tmux-conf', ...TMUX_CONF_LINES]
-		});
+		const conf = await appendLinesIfAbsent(target, [{ name: '.tmux.conf' }], TMUX_CONF_LINES);
 		log(conf.ok ? '✓ tmux installed\n' : `⚠ tmux conf setup failed: ${conf.error}\n`);
 	},
 

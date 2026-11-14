@@ -1,141 +1,85 @@
 # Codebay
 
-**devcontainer manager** — a web UI for spinning up isolated devcontainer instances from any local folder for multiple simultaneous Claude Code workflows using the web version VS Code.
+**Codebay - the devcontainer manager** — a web UI for spinning up isolated devcontainer instances from any local folder or Git repo URL, each running Claude Code in a browser-based VS Code (`code-server`).
 
-Pick a project folder → the app copies it, injects code-server into its `devcontainer.json`, runs `devcontainer up`, and publishes the editor on a unique host port. It also copies your host's Claude Code and GitHub CLI credentials into each container so `claude`, `gh`, and git-over-HTTPS work out of the box.
+## Quick start
 
-## Claude Code in your devcontainer
+Requires [Bun](https://bun.sh) >= 1.3.13 (Node.js is not supported) and a running Docker daemon (Docker Desktop, Colima, OrbStack…). macOS, Linux and Windows are supported.
 
-The app copies your Claude Code credentials and installs the attention hooks into every container, but it only copies them — it does **not** install the `claude` binary for projects that ship their own devcontainer.
-
-- **Folders without a `devcontainer.json`** — the app generates a default config and automatically adds the [official Claude Code feature](https://github.com/anthropics/devcontainer-features), so `claude` is ready to use.
-- **Folders that ship their own `.devcontainer/devcontainer.json`** — you are responsible for making sure `claude` is available in the image. The manager respects your config and won't modify your tooling. The simplest way is to add the feature:
-
-  ```jsonc
-  // .devcontainer/devcontainer.json
-  {
-  	"features": {
-  		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
-  	}
-  }
-  ```
-
-  (The feature installs Node.js if it isn't already present.) Alternatively, install it yourself in your Dockerfile, e.g. `npm install -g @anthropic-ai/claude-code`.
-
-## Container injections
-
-After `devcontainer up`, the app installs a few things into each container. Each is a self-contained module under `src/container-injections/` (add or remove one by editing that directory's registry):
-
-- **git safe.directory** — marks the copied workspace as a safe git directory for the container user, so git doesn't reject the host-owned `.git` as "dubious ownership".
-- **git identity** — copies your host's global `git config user.name`/`user.email` so commits made inside the container are attributed to you, instead of failing or landing as `root@<container>`.
-- **Claude Code** — copies your host's Claude Code OAuth credentials so the in-container `claude` is signed in without a fresh login.
-- **GitHub CLI** — copies your host's GitHub token so `gh` and git-over-HTTPS push/pull are authenticated.
-- **Claude attention hooks** — installs Claude hooks that ping the manager when Claude finishes a task or needs input, pulsing the instance's IDE tab.
-- **claude alias** — aliases the in-container `claude` to `claude --dangerously-skip-permissions`, since every instance is a throwaway, single-tenant sandbox where the permission prompts add friction without adding real protection.
-
-## Requirements
-
-- macOS and Linux are supported (Windows is untested — feel free to [open an issue](../../issues))
-- [Bun](https://bun.sh) >= 1.3.13 (Node.js is not supported)
-- Docker (eg. Docker Desktop or Colima)
-
-## Setup
+On Windows, Docker Desktop must use its **WSL2 backend**, so the workspace copies under `%USERPROFILE%\.codebay\` can be bind-mounted into the Linux daemon. Symlinks in a source folder are copied as regular files rather than recreated, because Windows only permits creating them under Developer Mode — the same thing Git for Windows does by default.
 
 ```sh
-bun run update:mochi # vendor the mochi framework (vendor/ is gitignored, so it isn't in a fresh clone)
-bun install
+bunx codebay@latest
 ```
 
-> `mochi-framework` is a `file:./vendor/mochi-framework` dependency and `vendor/` is gitignored, so a fresh clone doesn't include it. Run `bun run update:mochi` before `bun install` or the dev server won't boot. (The Docker build handles this step for you.)
-
-## Commands
-
-```sh
-bun run dev # dev server (local DATA_DIR, no browser launch)
-bun run start # run the app
-bun run build # production build → .mochi/
-bun run typecheck # svelte-check + tsc --noEmit
-bun test # run tests
-```
-
-## Run with Docker
-
-Instead of running from source you can run the manager itself as a container that
-drives your **host's** Docker daemon (Docker-out-of-Docker) — it spins the devcontainers
-up as siblings on the host. A multi-arch image is published to GHCR:
-
-```sh
-docker pull ghcr.io/khromov/codebay:latest
-```
-
-### Build and run from the Dockerfile
-
-To build the image yourself instead of pulling:
-
-1. Build it (vendors mochi and produces a production build — no local Bun needed):
-   ```sh
-   docker build -t codebay .
-   ```
-2. Point compose at your local image by editing `docker-compose.yml` — replace the
-   `image:` line with `build: .` (or set `image: codebay`).
-3. Start it:
-   ```sh
-   export BASIC_AUTH_PASSWORD=change-me
-   export CODEBAY_DATA_DIR=/opt/codebay && mkdir -p "$CODEBAY_DATA_DIR"
-   docker compose up -d
-   ```
-4. Open `http://localhost:3333` and log in as `admin` with that password.
-
-### Run the published image
-
-The easiest way to run it is the bundled [`docker-compose.yml`](./docker-compose.yml):
-
-```sh
-export BASIC_AUTH_PASSWORD=change-me
-export CODEBAY_DATA_DIR=/opt/codebay        # Linux; on Mac use a path under $HOME (see below)
-export CODEBAY_GITHUB_TOKEN=$(gh auth token)
-export CODEBAY_CLAUDE_CODE_TOKEN=$(claude setup-token)   # optional
-mkdir -p "$CODEBAY_DATA_DIR"
-docker compose up -d
-```
-
-Or the equivalent raw `docker run`:
-
-```sh
-docker run -d --name codebay --network host \
-  -e BASIC_AUTH_PASSWORD=change-me \
-  -e DATA_DIR=/opt/codebay \
-  -e DOCKER_HOST=unix:///var/run/docker.sock \
-  -e CODEBAY_GITHUB_TOKEN="$(gh auth token)" \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /opt/codebay:/opt/codebay \
-  -v "$HOME/.gitconfig:/root/.gitconfig:ro" \
-  -v "$HOME/projects:$HOME/projects:ro" \
-  ghcr.io/khromov/codebay:latest
-```
-
-Two things are load-bearing:
-
-- **`--network host`** — so the manager's in-app proxy (`127.0.0.1:<port>`) and the
-  attention bridge (containers → `host.docker.internal`) reach the code-server instances.
-  With host networking, `HOST=0.0.0.0` is required, so **always set `BASIC_AUTH_PASSWORD`**.
-- **`DATA_DIR` at an identical host↔container path** — `devcontainer up` bind-mounts the
-  copied workspace, and the daemon resolves that path on the host. The bind mount must map
-  the same absolute path on both sides (`/opt/codebay:/opt/codebay`), and `DATA_DIR` must
-  point at it.
-
-**Linux vs. Mac:** on a Linux host with a native daemon, any `DATA_DIR` path works.
-On **Docker Desktop / Colima** (Mac) the daemon runs in a VM that only sees auto-mounted
-host paths, so put `CODEBAY_DATA_DIR` **under `$HOME`** (e.g. `$HOME/.codebay`); also note
-`--network host` binds to the VM, so reach the UI via the VM rather than `localhost`.
+The UI opens at `http://localhost:6969`. State (SQLite DB + per-instance workspace copies) lives in `~/.codebay`.
 
 ## Configuration
 
-- `PORT` — server port (default `3333`)
+- `PORT` — server port (default `6969`)
 - `DATA_DIR` — where state lives (default `~/.codebay`)
-- `DOCKER_HOST` — Docker daemon socket/URL to connect to (e.g. `unix://$HOME/.colima/default/docker.sock` or `tcp://1.2.3.4:2375`); defaults to your active Docker context
-- `BASIC_AUTH_PASSWORD` — enables HTTP Basic Auth over the whole UI (disabled when unset)
-- `MOCHI_KEY` — base64url-encoded 32-byte secret; set it for persistent deployments so signed image URLs and island props survive restarts (a random key is generated when unset)
-- `CODEBAY_CLAUDE_CODE_TOKEN` — inject this Claude Code OAuth token into every container instead of discovering the host's credentials (e.g. from `claude setup-token`)
-- `CODEBAY_GITHUB_TOKEN` — inject this GitHub token into every container instead of reading `gh auth token` from the host
+- `DOCKER_HOST` — Docker socket/URL (defaults to your active Docker context)
+- `HOST` — bind address (default `127.0.0.1`). Set `0.0.0.0` to reach codebay from other machines; your instances' forwarded app ports are then published on all interfaces too. Each container's code-server port stays loopback-only regardless — it runs without a password of its own and is reached through the Basic-Auth-gated `/p/:id/` proxy instead. Existing instances need a **Restart** to pick up the new binding. Note that a plain-`http` LAN address is not a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts), so browsers refuse clipboard access there and copying out of an instance's VS Code terminal does nothing — reach codebay over `localhost` (e.g. `ssh -L 6969:localhost:6969 <host>`) or allow the origin under `chrome://flags/#unsafely-treat-insecure-origin-as-secure`.
+- `PUBLIC_ORIGIN` — the origin you actually load codebay from (default `http://localhost:<PORT>`). Every form POST — creating an instance, restarting one, saving settings — is checked against it, so reaching the UI at any other address (a LAN IP, a hostname, or a reverse proxy / tunnel that terminates TLS) makes those actions fail with a `403 Cross-site POST form submissions are forbidden` until you set this. Give the exact scheme + host + port your browser shows, with no trailing slash — `PUBLIC_ORIGIN=http://192.168.1.50:6969` or `PUBLIC_ORIGIN=https://codebay.example.com`. Behind a TLS-terminating proxy this is the public `https://` URL, not the loopback address the proxy forwards to.
+- `TRUSTED_ORIGINS` — comma-separated extra origins accepted alongside `PUBLIC_ORIGIN`, for when the UI is legitimately reachable at more than one address (e.g. `http://localhost:6969,http://192.168.1.50:6969`)
+- `BASIC_AUTH_PASSWORD` — enables HTTP Basic Auth over the whole UI (disabled when unset); required if you bind beyond loopback with `HOST=0.0.0.0`
+- `CODEBAY_CLAUDE_CODE_TOKEN` — Claude Code token to inject into every container (e.g. from `claude setup-token`) instead of discovering the host's credentials
+- `CODEBAY_GITHUB_TOKEN` — GitHub token to inject instead of reading `gh auth token` from the host
 - `DISABLE_OPEN_BROWSER=1` — skip opening the browser on startup
+
+## MCP server
+
+Codebay can expose itself to other AI agents over [MCP](https://modelcontextprotocol.io), so an agent
+can spin up a sandbox, run Claude Code in it non-interactively, and read back the result.
+
+It is **off by default**. Turn it on under Settings → **MCP server**, then copy the registration line
+it shows you:
+
+```sh
+claude mcp add --transport http codebay http://localhost:6969/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+The endpoint is `/mcp`. It returns `404` while disabled and `401` without a valid bearer token, and
+it is the one place that does not use `BASIC_AUTH_PASSWORD` — MCP clients send the token instead.
+
+The tools cover the whole loop: `create_sandbox`, `run_agent`, `get_run`, `list_runs`, `stop_run`,
+`get_diff`, `read_file`, `write_file`, `exec_command`, `git_push`, `create_pr`, `get_logs`,
+`list_sandboxes`, `get_sandbox`, `rename_sandbox`, `stop_sandbox`, `start_sandbox`,
+`rebuild_sandbox`, `add_port_forward`, `remove_port_forward` and `delete_sandbox`. Runs are
+asynchronous — `run_agent` hands back a run id and the work continues in the background, surviving a
+manager restart. `stop_sandbox` / `start_sandbox` cycle the container without losing the workspace,
+and `rebuild_sandbox` recreates it (which is what applies a port forward).
+
+Sandboxes created this way are ordinary instances: they show up on the dashboard with a live
+"agent running" line, and you can open the IDE to watch. They persist until an agent (or you)
+deletes them.
+
+> **Anything holding the token can create containers and run agents with your GitHub and Claude
+> credentials, with permission prompts bypassed inside the container.** Treat it like a password, and
+> regenerate it from Settings if it leaks.
+
+## Workspace uploads
+
+Turn on Settings → **Drop files into the workspace** to drag-and-drop or paste files/images onto an
+instance and save them under `codebay-inbox/` in its workspace (git-excluded), so Claude Code inside
+can `Read` them. Off by default.
+
+## Troubleshooting
+
+- `403 Cross-site POST form submissions are forbidden` when clicking anything that saves — codebay is being reached at an origin other than `http://localhost:<PORT>`. Set `PUBLIC_ORIGIN` to the URL in your browser's address bar and restart (see Configuration).
+- `warn: incorrect peer dependency "svelte@5.56.8"` on startup — harmless. It comes from `svelte-french-toast`, whose published peer range predates Svelte 5; the library works correctly on Svelte 5. Nothing to fix.
+
+## Development
+
+```sh
+bun install
+bun run dev        # dev server, local ./.codebay DATA_DIR, no browser launch
+bun run checks     # format + typecheck + tests
+```
+
+The repo also ships a Bun devcontainer (`.devcontainer/`) for a containerized setup; it runs a nested Docker daemon, so codebay itself can boot instances from inside it. New to authoring devcontainers? See the general [Devcontainer guide](./DEVCONTAINER_GUIDE.md).
+
+## License
+
+MIT

@@ -1,14 +1,21 @@
 import { Mochi, sequence, silenceInternalRoutes } from 'mochi-framework';
 import { routes } from './routes.ts';
-import { basicAuth } from './lib/auth.server.ts';
+import { basicAuth, tokenAuthenticated } from './lib/auth.server.ts';
 import { themeHandle } from './lib/theme.server.ts';
 import { PROXY_PREFIX } from './lib/proxy.server.ts';
+import { resumeRuns } from './lib/agent-runs.server.ts';
+import { warnIfBuildStale } from './lib/build-freshness.server.ts';
+import { LOCK_STALE_MS, acquireDataDirLock } from './lib/data-dir-lock.server.ts';
+import { UPLOAD_MAX_BYTES } from './lib/uploads.server.ts';
 import {
+	APP_VERSION,
 	BASIC_AUTH_PASSWORD,
+	DATA_DIR,
 	HOST,
 	PORT,
 	PUBLIC_ORIGIN,
-	TRUSTED_ORIGINS
+	TRUSTED_ORIGINS,
+	ensureMochiKey
 } from './lib/config.server.ts';
 
 if (!BASIC_AUTH_PASSWORD) {
@@ -19,22 +26,43 @@ if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !BASIC_AUTH_PASSWORD) {
 		`⚠ Binding to ${HOST} (non-loopback) without a password — anyone on the network can reach this server.`
 	);
 }
+warnIfBuildStale();
+
+const lock = acquireDataDirLock(DATA_DIR);
+if (!lock.ok) {
+	const who = lock.holder
+		? `pid ${lock.holder.pid} on ${lock.holder.host}, started ${new Date(lock.holder.startedAt).toLocaleString()}`
+		: 'an unknown process';
+	console.error(
+		`✖ Another codebay manager (${who}) is already using ${DATA_DIR}. Two managers on one data dir ` +
+			"poll the same runs and overwrite each other's rows — stop it, or start this one with a " +
+			`different DATA_DIR. A crashed manager's lock (${lock.path}) clears itself after ${LOCK_STALE_MS / 1000}s.`
+	);
+	process.exit(1);
+}
+// A default Ctrl-C skips the exit hooks, and an unreleased lock refuses the restart that follows.
+process.on('exit', () => lock.release());
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+	process.on(signal, () => process.exit(signal === 'SIGINT' ? 130 : 143));
+}
+
+// Must precede Mochi.serve(), which is where MOCHI_KEY is read.
+ensureMochiKey();
+
+// Agent runs outlive the process that started them, so re-attach pollers to anything still in flight.
+resumeRuns();
 
 await Mochi.serve({
 	port: PORT,
 	hostname: HOST,
+	// Bun defaults to 10s and aborts slower form POSTs mid-flight; passed through to Bun.serve.
+	idleTimeout: 120,
+	// Bun's own default (128 MiB) is below UPLOAD_MAX_BYTES; passed through to Bun.serve.
+	maxRequestBodySize: UPLOAD_MAX_BYTES,
 	development: process.env.MODE === 'development',
 	htmlShell: './src/shell.html',
-	// Trailing-slash normalization is disabled entirely: the proxy's `/p/:id`
-	// route does its own bare-`/p/<id>` → `/p/<id>/` redirect (code-server needs
-	// the slash), and we don't want Mochi's global policy touching proxy paths.
-	// Gate the whole app (UI, APIs, proxy) behind one Basic Auth password, then
-	// stamp the visitor's theme cookie onto the SSR'd <html> tag.
 	handle: sequence(basicAuth, themeHandle),
-	// The app is served same-origin (no reverse proxy by default). Pin the public
-	// origin so Mochi's CSRF origin check accepts our own form POSTs in production
-	// mode — without this it refuses every form mutation and warns about a missing
-	// proxy.origin. Override PUBLIC_ORIGIN / TRUSTED_ORIGINS when fronted by a proxy.
+	// Without a pinned origin, Mochi's CSRF check refuses every form POST in production.
 	proxy: {
 		origin: PUBLIC_ORIGIN
 	},
@@ -42,14 +70,9 @@ await Mochi.serve({
 		trustedOrigins: TRUSTED_ORIGINS
 	},
 	filters: {
-		// Exempt the bridge from Mochi's framework-level CSRF origin check. Containers
-		// POST here from a plain `curl` with no Origin header, so the origin check would
-		// 403 every attention ping before it reaches the handler. This is safe: the route
-		// authenticates by a per-instance bearer token (see auth.server.ts / routes.ts),
-		// not by ambient browser credentials, so classic CSRF doesn't apply. Returning
-		// null bypasses the block; anything else delegates to Mochi's default decision.
-		'csrf:check': (decision, { url }) =>
-			url.pathname.startsWith('/api/bridge/') ? null : decision,
+		// Containers and MCP clients send no Origin header, which the check would 403; safe because
+		// those routes authenticate by token, not ambient browser credentials.
+		'csrf:check': (decision, { url }) => (tokenAuthenticated(url.pathname) ? null : decision),
 		'consoleLogger:line': (line, ctx) => {
 			const kept = silenceInternalRoutes(line, ctx);
 			if (kept == null) {
@@ -58,18 +81,13 @@ await Mochi.serve({
 			if (ctx.source.name === 'ws:message' && ctx.path.startsWith(PROXY_PREFIX + '/')) {
 				return null;
 			}
-			// The bridge fires on every Claude hook event (Stop/Notification/
-			// UserPromptSubmit) — far more often than any human action — and these
-			// requests carry the per-instance bridge token. Keep them out of the log
-			// entirely rather than relying on remembering not to log secrets elsewhere.
-			if (ctx.path.startsWith('/api/bridge/')) {
+			// A line per Claude hook event or JSON-RPC frame is noise, and each would print its token.
+			if (tokenAuthenticated(ctx.path)) {
 				return null;
 			}
 			return kept;
 		},
-		// Belt-and-suspenders: trailingSlash is off above, so this never fires
-		// today. It stays as a guard — if the policy is ever re-enabled, proxy
-		// paths under /p/ remain exempt so code-server's subpath isn't broken.
+		// Dormant while trailingSlash is off, but keeps code-server's subpath safe if it returns.
 		'trailingSlash:redirect': (computed, { url }) =>
 			url.pathname.startsWith(PROXY_PREFIX + '/') ? null : computed
 	},
@@ -77,10 +95,8 @@ await Mochi.serve({
 });
 
 const url = 'http://localhost:' + PORT;
-console.log(`Server running at ${url} (bound to ${HOST})`);
+console.log(`codebay v${APP_VERSION} — server running at ${url} (bound to ${HOST})`);
 
-// Open the web UI in the user's default browser on startup.
-// Set DISABLE_OPEN_BROWSER=1 to skip (e.g. headless or Claude Code runs).
 if (process.env.DISABLE_OPEN_BROWSER !== '1') {
 	const openCmd =
 		process.platform === 'darwin'
@@ -91,6 +107,6 @@ if (process.env.DISABLE_OPEN_BROWSER !== '1') {
 	try {
 		Bun.spawn(openCmd, { stdout: 'ignore', stderr: 'ignore' });
 	} catch {
-		// Browser launch is best-effort; ignore failures (e.g. headless environments).
+		// Best-effort — a headless host has nothing to open.
 	}
 }

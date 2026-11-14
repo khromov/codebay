@@ -1,12 +1,14 @@
-// Turns a drawing from the avatar-editor easter egg into contribution
-// artifacts: the exact module source a sprite ships as in this directory, and a
-// pre-filled GitHub issue URL for submitting it to the official catalog.
-import { type AvatarArt, ROWS, COLS, ON } from './types.ts';
+// Turns an avatar-editor drawing into the two things a contribution needs:
+// module source and a pre-filled issue URL.
+import { type AvatarArt, ROWS, COLS, ON, GRAY } from './types.ts';
 
 export const REPO_URL = 'https://github.com/khromov/codebay';
 
-// Contributed names must be usable as a filename and a catalog key, so squash
-// anything the user types into a short lowercase slug ('' if nothing survives).
+// A brand-new sprite vs. a hand-redraw of an existing (AI-generated) one — the two
+// produce differently-shaped issues so the contribution skill can tell them apart.
+export type ContributionMode = 'create' | 'edit';
+
+// The name doubles as a filename and a catalog key, hence the aggressive squash.
 export function normalizeName(raw: string): string {
 	return raw
 		.trim()
@@ -15,22 +17,22 @@ export function normalizeName(raw: string): string {
 		.replace(/^-+|-+$/g, '');
 }
 
-// 64 row-major on/off cells → 8 pixel rows in the sprite legend ('#' / '.').
 export function cellsToPixels(cells: number[]): string[] {
 	const rows: string[] = [];
 	for (let r = 0; r < ROWS; r++) {
 		let row = '';
 		for (let c = 0; c < COLS; c++) {
-			row += cells[r * COLS + c] === ON ? '#' : '.';
+			const cell = cells[r * COLS + c];
+			row += cell === ON ? '#' : cell === GRAY ? '+' : '.';
 		}
 		rows.push(row);
 	}
 	return rows;
 }
 
-// The ready-to-paste module — byte-identical to the hand-written sprites in
-// this directory (tabs, single quotes, trailing newline) so a maintainer can
-// drop it in as src/avatars/<name>.ts and prettier won't touch it.
+// Byte-identical to the hand-written sprites (tabs, single quotes, trailing newline),
+// so a maintainer can drop it in and prettier won't touch it. It never emits `robot`,
+// so a redraw of an AI sprite lands as a plain hand-drawn module — human-made by construction.
 export function toModuleSource(art: AvatarArt): string {
 	const rows = art.pixels.map((row) => `\t\t'${row}'`).join(',\n');
 	return `import type { AvatarArt } from './types.ts';
@@ -46,11 +48,16 @@ export default art;
 `;
 }
 
-// A new-issue URL with the title and body pre-filled, so contributing is one
-// click after drawing. The art is ~64 chars, far below any URL length limit.
-export function toIssueUrl(art: AvatarArt): string {
-	const title = `Avatar contribution: ${art.name}`;
-	const body = [
+// The art is ~64 chars, far below any URL length limit.
+export function toIssueUrl(art: AvatarArt, mode: ContributionMode = 'create'): string {
+	const body = mode === 'edit' ? editIssueBody(art) : createIssueBody(art);
+	const title = mode === 'edit' ? `Avatar edit: ${art.name}` : `Avatar contribution: ${art.name}`;
+	const params = new URLSearchParams({ title, body });
+	return `${REPO_URL}/issues/new?${params}`;
+}
+
+function createIssueBody(art: AvatarArt): string {
+	return [
 		"Hi! I drew this avatar in the editor easter egg and I'd love to see it in the official set.",
 		'',
 		'```',
@@ -63,8 +70,26 @@ export function toIssueUrl(art: AvatarArt): string {
 		toModuleSource(art).trimEnd(),
 		'```',
 		'',
-		'_It should satisfy `src/avatars/avatars.test.ts`: exactly 8×8, only `#`/`.` pixels, unique name._'
+		'_It should satisfy `src/avatars/avatars.test.ts`: exactly 8×8, only `#`/`+`/`.` pixels, unique name._'
 	].join('\n');
-	const params = new URLSearchParams({ title, body });
-	return `${REPO_URL}/issues/new?${params}`;
+}
+
+// A redraw replaces an existing AI-generated sprite in place; the module carries no
+// `robot` flag, so landing it promotes the sprite from robot-drawn to hand-drawn.
+function editIssueBody(art: AvatarArt): string {
+	return [
+		`Hi! I redrew the existing \`${art.name}\` sprite by hand in the editor easter egg — it started as an AI-generated placeholder and this replaces it.`,
+		'',
+		'```',
+		...art.pixels,
+		'```',
+		'',
+		`Ready-to-paste replacement for \`src/avatars/${art.name}.ts\` (the \`robot\` flag is intentionally dropped — it's hand-drawn now):`,
+		'',
+		'```ts',
+		toModuleSource(art).trimEnd(),
+		'```',
+		'',
+		'_It should satisfy `src/avatars/avatars.test.ts`: exactly 8×8, only `#`/`+`/`.` pixels._'
+	].join('\n');
 }

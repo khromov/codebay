@@ -3,27 +3,65 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 	import HealthBox from './HealthBox.svelte';
+	import AgentLogBox from './AgentLogBox.svelte';
 	import StatusBadge from './StatusBadge.svelte';
 	import Skeleton from './Skeleton.svelte';
+	import DropZone from './DropZone.svelte';
+	import { forwardedPortUrl } from '../lib/links.ts';
 	import { liveSocket, liveStream } from '../live.ts';
 	import { apiPost, apiDelete } from '../api.ts';
+	import { enhance } from 'mochi-framework';
+	import type { MochiEnhanceOptions } from 'mochi-framework';
+	import { onBackLinkClick, installPopupBackTrap } from '../lib/popup-nav.ts';
+	import { syncTheme } from '../theme.ts';
+	import { tick } from 'svelte';
+	import toast, { Toaster } from 'svelte-french-toast';
+	import { TOAST_OPTIONS } from '../toast.ts';
+	import { filesFrom, uploadFile } from '../lib/upload.ts';
 
-	let { id, injectionChecks = 0 }: { id: string; injectionChecks?: number } = $props();
+	let {
+		id,
+		injectionChecks = 0,
+		uploadEnabled = false
+	}: { id: string; injectionChecks?: number; uploadEnabled?: boolean } = $props();
+
+	// DB-backed, so it initializes from the prop; the stream keeps it current across a Settings change.
+	// svelte-ignore state_referenced_locally
+	let uploadArmed = $state(uploadEnabled);
 
 	let instance = $state<Instance | null>(null);
 	let health = $state<InstanceHealth | null>(null);
 	let lastFetchedAt = $state<number | null>(null);
 	let logs = $state('');
+	// Every `run` frame bumps this; AgentLogBox refetches on the change, so a live run's steps
+	// stream in without a second WebSocket.
+	let runBump = $state(0);
+	let logEl = $state<HTMLDivElement | null>(null);
+	let following = $state(true);
 
-	// Auto-scroll the log box to the bottom whenever new output is appended.
-	// Runs after the DOM updates, so scrollHeight is fresh (no tick() needed).
-	function autoscroll(node: HTMLDivElement) {
-		void logs; // re-run whenever new log output is appended
-		node.scrollTop = node.scrollHeight;
+	// tick() lets the <pre> text node grow before we measure, so we reach the true bottom.
+	async function scrollToBottom() {
+		await tick();
+		logEl?.scrollTo(0, logEl.scrollHeight);
 	}
 
-	// Stream the boot/build log over its dedicated WebSocket. Reset on (re)connect
-	// so the server's buffer replay doesn't duplicate output after a reconnect.
+	// Pin to the newest output whenever logs grow — but only while following.
+	$effect(() => {
+		if (!following || logs.length === 0) return; // reading logs.length tracks appended chunks
+		scrollToBottom();
+	});
+
+	// Following is deliberately sticky: only this button changes it. Inferring it from
+	// scroll events misfired constantly, since streaming chunks and reflow above the log
+	// both move scrollTop without the user touching anything.
+	function toggleFollow() {
+		following = !following;
+		if (following) scrollToBottom();
+	}
+
+	$effect(() => installPopupBackTrap());
+
+	// Reset on every connect, because the server replays its whole buffer each time.
 	$effect(() =>
 		liveSocket(
 			`/api/instances/${id}/logs`,
@@ -32,7 +70,6 @@
 		)
 	);
 
-	// Track this instance's status and health from the central live stream.
 	$effect(() =>
 		liveStream((msg) => {
 			if (msg.type === 'instances') {
@@ -41,13 +78,18 @@
 			} else if (msg.type === 'health' && msg.data.id === id) {
 				health = msg.data.health;
 				lastFetchedAt = Date.now();
+			} else if (msg.type === 'run' && msg.data.instance_id === id) {
+				runBump += 1;
+			} else if (msg.type === 'theme') {
+				syncTheme(msg.data.value);
+			} else if (msg.type === 'upload-enabled') {
+				uploadArmed = msg.data.enabled;
 			}
 		})
 	);
 
 	const url = $derived(instance ? ideUrl(instance) : '#');
 
-	// --- Forwarded ports ------------------------------------------------------
 	let newPort = $state('');
 	let portError = $state<string | null>(null);
 	// Set when the forward set changes this session; cleared once a rebuild applies it.
@@ -91,7 +133,24 @@
 		if (ok) pendingRebuild = false;
 	}
 
-	// --- Copy logs --------------------------------------------------------------
+	let restartError = $state<string | null>(null);
+	// Covers the click until the instance reaches `creating`, where `building` takes over.
+	let restarting = $state(false);
+
+	const restartOpts: MochiEnhanceOptions<Record<string, never>, { error: string }> = {
+		onPending: (v) => (restarting = v),
+		submit: () => {
+			restartError = null;
+			return ({ result }) => {
+				if (result.type === 'failure') {
+					restartError = result.data?.error ?? 'Restart failed';
+				} else if (result.type === 'error') {
+					restartError = 'Network error. Try again.';
+				}
+			};
+		}
+	};
+
 	let copied = $state(false);
 	let copyTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -101,10 +160,59 @@
 		clearTimeout(copyTimer);
 		copyTimer = setTimeout(() => (copied = false), 2000);
 	}
+
+	// Sequential, so the toast order matches the drop order.
+	async function handleUpload(files: File[]) {
+		for (const file of files) {
+			try {
+				const saved = await uploadFile(id, file);
+				toast.success(`Saved ${saved.containerPath}`);
+				void navigator.clipboard.writeText(saved.containerPath).catch(() => {});
+			} catch (err) {
+				toast.error((err as Error).message);
+			}
+		}
+	}
+
+	let dropping = $state(false);
+
+	function onDragEnter(e: DragEvent) {
+		if (!uploadArmed || !e.dataTransfer?.types.includes('Files')) return;
+		e.preventDefault();
+		dropping = true;
+	}
+
+	function onDragOver(e: DragEvent) {
+		if (dropping) e.preventDefault();
+	}
+
+	function onDragLeave(e: DragEvent) {
+		if (e.relatedTarget === null) dropping = false;
+	}
+
+	function onDrop(e: DragEvent) {
+		if (!dropping) return;
+		e.preventDefault();
+		dropping = false;
+		if (uploadArmed) void handleUpload(filesFrom(e.dataTransfer));
+	}
+
+	// Only claims pastes that carry files, so text pasted into the page's inputs is untouched.
+	function onPaste(e: ClipboardEvent) {
+		if (!uploadArmed) return;
+		const files = filesFrom(e.clipboardData);
+		if (!files.length) return;
+		e.preventDefault();
+		void handleUpload(files);
+	}
 </script>
 
+<svelte:window onpaste={onPaste} />
+<!-- Instance renders outside AppShell, which hosts the app-wide Toaster. -->
+<Toaster toastOptions={TOAST_OPTIONS} />
+
 <header class="topbar">
-	<a class="back" href="/"><ArrowLeft size={15} /> All instances</a>
+	<a class="back" href="/" onclick={onBackLinkClick}><ArrowLeft size={15} /> All instances</a>
 	<div class="title">
 		<span class="name">{instance?.name ?? 'Instance'}</span>
 		{#if instance}
@@ -114,13 +222,28 @@
 		{/if}
 	</div>
 	{#if instance?.status === 'running'}
+		<form method="POST" action="?/restart" {@attach enhance(restartOpts)}>
+			<button class="restart" type="submit" disabled={restarting || building}>
+				{restarting || building ? 'Restarting…' : 'Restart container'}
+			</button>
+		</form>
 		<a class="open" href={url} target="_blank" rel="noopener"
 			>Open in new tab <ArrowUpRight size={15} /></a
 		>
 	{/if}
 </header>
+{#if restartError}<p class="restart-err">{restartError}</p>{/if}
 
-<main class="stage">
+<main
+	class="stage"
+	ondragenter={onDragEnter}
+	ondragover={onDragOver}
+	ondragleave={onDragLeave}
+	ondrop={onDrop}
+>
+	{#if dropping}
+		<DropZone />
+	{/if}
 	<div class="meta">
 		<span class="k">Source</span>
 		{#if instance}<code>{instance.source_path}</code>{:else}<Skeleton variant="wide" />{/if}
@@ -149,6 +272,7 @@
 			{lastFetchedAt}
 			{injectionChecks}
 			active={!instance || instance.status === 'running'}
+			mode={instance?.mode ?? 'ide'}
 		/>
 	</div>
 
@@ -168,8 +292,9 @@
 						<li>
 							<span class="cp">:{f.container_port}</span>
 							<span class="arr">→</span>
-							<a href={`http://localhost:${f.host_port}`} target="_blank" rel="noopener"
-								>localhost:{f.host_port} <ArrowUpRight size={12} /></a
+							<a href={forwardedPortUrl(f.host_port)} target="_blank" rel="noopener"
+								>{forwardedPortUrl(f.host_port).replace('http://', '')}
+								<ArrowUpRight size={12} /></a
 							>
 							<button class="rm" title="Remove" onclick={() => removePort(f.container_port)}
 								>×</button
@@ -205,14 +330,28 @@
 		</div>
 	</section>
 
+	<AgentLogBox {id} bump={runBump} />
+
 	<div class="logwrap panel">
 		<div class="log-bar panel-bar">
 			<span>Boot log</span>
-			<button class="copy" onclick={copyLogs} disabled={!logs}>
-				{copied ? 'Copied!' : 'Copy logs'}
-			</button>
+			<div class="log-actions">
+				<button
+					class="copy"
+					class:active={following}
+					aria-pressed={following}
+					title={following ? 'Following — click to pause' : 'Paused — click to follow new output'}
+					onclick={toggleFollow}
+				>
+					{#if following}<span class="dot"></span>{/if}
+					{following ? 'Following' : 'Follow log'}
+				</button>
+				<button class="copy" onclick={copyLogs} disabled={!logs}>
+					{copied ? 'Copied!' : 'Copy logs'}
+				</button>
+			</div>
 		</div>
-		<div class="logs" {@attach autoscroll}>
+		<div class="logs" bind:this={logEl}>
 			<pre>{logs || 'Waiting for output…'}<span class="caret"></span></pre>
 		</div>
 		{#if instance?.status === 'error' && instance.error}
@@ -267,14 +406,47 @@
 		letter-spacing: 0.06em;
 		color: var(--ink);
 		text-decoration: none;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 7px 12px;
 	}
 	.open:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
+	}
+	.restart {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-family: var(--font-mono);
+		font-weight: 600;
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--ink);
+		background: var(--bg);
+		border: 1px solid var(--edge);
+		padding: 7px 12px;
+		cursor: pointer;
+	}
+	.restart:hover:not(:disabled) {
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
+	}
+	.restart:disabled {
+		opacity: var(--dim-panel);
+		cursor: not-allowed;
+	}
+	.restart-err {
+		margin: 0;
+		padding: 8px 24px 0;
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--danger);
 	}
 	.stage {
+		position: relative;
 		max-width: 1200px;
 		margin: 0 auto;
 		padding: 20px 24px 40px;
@@ -320,17 +492,17 @@
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		padding: 4px 9px;
-		background: var(--bg);
-		color: var(--ink);
-		border: 1px solid var(--bg);
+		background: var(--fill-ink);
+		color: var(--fill);
+		border: 1px solid var(--fill-ink);
 		cursor: pointer;
 	}
 	.rebuild:hover:not(:disabled) {
 		background: transparent;
-		color: var(--bg);
+		color: var(--fill-ink);
 	}
 	.rebuild:disabled {
-		opacity: 0.5;
+		opacity: var(--dim-panel);
 		cursor: not-allowed;
 	}
 	.ports-body {
@@ -413,14 +585,15 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		padding: 6px 14px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		background: var(--bg-card);
 		color: var(--ink);
 		cursor: pointer;
 	}
 	.add button:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 	.port-err {
 		margin: 10px 0 0;
@@ -448,27 +621,46 @@
 		align-items: center;
 		justify-content: space-between;
 	}
+	.log-actions {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
 	.copy {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
 		font-family: var(--font-mono);
 		font-weight: 600;
 		font-size: 10px;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		padding: 4px 9px;
-		background: var(--bg);
-		color: var(--ink);
-		border: 1px solid var(--bg);
+		background: var(--fill-ink);
+		color: var(--fill);
+		border: 1px solid var(--fill-ink);
 		cursor: pointer;
 	}
 	.copy:hover:not(:disabled) {
 		background: transparent;
-		color: var(--bg);
+		color: var(--fill-ink);
+	}
+	.copy.active {
+		background: transparent;
+		color: var(--fill-ink);
+	}
+	/* The dot, not the inverted fill, is what separates "following" from a mere hover. */
+	.dot {
+		flex: none;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--live-dot);
 	}
 	.copy:disabled {
-		opacity: 0.5;
+		opacity: var(--dim-panel);
 		cursor: not-allowed;
 	}
-	/* The one "screen": a black LCD panel with faint scanlines. */
 	.logs {
 		position: relative;
 		background:
@@ -479,6 +671,8 @@
 		height: calc(100vh - 320px);
 		min-height: 360px;
 		overflow: auto;
+		/* Scroll anchoring would shift scrollTop as the <pre> grows; a paused log must stay put. */
+		overflow-anchor: none;
 	}
 	.logs pre {
 		margin: 0;
@@ -488,11 +682,8 @@
 		white-space: pre-wrap;
 		word-break: break-word;
 	}
-	/* Blinking block cursor — the live-terminal tell. Defined locally rather than
-     relying on StatusBadge's same-named keyframes: Svelte scopes `@keyframes`
-     per component (renaming both the block and any same-file `animation`
-     reference), so a keyframe defined in another component never actually
-     resolves here. */
+	/* Duplicated from StatusBadge because Svelte scopes `@keyframes` per component,
+	   so a keyframe defined elsewhere never resolves here. */
 	@keyframes lcd-blink {
 		50% {
 			background: transparent;

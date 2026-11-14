@@ -1,25 +1,40 @@
 import { checkPresence, execInContainer } from '../lib/exec.server.ts';
 import { spawnCapture } from '../lib/spawn.server.ts';
+import { getOption } from '../lib/db.server.ts';
 import type { Injection } from '../lib/injections.server.ts';
 
-/** The host user's global git identity, ready to apply inside a container. */
 interface GitIdentity {
 	name: string;
 	email: string;
 }
 
-/** Read one `git config --global --get <key>` value from the host, or null. */
 function readGitConfig(key: string): Promise<string | null> {
 	return spawnCapture(['git', 'config', '--global', '--get', key]);
 }
 
 /**
- * Read the host's global git identity (`user.name` + `user.email`). Uses
- * `git config --global` so it reflects the host user's `~/.gitconfig` rather than
- * any repo-local override from the manager's own checkout. Returns null when
- * either field is missing.
+ * The toggle is the source of truth, but predates the option: an unset value falls
+ * back to "on when both fields are already filled" so existing overrides keep working.
  */
-async function readGitIdentity(): Promise<GitIdentity | null> {
+export function gitIdentityEnabled(): boolean {
+	const explicit = getOption('git_identity_enabled');
+	if (explicit === '1') return true;
+	if (explicit === '0') return false;
+	return !!(getOption('git_identity_name')?.trim() && getOption('git_identity_email')?.trim());
+}
+
+/** Both fields are required together — a lone name or email is treated as not configured. */
+function overrideIdentity(): GitIdentity | null {
+	if (!gitIdentityEnabled()) return null;
+	const name = getOption('git_identity_name')?.trim() || '';
+	const email = getOption('git_identity_email')?.trim() || '';
+	return name && email ? { name, email } : null;
+}
+
+/** `--global` so the host fallback reads the host user's identity, not the manager checkout's. */
+export async function readGitIdentity(): Promise<GitIdentity | null> {
+	const override = overrideIdentity();
+	if (override) return override;
 	const [name, email] = await Promise.all([
 		readGitConfig('user.name'),
 		readGitConfig('user.email')
@@ -27,13 +42,7 @@ async function readGitIdentity(): Promise<GitIdentity | null> {
 	return name && email ? { name, email } : null;
 }
 
-/**
- * Inject the host's git author identity so commits made inside the container are
- * attributed to the same person as on the host. The copied workspace keeps its
- * `.git` but carries no author identity, so `git commit` would otherwise fail
- * ("Please tell me who you are") or commit as `root@<container>`. Skipped (with a
- * log line) when the host has no global identity configured.
- */
+/** Without this, `git commit` in the container fails outright or commits as `root@<container>`. */
 export const gitIdentity: Injection = {
 	id: 'git-identity',
 	label: 'git identity',
@@ -43,7 +52,12 @@ export const gitIdentity: Injection = {
 		async status() {
 			const identity = await readGitIdentity();
 			return identity
-				? { available: true, source: `git config — ${identity.name}` }
+				? {
+						available: true,
+						source: overrideIdentity()
+							? `Settings override — ${identity.name}`
+							: `git config — ${identity.name}`
+					}
 				: { available: false, source: null };
 		}
 	},
@@ -55,8 +69,7 @@ export const gitIdentity: Injection = {
 			return;
 		}
 		log('Injecting git identity…\n');
-		// name/email are non-secret, so pass them as args ($1/$2) rather than
-		// interpolating into the script — sidesteps quoting for names with spaces.
+		// Passed as args so a name with spaces or quotes needs no escaping.
 		const res = await execInContainer(target, {
 			script: 'git config --global user.name "$1"; git config --global user.email "$2"',
 			args: ['git-identity', identity.name, identity.email]

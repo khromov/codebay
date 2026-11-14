@@ -1,0 +1,1 @@
+ALTER TABLE instances ADD COLUMN terminal_split INTEGER NOT NULL DEFAULT 0;

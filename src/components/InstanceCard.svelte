@@ -1,15 +1,20 @@
 <script lang="ts">
 	import { type Instance } from '../types.ts';
+	import { findAvatar } from '../avatars/index.ts';
 	import Avatar from './Avatar.svelte';
 	import BranchBox from './BranchBox.svelte';
 	import PortsBox from './PortsBox.svelte';
 	import StatusBadge from './StatusBadge.svelte';
 	import Button from './Button.svelte';
+	import { withPopupMarker } from '../lib/popup-nav.ts';
+
+	type Action = 'start' | 'stop' | 'delete' | 'rebuild';
 
 	let {
 		instance,
 		editing,
 		editingName = $bindable(),
+		pending = null,
 		onact,
 		onstartrename,
 		oncommitrename,
@@ -18,22 +23,48 @@
 		instance: Instance;
 		editing: boolean;
 		editingName: string;
-		onact: (action: 'start' | 'stop' | 'delete') => void;
+		/** The user-triggered action currently in flight, if any — drives the busy overlay. */
+		pending?: Action | null;
+		onact: (action: Action) => void;
 		onstartrename: () => void;
 		oncommitrename: () => void;
 		oncancelrename: () => void;
 	} = $props();
+
+	// Start/Stop only cycle the container; rebuild is what re-runs the injections.
+	const canRebuild = $derived(
+		instance.status === 'running' ||
+			instance.status === 'stopped' ||
+			(instance.status === 'error' && !!instance.container_id)
+	);
+
+	const BUSY_LABEL: Record<Action, string> = {
+		start: 'Starting…',
+		stop: 'Stopping…',
+		delete: 'Deleting…',
+		rebuild: 'Rebuilding…'
+	};
 </script>
 
-<li class="card panel">
+<li class="card panel" class:busy={!!pending} aria-busy={!!pending || undefined}>
+	{#if pending}
+		<div class="busy-overlay" aria-live="polite">
+			<span class="busy-label">{BUSY_LABEL[pending]}</span>
+		</div>
+	{/if}
 	<div class="card-head">
-		<Avatar id={instance.id} name={instance.name} interactive />
+		<Avatar
+			name={instance.name}
+			art={findAvatar(instance.avatar ?? undefined) ?? null}
+			interactive
+		/>
 		{#if editing}
 			<!-- svelte-ignore a11y_autofocus -->
 			<input
 				class="name-edit"
 				bind:value={editingName}
 				autofocus
+				onfocus={(e) => (e.currentTarget as HTMLInputElement).select()}
 				onblur={oncommitrename}
 				onkeydown={(e) => {
 					if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
@@ -63,47 +94,109 @@
 	{#if instance.git_branch}
 		<BranchBox branch={instance.git_branch} />
 	{/if}
+	{#if instance.active_run}
+		<div class="agent-run" title="An MCP client is driving Claude in this sandbox">
+			<span class="agent-dot"></span>
+			<span class="agent-text">
+				{instance.active_run.status === 'queued'
+					? 'Agent run queued'
+					: (instance.active_run.last_activity ?? 'Agent running')}
+			</span>
+		</div>
+	{/if}
 	{#if instance.status === 'error' && instance.error}
 		<div class="card-error">{instance.error}</div>
 	{/if}
 	<div class="actions">
 		{#if instance.status === 'running'}
-			<Button variant="primary" size="sm" href={`/ide/${instance.id}`}>Open IDE</Button>
+			<Button variant="primary" size="sm" href={`/ide/${instance.id}`}>
+				{instance.mode === 'terminal' ? 'Open terminal' : 'Open IDE'}
+			</Button>
 			<Button size="sm" onclick={() => onact('stop')}>Stop</Button>
 		{:else if instance.status === 'stopped' || (instance.status === 'error' && instance.container_id)}
 			<Button size="sm" onclick={() => onact('start')}>Start</Button>
 		{:else if instance.status === 'creating'}
-			<Button size="sm" href={`/instances/${instance.id}`}>View logs</Button>
+			<Button
+				size="sm"
+				href={withPopupMarker(`/instances/${instance.id}`)}
+				target="_blank"
+				rel="noopener noreferrer">View logs</Button
+			>
 		{/if}
-		<Button size="sm" ghost href={`/instances/${instance.id}`}>Details</Button>
+		{#if canRebuild}
+			<Button
+				size="sm"
+				title="Recreate the container and re-run setup (credentials, hooks, port forwards)"
+				onclick={() => onact('rebuild')}>Rebuild</Button
+			>
+		{/if}
+		<Button
+			size="sm"
+			ghost
+			href={withPopupMarker(`/instances/${instance.id}`)}
+			target="_blank"
+			rel="noopener noreferrer">Details</Button
+		>
 		<Button variant="danger" size="sm" onclick={() => onact('delete')}>Delete</Button>
 	</div>
 </li>
 
 <style>
 	.card {
+		position: relative;
 		background: var(--bg-card);
 		padding: 16px 16px 14px;
 		transition:
 			transform 0.08s steps(2),
 			box-shadow 0.08s steps(2);
 	}
-	.card:hover {
+	.card:hover:not(.busy) {
 		transform: translate(-1px, -1px);
-		box-shadow: 6px 6px 0 var(--ink);
+		box-shadow: 6px 6px 0 var(--shadow);
+	}
+	/* Translucent scrim dims the card body and blocks clicks on the buttons beneath. */
+	.busy-overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: color-mix(in srgb, var(--bg-card) 78%, transparent);
+	}
+	.busy-label {
+		font-family: var(--font-mono);
+		font-weight: 600;
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		padding: 4px 9px;
+		border: 1px solid var(--fill);
+		background: var(--fill);
+		color: var(--fill-ink);
+		animation: lcd-blink 1.1s steps(1) infinite;
+	}
+	@keyframes lcd-blink {
+		50% {
+			background: transparent;
+			color: var(--fill);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.busy-label {
+			animation: none;
+		}
 	}
 	.card-head {
 		display: flex;
 		align-items: center;
 		gap: 11px;
 	}
-	/* Attention pulse raised by the in-container Claude hook, mirroring the IDE tabs:
-     'done' pulses green, 'waiting' pulses amber. */
 	.attn {
 		flex: none;
 		width: 14px;
 		height: 14px;
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 	}
 	.attn.attn-done {
 		background: var(--attn-done);
@@ -142,9 +235,7 @@
 		font-family: var(--font-mono);
 		font-weight: 600;
 		font-size: 15px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		overflow-wrap: anywhere;
 		/* Reset button chrome so it reads as plain text until hovered. */
 		margin: 0;
 		padding: 2px 4px;
@@ -170,6 +261,34 @@
 		color: var(--ink);
 		outline: none;
 	}
+	.agent-run {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+		margin-top: 8px;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		color: var(--ink-soft);
+	}
+	.agent-dot {
+		flex: none;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--fill);
+		animation: agent-pulse 1.6s ease-in-out infinite;
+	}
+	.agent-text {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	@keyframes agent-pulse {
+		50% {
+			opacity: 0.25;
+		}
+	}
 	.path {
 		margin-top: 10px;
 		font-family: var(--font-mono);
@@ -185,7 +304,7 @@
 		font-size: 12px;
 		color: var(--ink);
 		background: var(--bg);
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 8px 10px;
 		max-height: 80px;
 		overflow: auto;

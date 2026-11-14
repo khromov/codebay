@@ -1,31 +1,39 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { hostClaudeFile } from '../lib/host-claude.server.ts';
 import { CLAUDE_CODE_TOKEN, CLAUDE_KEYCHAIN_SERVICE } from '../lib/config.server.ts';
 import { getOption } from '../lib/db.server.ts';
-import { checkPresence, execInContainer, writeSecretFileScript } from '../lib/exec.server.ts';
+import { checkPresence } from '../lib/exec.server.ts';
+import { deepMerge, editJsonFile, writeContainerFile } from '../lib/container-files.server.ts';
+import { CLAUDE_JSON_FILE, claudeConfigFile } from '../lib/claude-settings.server.ts';
 import { spawnCapture } from '../lib/spawn.server.ts';
 import type { ContainerTarget, Injection } from '../lib/injections.server.ts';
 
-/**
- * A token entered by the user in Settings, or null. Only honored when the
- * "set tokens manually" toggle is on; a blank field falls through to the env
- * var / host discovery so a user can set just one provider.
- */
+/** A blank field falls through to the env var, so a user can set just one provider. */
 function manualClaudeToken(): string | null {
 	if (getOption('manual_tokens_enabled') !== '1') return null;
 	return getOption('manual_claude_code_token')?.trim() || null;
 }
 
 /**
- * Rejects credentials with no access token, and ones that are unrecoverably dead —
- * an unusable snapshot would otherwise get injected verbatim and leave the container
- * looking "logged in" (file present) while `claude` inside it isn't. A merely-stale
- * access token is still fine to inject: `claude` refreshes it in-container on first
- * run as long as the refresh token hasn't also expired, so expiry is judged by the
- * refresh token when we know its expiry, falling back to the access token's own
- * expiry only when there's no refresh-token expiry to go on.
+ * `claude` reports "Not logged in" without these, however valid the access token —
+ * `scopes` is what flips it (checked against claude 2.1.215; `expiresAt` doesn't matter).
+ */
+const TOKEN_SCOPES = [
+	'user:file_upload',
+	'user:inference',
+	'user:mcp_servers',
+	'user:profile',
+	'user:sessions:claude_code'
+];
+
+export function tokenCredentials(accessToken: string): string {
+	return JSON.stringify({ claudeAiOauth: { accessToken, scopes: TOKEN_SCOPES } });
+}
+
+/**
+ * A stale access token is still worth injecting — `claude` refreshes it in-container —
+ * so expiry is judged by the refresh token whenever its expiry is known.
  */
 export function isValid(json: string): boolean {
 	try {
@@ -43,20 +51,23 @@ export function isValid(json: string): boolean {
 }
 
 /**
- * Locate the host's Claude Code OAuth credentials, returning both the JSON string
- * and a human-readable description of where it came from, or null if absent.
- * macOS keeps them in the login Keychain; Linux/others use ~/.claude/.credentials.json.
+ * `[ -s ]` isn't enough: on a rejected refresh `claude` blanks the tokens in place
+ * rather than deleting the file. Whitespace is stripped so compact and pretty JSON both match.
  */
+export const LIVE_CREDENTIALS_TEST =
+	'[ -s "$f" ] && tr -d \'[:space:]\' < "$f" | grep -q \'"accessToken":"[^"]\'';
+
+/** macOS keeps these in the login Keychain; everything else uses ~/.claude/.credentials.json. */
 async function locateClaudeCredentials(): Promise<{ creds: string; source: string } | null> {
-	// A token set in Settings wins, then the env override, then host discovery.
 	const manual = manualClaudeToken();
 	if (manual) {
-		const creds = JSON.stringify({ claudeAiOauth: { accessToken: manual } });
-		return { creds, source: 'Settings — manual token' };
+		return { creds: tokenCredentials(manual), source: 'Settings — manual token' };
 	}
 	if (CLAUDE_CODE_TOKEN) {
-		const creds = JSON.stringify({ claudeAiOauth: { accessToken: CLAUDE_CODE_TOKEN } });
-		return { creds, source: 'CODEBAY_CLAUDE_CODE_TOKEN env var' };
+		return {
+			creds: tokenCredentials(CLAUDE_CODE_TOKEN),
+			source: 'CODEBAY_CLAUDE_CODE_TOKEN env var'
+		};
 	}
 
 	if (process.platform === 'darwin') {
@@ -72,7 +83,7 @@ async function locateClaudeCredentials(): Promise<{ creds: string; source: strin
 		}
 	}
 
-	const file = join(homedir(), '.claude', '.credentials.json');
+	const file = hostClaudeFile('.credentials.json');
 	if (existsSync(file)) {
 		const raw = (await readFile(file, 'utf8')).trim();
 		if (isValid(raw)) return { creds: raw, source: '~/.claude/.credentials.json' };
@@ -80,32 +91,25 @@ async function locateClaudeCredentials(): Promise<{ creds: string; source: strin
 	return null;
 }
 
-/**
- * Authorize Claude Code inside a running container as its remote user. Writes the
- * credentials (via a scrubbed shell variable, never argv) plus a `hasCompletedOnboarding` flag — the
- * latter is what stops `claude` re-running its first-run setup/login wizard.
- *
- * Both paths honor the container's CLAUDE_CONFIG_DIR: credentials at
- * $CLAUDE_CONFIG_DIR/.credentials.json (default ~/.claude/.credentials.json) and
- * config at $CLAUDE_CONFIG_DIR/.claude.json (default ~/.claude.json).
- */
+/** `hasCompletedOnboarding` is what stops `claude` re-running its first-run setup wizard. */
 async function injectClaudeCredentials(
 	target: ContainerTarget,
 	creds: string
 ): Promise<{ ok: boolean; error?: string }> {
-	const script =
-		'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
-		writeSecretFileScript('$d', '.credentials.json', '600') +
-		' cfg="${CLAUDE_CONFIG_DIR:+$CLAUDE_CONFIG_DIR/.claude.json}"; cfg="${cfg:-$h/.claude.json}"; ' +
-		'printf \'%s\' \'{"hasCompletedOnboarding":true}\' > "$cfg"; chmod 644 "$cfg"';
-	const res = await execInContainer(target, { script, stdin: creds });
-	return res.ok ? { ok: true } : { ok: false, error: res.error };
+	const wrote = await writeContainerFile(
+		target,
+		claudeConfigFile('.credentials.json', '600'),
+		creds
+	);
+	if (!wrote.ok) return wrote;
+	return editJsonFile(target, CLAUDE_JSON_FILE, (cur) =>
+		deepMerge(cur, { hasCompletedOnboarding: true })
+	);
 }
 
 /**
- * Inject the host's Claude Code OAuth credentials so the in-container `claude` is
- * authorized without a fresh login. Containers are throwaway, so we copy auth into
- * each one. Skipped (with a log line) when the host has no credentials.
+ * Caveat: refresh tokens rotate, so snapshotting a live login hands one lineage to two
+ * `claude` installs and whichever refreshes first logs the other out. Only `setup-token` fixes it.
  */
 export const claudeCodeCredentials: Injection = {
 	id: 'claude-code-credentials',
@@ -137,8 +141,8 @@ export const claudeCodeCredentials: Injection = {
 	async check(target) {
 		return checkPresence(
 			target,
-			'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; ' +
-				'[ -s "$d/.credentials.json" ] && echo 1 || echo 0'
+			'h=$(eval echo ~$(id -un)); d="${CLAUDE_CONFIG_DIR:-$h/.claude}"; f="$d/.credentials.json"; ' +
+				`if ${LIVE_CREDENTIALS_TEST}; then echo 1; else echo 0; fi`
 		);
 	}
 };

@@ -1,9 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
-	// A titled card with a live preview on top and an expandable props panel
-	// beneath. `controls` is optional — propless components (Brand, SettingsCog)
-	// just show a note instead.
+	// `controls` is optional — propless components show a note instead.
 	let {
 		title,
 		note,

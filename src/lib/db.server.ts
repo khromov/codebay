@@ -3,15 +3,16 @@ import { migrate, getMigrations } from '@zihaolam/bun-sqlite-migrations';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DATA_DIR, DB_PATH } from './config.server.ts';
-import type { FolderHistoryEntry } from '../types.ts';
+import type { AgentRunStatus, FolderHistoryEntry } from '../types.ts';
 
 // db.server.ts lives in src/lib, so ../../migrations resolves to the repo root.
 const MIGRATIONS_DIR = join(import.meta.dir, '../../migrations');
 
-/** Possible lifecycle states for an instance row. */
 export type InstanceStatus = 'creating' | 'running' | 'stopped' | 'error';
 
-/** Durable record of one devcontainer instance. */
+/** `'ide'` serves full code-server; `'terminal'` serves only ttyd + Claude Code. */
+export type InstanceMode = 'ide' | 'terminal';
+
 export interface InstanceRow {
 	id: string;
 	name: string;
@@ -27,15 +28,18 @@ export interface InstanceRow {
 	bridge_token: string;
 	/** Container user the workspace runs as; needed to exec health checks in its home dir. */
 	remote_user: string | null;
-	/**
-	 * Which image this instance was created with: the literal `'local'` when the source
-	 * folder shipped its own devcontainer.json, or the default image reference that was
-	 * injected when it had none. Null on rows created before this was recorded.
-	 */
+	/** `'local'` when the folder shipped its own config, else the injected image; null pre-dates this. */
 	image_source: string | null;
+	/** Sprite name chosen collision-free at creation; null pre-dates this and falls back to the id hash. */
+	avatar: string | null;
+	/** Fixed at creation: which editor surface this instance provisions and serves. */
+	mode: InstanceMode;
+	/** Terminal mode only: 1 when the scratch-shell pane was left open, so a reload restores it. */
+	terminal_split: number;
+	/** 0 until the legacy in-place config injection has been checked/undone; new rows start at 1. */
+	config_migrated: number;
 }
 
-/** One published container→host port mapping for an instance (besides code-server). */
 export interface PortForwardRow {
 	instance_id: string;
 	container_port: number;
@@ -56,7 +60,6 @@ function open(): Database {
 
 export const db: Database = (globalForDb.__codebayDb ??= open());
 
-/** Close the pinned SQLite connection (flushing WAL) and drop the global handle. */
 export function closeDb(): void {
 	globalForDb.__codebayDb?.close();
 	globalForDb.__codebayDb = undefined;
@@ -65,8 +68,8 @@ export function closeDb(): void {
 export function insertInstance(row: InstanceRow): void {
 	db.query(
 		`INSERT INTO instances
-       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source)
-     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source)`
+       (id, name, source_path, workspace_path, host_port, container_id, remote_workspace_folder, status, error, created_at, bridge_token, remote_user, image_source, avatar, mode, terminal_split, config_migrated)
+     VALUES ($id, $name, $source_path, $workspace_path, $host_port, $container_id, $remote_workspace_folder, $status, $error, $created_at, $bridge_token, $remote_user, $image_source, $avatar, $mode, $terminal_split, $config_migrated)`
 	).run({
 		$id: row.id,
 		$name: row.name,
@@ -80,7 +83,11 @@ export function insertInstance(row: InstanceRow): void {
 		$created_at: row.created_at,
 		$bridge_token: row.bridge_token,
 		$remote_user: row.remote_user,
-		$image_source: row.image_source
+		$image_source: row.image_source,
+		$avatar: row.avatar,
+		$mode: row.mode,
+		$terminal_split: row.terminal_split,
+		$config_migrated: row.config_migrated
 	});
 }
 
@@ -93,8 +100,7 @@ export function allInstances(): InstanceRow[] {
 }
 
 export function usedPorts(): number[] {
-	// Union code-server's host ports with every forwarded host port so allocation
-	// never hands out one that's already published by either table.
+	// Both tables publish host ports, so allocation has to see the union of them.
 	const rows = db
 		.query('SELECT host_port FROM instances UNION SELECT host_port FROM port_forwards')
 		.all() as { host_port: number }[];
@@ -134,7 +140,7 @@ export function deleteForwards(instanceId: string): void {
 	db.query('DELETE FROM port_forwards WHERE instance_id = $id').run({ $id: instanceId });
 }
 
-/** Columns `updateInstance` may patch, paired with their bind-parameter names. */
+/** The allowlist that keeps `updateInstance` from interpolating arbitrary column names. */
 const UPDATABLE_COLUMNS = [
 	'name',
 	'container_id',
@@ -142,7 +148,11 @@ const UPDATABLE_COLUMNS = [
 	'status',
 	'error',
 	'remote_user',
-	'image_source'
+	'image_source',
+	'terminal_split',
+	'config_migrated',
+	// Reassigned when a rebuild finds the recorded port taken over on the host.
+	'host_port'
 ] as const;
 
 type UpdatableColumn = (typeof UPDATABLE_COLUMNS)[number];
@@ -167,7 +177,6 @@ export function deleteInstanceRow(id: string): void {
 	db.query('DELETE FROM instances WHERE id = $id').run({ $id: id });
 }
 
-/** Record (or refresh) a source folder in the re-creation history. */
 export function recordFolder(source_path: string, name: string): void {
 	db.query(
 		`INSERT INTO folder_history (source_path, name, last_used_at)
@@ -190,7 +199,6 @@ export function deleteFolderHistory(source_path: string): void {
 	});
 }
 
-/** Read a key/value app option, or null when unset. */
 export function getOption(key: string): string | null {
 	const row = db.query('SELECT value FROM options WHERE key = $key').get({ $key: key }) as {
 		value: string;
@@ -198,11 +206,133 @@ export function getOption(key: string): string | null {
 	return row?.value ?? null;
 }
 
-/** Set (or overwrite) a key/value app option. */
 export function setOption(key: string, value: string): void {
 	db.query(
 		`INSERT INTO options (key, value)
      VALUES ($key, $value)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`
 	).run({ $key: key, $value: value });
+}
+
+/** One `claude -p` invocation inside an instance, driven by the MCP server. */
+export interface AgentRunRow {
+	id: string;
+	instance_id: string;
+	prompt: string;
+	status: AgentRunStatus;
+	/** Claude's own session id, parsed out of the stream's `init` event; resumable. */
+	session_id: string | null;
+	/** The model Claude actually ran with, from the stream `init` event; the requested alias lives in `options`. */
+	model: string | null;
+	resume_session_id: string | null;
+	/** JSON blob of the launch options, so a run queued before its container existed can still start. */
+	options: string | null;
+	result: string | null;
+	/** JSON string, only when the caller passed a `--json-schema`. */
+	structured_output: string | null;
+	/** JSON string of the last schema-rejected `StructuredOutput` input, so a caller can salvage it. */
+	rejected_structured_output: string | null;
+	/** Latest tool call or assistant line, so a poller can see progress mid-run. */
+	last_activity: string | null;
+	is_error: number;
+	exit_code: number | null;
+	cost_usd: number | null;
+	duration_ms: number | null;
+	num_turns: number | null;
+	error: string | null;
+	created_at: number;
+	started_at: number | null;
+	finished_at: number | null;
+}
+
+/** Neither has finished, so both block a second run on the same instance. */
+const OPEN_RUN_STATUSES = "('queued', 'running')";
+
+export function insertRun(row: AgentRunRow): void {
+	db.query(
+		`INSERT INTO agent_runs
+       (id, instance_id, prompt, status, session_id, model, resume_session_id, options, result, structured_output, rejected_structured_output, last_activity, is_error, exit_code, cost_usd, duration_ms, num_turns, error, created_at, started_at, finished_at)
+     VALUES ($id, $instance_id, $prompt, $status, $session_id, $model, $resume_session_id, $options, $result, $structured_output, $rejected_structured_output, $last_activity, $is_error, $exit_code, $cost_usd, $duration_ms, $num_turns, $error, $created_at, $started_at, $finished_at)`
+	).run({
+		$id: row.id,
+		$instance_id: row.instance_id,
+		$prompt: row.prompt,
+		$status: row.status,
+		$session_id: row.session_id,
+		$model: row.model,
+		$resume_session_id: row.resume_session_id,
+		$options: row.options,
+		$result: row.result,
+		$structured_output: row.structured_output,
+		$rejected_structured_output: row.rejected_structured_output,
+		$last_activity: row.last_activity,
+		$is_error: row.is_error,
+		$exit_code: row.exit_code,
+		$cost_usd: row.cost_usd,
+		$duration_ms: row.duration_ms,
+		$num_turns: row.num_turns,
+		$error: row.error,
+		$created_at: row.created_at,
+		$started_at: row.started_at,
+		$finished_at: row.finished_at
+	});
+}
+
+export function getRun(id: string): AgentRunRow | null {
+	return db.query('SELECT * FROM agent_runs WHERE id = $id').get({ $id: id }) as AgentRunRow | null;
+}
+
+export function listRuns(instanceId: string, limit = 50): AgentRunRow[] {
+	return db
+		.query('SELECT * FROM agent_runs WHERE instance_id = $id ORDER BY created_at DESC LIMIT $limit')
+		.all({ $id: instanceId, $limit: limit }) as AgentRunRow[];
+}
+
+/** Every unfinished run, across all instances — what the poller's timer works from. */
+export function openRuns(): AgentRunRow[] {
+	return db
+		.query(`SELECT * FROM agent_runs WHERE status IN ${OPEN_RUN_STATUSES} ORDER BY created_at`)
+		.all() as AgentRunRow[];
+}
+
+export function openRunFor(instanceId: string): AgentRunRow | null {
+	return db
+		.query(
+			`SELECT * FROM agent_runs WHERE instance_id = $id AND status IN ${OPEN_RUN_STATUSES} ORDER BY created_at LIMIT 1`
+		)
+		.get({ $id: instanceId }) as AgentRunRow | null;
+}
+
+/** The same allowlist discipline `updateInstance` uses — never interpolate a caller's column name. */
+const UPDATABLE_RUN_COLUMNS = [
+	'status',
+	'session_id',
+	'model',
+	'result',
+	'structured_output',
+	'rejected_structured_output',
+	'last_activity',
+	'is_error',
+	'exit_code',
+	'cost_usd',
+	'duration_ms',
+	'num_turns',
+	'error',
+	'started_at',
+	'finished_at'
+] as const;
+
+type UpdatableRunColumn = (typeof UPDATABLE_RUN_COLUMNS)[number];
+
+export function updateRun(id: string, patch: Partial<Pick<AgentRunRow, UpdatableRunColumn>>): void {
+	const sets: string[] = [];
+	const params: Record<string, string | number | null> = { $id: id };
+	for (const col of UPDATABLE_RUN_COLUMNS) {
+		if (col in patch) {
+			sets.push(`${col} = $${col}`);
+			params[`$${col}`] = patch[col] ?? null;
+		}
+	}
+	if (sets.length === 0) return;
+	db.query(`UPDATE agent_runs SET ${sets.join(', ')} WHERE id = $id`).run(params);
 }

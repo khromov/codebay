@@ -4,9 +4,19 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from 'mochi-framework';
 import { themeHandle } from './lib/theme.server.ts';
+import { PROXY_PREFIX } from './lib/proxy.server.ts';
 
+// Stands in for a proxied code-server document: text/html that themeHandle must not rewrite.
+const proxyPath = `${PROXY_PREFIX}/test/page`;
 const routes = {
-	'/': Mochi.page('./src/__fixtures__/HelloWorld.svelte')
+	'/': Mochi.page('./src/__fixtures__/HelloWorld.svelte'),
+	'/ide-bar': Mochi.page('./src/__fixtures__/IdeBarStrip.svelte'),
+	[proxyPath]: Mochi.api(
+		() =>
+			new Response('<html lang="en">proxied</html>', {
+				headers: { 'Content-Type': 'text/html' }
+			})
+	)
 };
 
 // Mochi.serve() is a process-wide singleton (see mochiConfig.ts), so every
@@ -55,5 +65,20 @@ describe('minimal app', () => {
 	test('GET / renders data-theme="dark" when the theme cookie is dark', async () => {
 		const res = await fetch(base, { headers: { Cookie: 'theme=dark' } });
 		expect(await res.text()).toContain('<html data-theme="dark"');
+	});
+
+	test('leaves proxied code-server HTML untouched even with a theme cookie', async () => {
+		const res = await fetch(`${base}${proxyPath}`, { headers: { Cookie: 'theme=dark' } });
+		expect(await res.text()).not.toContain('data-theme');
+	});
+
+	// A tablist may only own tabs, so the stop buttons beside them need a plain nav instead.
+	test('IDE tab strip renders a nav of buttons, every stop button in the Tab order', async () => {
+		const html = await (await fetch(`${base}/ide-bar`)).text();
+		expect(html).toContain('<nav class="tabs');
+		expect(html).not.toMatch(/role="tab(list)?"/);
+		expect(html).not.toContain('tabindex="-1"');
+		expect(html).toMatch(/aria-current="page"[^>]*title="beta"/);
+		expect(html.match(/aria-label="Stop (alpha|beta)"/g)).toHaveLength(2);
 	});
 });

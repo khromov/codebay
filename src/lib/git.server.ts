@@ -3,13 +3,7 @@ import { join } from 'node:path';
 import { readGhToken } from '../container-injections/github-credentials.ts';
 import { parseRepoUrl } from './repo-url.ts';
 
-/**
- * Read the branch currently checked out in an instance's workspace by parsing
- * `.git/HEAD`. The workspace copy is bind-mounted into the container, so the host
- * file tracks the live branch inside the running container — reading it here is a
- * cheap poll that needs no `docker exec`. Returns the branch name, a short SHA when
- * HEAD is detached, or null when there is no readable git repo.
- */
+/** Reads the bind-mounted host copy, so polling the container's branch costs no `docker exec`. */
 export async function readGitBranch(workspacePath: string): Promise<string | null> {
 	try {
 		const head = (await readFile(join(workspacePath, '.git', 'HEAD'), 'utf8')).trim();
@@ -22,14 +16,37 @@ export async function readGitBranch(workspacePath: string): Promise<string | nul
 	}
 }
 
+/** Exit-code probe — `spawnCapture` can't tell a silent success from a failure. */
+async function gitExitCode(workspaceDir: string, args: string[]): Promise<number | null> {
+	try {
+		const proc = Bun.spawn(['git', '-C', workspaceDir, ...args], {
+			stdout: 'ignore',
+			stderr: 'ignore'
+		});
+		return await proc.exited;
+	} catch {
+		return null; // no git on the host
+	}
+}
+
+/** `null` means git itself failed to answer (missing binary, corrupt repo) — not "untracked". */
+export async function isTrackedFile(
+	workspaceDir: string,
+	relPath: string
+): Promise<boolean | null> {
+	const code = await gitExitCode(workspaceDir, ['ls-files', '--error-unmatch', '--', relPath]);
+	if (code === 0) return true;
+	if (code === 1) return false; // ls-files --error-unmatch reserves 1 for "no such tracked file"
+	return null;
+}
+
+export async function restoreTrackedFile(workspaceDir: string, relPath: string): Promise<boolean> {
+	return (await gitExitCode(workspaceDir, ['checkout', '--', relPath])) === 0;
+}
+
 /**
- * Clone a Git repository into `dest`, streaming git's progress (written to stderr)
- * to `onLog`. GitHub clones are authenticated with the host's `gh` token, injected
- * as an HTTP auth header via git's env-scoped config (`GIT_CONFIG_*`) so the secret
- * never lands in argv nor in the cloned repo's persisted `.git/config` — the stored
- * remote stays the clean https URL, which the in-container gh credential injection
- * then reuses for push/pull. `GIT_TERMINAL_PROMPT=0` makes a missing/invalid token
- * fail fast instead of blocking on an interactive prompt. Throws on a non-zero exit.
+ * The token goes in env-scoped git config, so it lands in neither argv nor the clone's
+ * persisted `.git/config`; `GIT_TERMINAL_PROMPT=0` fails fast instead of blocking on a prompt.
  */
 export async function cloneRepo(
 	source: string,
@@ -45,14 +62,13 @@ export async function cloneRepo(
 		GIT_TERMINAL_PROMPT: '0'
 	};
 
-	if (parsed.host === 'github.com') {
-		const found = await readGhToken();
-		if (found) {
-			const basic = Buffer.from(`x-access-token:${found.token}`).toString('base64');
-			env.GIT_CONFIG_COUNT = '1';
-			env.GIT_CONFIG_KEY_0 = 'http.https://github.com/.extraheader';
-			env.GIT_CONFIG_VALUE_0 = `Authorization: Basic ${basic}`;
-		}
+	// Keyed by host so GitHub Enterprise Server clones authenticate too, not just github.com.
+	const found = await readGhToken(parsed.host);
+	if (found) {
+		const basic = Buffer.from(`x-access-token:${found.token}`).toString('base64');
+		env.GIT_CONFIG_COUNT = '1';
+		env.GIT_CONFIG_KEY_0 = `http.https://${parsed.host}/.extraheader`;
+		env.GIT_CONFIG_VALUE_0 = `Authorization: Basic ${basic}`;
 	}
 
 	const args = ['git', 'clone', '--progress'];

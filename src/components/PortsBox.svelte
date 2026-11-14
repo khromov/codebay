@@ -1,10 +1,8 @@
 <script lang="ts">
 	import Cable from '@lucide/svelte/icons/cable';
+	import { forwardedPortUrl } from '../lib/links.ts';
 	import type { PortForward } from '../types.ts';
 
-	// Compact badge: a Cable icon + a comma-separated list of forwarded ports. Each
-	// port reads its live state via the leading dot — filled = the container actually
-	// publishes it, hollow = configured but not published yet (e.g. pending rebuild).
 	let { ports }: { ports: PortForward[] } = $props();
 </script>
 
@@ -16,10 +14,10 @@
 				<a
 					class="fport"
 					class:open={f.open}
-					href={`http://localhost:${f.host_port}`}
+					href={forwardedPortUrl(f.host_port)}
 					target="_blank"
 					rel="noopener"
-					title={`container :${f.container_port} → http://localhost:${f.host_port} ${f.open ? '(open)' : '(not published yet)'}`}
+					title={`container :${f.container_port} → ${forwardedPortUrl(f.host_port)} ${f.open ? '(open)' : '(not published yet)'}`}
 					>{f.container_port}</a
 				>
 			{/each}
@@ -49,8 +47,7 @@
 		flex-wrap: wrap;
 		min-width: 0;
 	}
-	/* Status reads via the leading dot + fill: hollow + dimmed = not yet published,
-     filled + full ink = the live container actually exposes this port. */
+	/* Hollow + dimmed = configured but not yet published by the live container. */
 	.fport {
 		color: var(--ink-soft);
 		text-decoration: none;

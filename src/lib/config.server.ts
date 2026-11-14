@@ -1,65 +1,96 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/**
- * Root directory where all manager state (SQLite db + instance workspaces) lives.
- * Defaults to `~/.codebay`, outside the project tree. Override with
- * the `DATA_DIR` env var; relative values are resolved against the current working
- * directory (e.g. `DATA_DIR=./.codebay` keeps everything project-local
- * for development).
- */
+/** Defaults outside the project tree; a relative `DATA_DIR` resolves against cwd. */
 export const DATA_DIR = process.env.DATA_DIR
 	? isAbsolute(process.env.DATA_DIR)
 		? process.env.DATA_DIR
 		: resolve(process.cwd(), process.env.DATA_DIR)
 	: join(homedir(), '.codebay');
 
-/** Per-instance working copies live here: <INSTANCES_DIR>/<id>/workspace. */
+/**
+ * Without a stable key Mochi mints a random one per boot, so anything it signed
+ * stops verifying after a restart. Must run before `Mochi.serve()` reads the env.
+ */
+export function ensureMochiKey(): void {
+	if (process.env.MOCHI_KEY?.trim()) {
+		return;
+	}
+	const keyPath = join(DATA_DIR, 'mochi-key');
+	try {
+		if (existsSync(keyPath)) {
+			const existing = readFileSync(keyPath, 'utf8').trim();
+			if (existing) {
+				process.env.MOCHI_KEY = existing;
+				return;
+			}
+		}
+		const key = randomBytes(32).toString('base64url');
+		mkdirSync(DATA_DIR, { recursive: true });
+		writeFileSync(keyPath, key + '\n', { mode: 0o600 });
+		process.env.MOCHI_KEY = key;
+	} catch (err) {
+		console.warn(`⚠ Could not persist a MOCHI_KEY in ${DATA_DIR}: ${(err as Error).message}`);
+	}
+}
+
+/** Read relative to this module, not cwd, because under `bunx codebay` cwd is the user's folder. */
+export const APP_VERSION: string = (() => {
+	try {
+		const path = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json');
+		const version = JSON.parse(readFileSync(path, 'utf8')).version;
+		return typeof version === 'string' ? version : 'unknown';
+	} catch {
+		return 'unknown';
+	}
+})();
+
+/** Per-instance state lives here: <INSTANCES_DIR>/<id>/<repo-or-folder-name> is the working copy. */
 export const INSTANCES_DIR = join(DATA_DIR, 'instances');
 
-/** SQLite database holding the durable record of every instance. */
+/** Extracted Claude Code logs, in one flat folder that outlives the instances they came from. */
+export const LOGS_DIR = join(DATA_DIR, 'logs');
+
+/**
+ * The container's Claude config dir mirrored at its original layout, so it can be mounted back in
+ * after a rebuild. Sibling of the working copy, so it dies with the instance — unlike LOGS_DIR.
+ */
+export const claudeMirrorDir = (id: string): string => join(INSTANCES_DIR, id, 'claude');
+
 export const DB_PATH = join(DATA_DIR, 'app.sqlite');
 
-/** First host port handed out to a code-server instance; subsequent ones count up. */
 export const PORT_BASE = 8001;
 export const PORT_MAX = 8999;
 
-/** Port code-server listens on *inside* every container. */
+/** Inside the container, not on the host. */
 export const CODE_SERVER_PORT = 8080;
 
-/**
- * Image used when a selected folder has no .devcontainer/devcontainer.json.
- * `base:ubuntu` is multi-arch (amd64 + arm64), so it pulls on Apple Silicon too — unlike the
- * `universal` images, which are amd64-only. Override per-install via the Settings tab.
- */
+/** ttyd's default listen port, used in terminal mode instead of code-server's. */
+export const TTYD_PORT = 7681;
+
+/** `base:ubuntu` is multi-arch, unlike the `universal` images, which are amd64-only. */
 export const DEFAULT_IMAGE = 'mcr.microsoft.com/devcontainers/base:ubuntu';
 
-/**
- * HTTP Basic Auth gate for the whole app (UI, APIs, and the code-server proxy).
- * When BASIC_AUTH_PASSWORD is unset/empty the gate is disabled (local dev).
- */
+/** An unset/empty password disables the gate entirely (local dev). */
 export const BASIC_AUTH_USERNAME = process.env.BASIC_AUTH_USERNAME || 'admin';
 export const BASIC_AUTH_PASSWORD = process.env.BASIC_AUTH_PASSWORD || '';
 
-/**
- * Interface the server binds to. Defaults to loopback so an unprotected instance
- * (no BASIC_AUTH_PASSWORD) isn't exposed to the LAN. Set HOST=0.0.0.0 to opt into
- * binding all interfaces (e.g. remote access) — do so together with a password.
- */
+/** Loopback by default so an instance with no password isn't exposed to the LAN. */
 export const HOST = process.env.HOST || '127.0.0.1';
 
-/** TCP port the server listens on. */
-export const PORT = Number(process.env.PORT) || 3333;
-
 /**
- * Public origin the browser reaches this server on, used for Mochi's CSRF
- * origin check (and to silence its "no proxy.origin" warning in production).
- * Defaults to `http://localhost:<PORT>` for local access; override with
- * PUBLIC_ORIGIN when fronted by a reverse proxy or a custom hostname. Extra
- * allowed origins (e.g. a LAN IP) can be passed comma-separated in TRUSTED_ORIGINS.
+ * Forwarded app ports follow the server's bind; code-server's own port never does
+ * (it runs with auth disabled). Anything but `0.0.0.0` degrades to loopback rather
+ * than risking an appPort string Docker rejects.
  */
+export const PUBLISH_HOST = HOST === '0.0.0.0' ? '0.0.0.0' : '127.0.0.1';
+
+export const PORT = Number(process.env.PORT) || 6969;
+
+/** Mochi's CSRF origin check compares against these; override when behind a proxy. */
 export const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN?.trim() || `http://localhost:${PORT}`;
 export const TRUSTED_ORIGINS = (process.env.TRUSTED_ORIGINS || '')
 	.split(',')
@@ -67,67 +98,87 @@ export const TRUSTED_ORIGINS = (process.env.TRUSTED_ORIGINS || '')
 	.filter(Boolean);
 
 /**
- * Optional token overrides for credential injection. When set, the manager injects
- * this token into every container instead of discovering the host's credentials
- * (macOS Keychain / ~/.claude / `gh auth token`). Useful on servers/CI or to pin a
- * specific identity. A token entered in Settings ("Set tokens manually") takes
- * precedence over these env vars; see the two credential injections for the order.
- * The legacy `DCM_*` names are still honored as a fallback.
+ * Set to skip host-credential discovery, e.g. on a server with no Keychain.
+ * A token entered in Settings still outranks these; see the credential injections.
  */
 export const CLAUDE_CODE_TOKEN =
 	(process.env.CODEBAY_CLAUDE_CODE_TOKEN ?? process.env.DCM_CLAUDE_CODE_TOKEN)?.trim() || '';
 export const GITHUB_TOKEN =
 	(process.env.CODEBAY_GITHUB_TOKEN ?? process.env.DCM_GITHUB_TOKEN)?.trim() || '';
 
-/**
- * macOS Keychain service name Claude Code's OAuth credentials are read from
- * (`security find-generic-password -s <name>`). Override to point host-credential
- * discovery at a different Keychain entry, e.g. a secondary account. macOS only —
- * the Linux/other fallback (~/.claude/.credentials.json) has no service name.
- */
+/** macOS only — the Linux fallback (~/.claude/.credentials.json) has no service name. */
 export const CLAUDE_KEYCHAIN_SERVICE =
 	process.env.CODEBAY_CLAUDE_KEYCHAIN_SERVICE?.trim() || 'Claude Code-credentials';
 
 /**
- * Directories skipped when copying a source folder into an instance workspace.
- * `.git` is intentionally kept so each instance retains its history/remote and
- * `git pull`/`push` work (authenticated by the injected gh credentials).
+ * `.git` is deliberately absent so each instance keeps its history/remote.
+ * An explicit empty string (as opposed to unset) means "copy everything".
  */
-export const COPY_IGNORE = new Set(['node_modules']);
+export const DEFAULT_COPY_IGNORE = 'node_modules';
 
-/**
- * Docker daemon to connect to, e.g. `unix:///var/run/docker.sock`,
- * `unix://$HOME/.colima/default/docker.sock`, or `tcp://1.2.3.4:2375`. When unset, the
- * docker/devcontainer CLIs fall back to their own resolution (current Docker context).
- * Standard `DOCKER_HOST` so it interoperates with existing Docker tooling.
- */
+export function parseCopyIgnore(raw: string): Set<string> {
+	return new Set(
+		raw
+			.split(',')
+			.map((p) => p.trim())
+			.filter(Boolean)
+	);
+}
+
+/** When unset, the docker/devcontainer CLIs resolve the current Docker context themselves. */
 export const DOCKER_HOST = process.env.DOCKER_HOST?.trim() || '';
 
-/**
- * Environment for spawned `docker`/`devcontainer` processes: the inherited env with
- * `DOCKER_HOST` applied when configured, so every Docker operation targets the same daemon.
- */
+/** Keeps spawned `docker`/`devcontainer` processes pointed at the same daemon we use. */
 export function dockerEnv(): Record<string, string | undefined> {
 	return DOCKER_HOST ? { ...process.env, DOCKER_HOST } : process.env;
 }
 
 /**
- * Resolve the @devcontainers/cli binary from our own dependency tree rather than
- * the cwd, so it works when installed globally / via `bunx codebay` (where cwd is
- * the user's arbitrary folder). Falls back to the cwd-local path for dev checkouts.
+ * Windows picks an executable by PATHEXT, which `existsSync` doesn't apply — so each shim has
+ * to be probed by full name. The bare name is deliberately not a win32 candidate: npm writes a
+ * POSIX sh script there, which Bun can't exec. Bun's `.bunx` sibling is a data file and is never
+ * a candidate on any platform — spawning it throws EFTYPE.
  */
-export function devcontainerBin(): string {
+const BIN_SHIM_EXTS = process.platform === 'win32' ? ['.exe', '.cmd'] : [''];
+
+/** Null when no spawnable shim exists, so a caller can fall back instead of spawning a missing file. */
+export function binShim(binDir: string, name: string): string | null {
+	for (const ext of BIN_SHIM_EXTS) {
+		const candidate = join(binDir, name + ext);
+		if (existsSync(candidate)) return candidate;
+	}
+	return null;
+}
+
+/**
+ * The CLI's `node` shebang resolves to Bun under Bun, and Bun loads `bunfig.toml` from cwd — so a
+ * workspace cwd would run the repo's `preload` on the host; not tmpdir, since that's world-writable.
+ */
+export function devcontainerCwd(): string {
+	mkdirSync(DATA_DIR, { recursive: true });
+	return DATA_DIR;
+}
+
+/**
+ * An argv rather than a path, because the `devcontainer.js` fallback leads with a
+ * `#!/usr/bin/env node` shebang that Windows doesn't honour — there it only runs when handed to
+ * an interpreter. Resolved from our own dependency tree, not cwd, because under `bunx codebay`
+ * cwd is the user's arbitrary folder.
+ */
+export function devcontainerBin(): string[] {
 	try {
 		const pkgJson = fileURLToPath(import.meta.resolve('@devcontainers/cli/package.json'));
-		// <node_modules>/@devcontainers/cli/package.json -> <node_modules>/.bin/devcontainer
-		const shim = join(dirname(pkgJson), '..', '..', '.bin', 'devcontainer');
-		if (existsSync(shim)) return shim;
-		// Fallback: the package's own bin entry (a node-shebanged .js).
+		const shim = binShim(join(dirname(pkgJson), '..', '..', '.bin'), 'devcontainer');
+		if (shim) return [shim];
 		const pkg = JSON.parse(readFileSync(pkgJson, 'utf8'));
 		const rel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.devcontainer;
-		if (rel) return join(dirname(pkgJson), rel);
+		if (rel) {
+			const js = join(dirname(pkgJson), rel);
+			return process.platform === 'win32' ? [process.execPath, js] : [js];
+		}
 	} catch {
 		// Fall through to the dev-checkout path below.
 	}
-	return join(process.cwd(), 'node_modules', '.bin', 'devcontainer');
+	const dir = join(process.cwd(), 'node_modules', '.bin');
+	return [binShim(dir, 'devcontainer') ?? join(dir, 'devcontainer')];
 }

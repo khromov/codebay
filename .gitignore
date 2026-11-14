@@ -1,6 +1,5 @@
 node_modules
 .mochi
 *.tsbuildinfo
-vendor
 .codebay
 .test-data

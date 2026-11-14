@@ -1,15 +1,19 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import House from '@lucide/svelte/icons/house';
+	import { onBackLinkClick } from '../lib/popup-nav.ts';
 
-	// The shared 44px top bar: a bordered home-icon cell on the left, then whatever
-	// the caller renders (IDE tabs + cog, or a settings title). Keeps the two bars
-	// visually in lockstep — see IdeBar.svelte and SettingsView.svelte.
 	let { children }: { children?: Snippet } = $props();
 </script>
 
 <header class="bar">
-	<a class="home" href="/" title="All instances" aria-label="All instances"><House size={18} /></a>
+	<a
+		class="home"
+		href="/"
+		title="All instances"
+		aria-label="All instances"
+		onclick={onBackLinkClick}><House size={18} /></a
+	>
 	{@render children?.()}
 </header>
 
@@ -32,7 +36,7 @@
 		border-right: 1px solid var(--rule);
 	}
 	.home:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 </style>

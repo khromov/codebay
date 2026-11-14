@@ -1,6 +1,8 @@
 <script lang="ts">
 	import Plus from '@lucide/svelte/icons/plus';
+	import { onMount } from 'svelte';
 	import toast, { Toaster } from 'svelte-french-toast';
+	import { TOAST_OPTIONS } from '../toast.ts';
 	import { avatars } from '../avatars/index.ts';
 	import type { AuthProvider, InstanceHealth, PortForward, Preflight } from '../types.ts';
 
@@ -12,86 +14,98 @@
 	import SettingsCog from './SettingsCog.svelte';
 	import TopBar from './TopBar.svelte';
 	import IdeLoader from './IdeLoader.svelte';
+	import DropZone from './DropZone.svelte';
 	import HealthBox from './HealthBox.svelte';
 	import BranchBox from './BranchBox.svelte';
 	import PortsBox from './PortsBox.svelte';
 	import StatusBadge from './StatusBadge.svelte';
+	import InstanceCard from './InstanceCard.svelte';
+	import IdeBar from './IdeBar.svelte';
 	import ComponentDemo from './ui-showcase/ComponentDemo.svelte';
 	import type { Instance } from '../types.ts';
 
-	// --- Design tokens (mirrors :root in src/shell.html) ---
-	// `token` drives the swatch fill via var(--token) so it auto-syncs with the
-	// real value (including the dark-theme override — toggle it with the theme
-	// button in the top bar); `hex` is a text label only and reflects the
-	// light-theme value regardless of the active theme. `border` flags pale
-	// chips that need an outline to read against the panel.
-	const palette: { group: string; swatches: { token: string; hex: string; border?: boolean }[] }[] =
-		[
-			{
-				group: 'Surfaces',
-				swatches: [
-					{ token: '--bg', hex: '#d7d8d2', border: true },
-					{ token: '--bg-card', hex: '#e7e8e2', border: true },
-					{ token: '--screen-bg', hex: '#0d0e0a' }
-				]
-			},
-			{
-				group: 'Ink / text',
-				swatches: [
-					{ token: '--ink', hex: '#14150f' },
-					{ token: '--ink-soft', hex: '#45463e' },
-					{ token: '--ink-faint', hex: '#7d7e74' }
-				]
-			},
-			{
-				group: 'Rules',
-				swatches: [
-					{ token: '--rule', hex: '#20211a' },
-					{ token: '--rule-soft', hex: '#b9bab2', border: true }
-				]
-			},
-			{
-				group: 'Semantic',
-				swatches: [
-					{ token: '--warn-bg', hex: '#e4d98f', border: true },
-					{ token: '--warn-line', hex: '#9c8729' },
-					{ token: '--warn-ink', hex: '#463b08' },
-					{ token: '--ok-bg', hex: '#8fbf6e' },
-					{ token: '--ok-line', hex: '#4c7a2e' },
-					{ token: '--ok-ink', hex: '#1c3110' },
-					{ token: '--danger', hex: '#b23a2e' },
-					{ token: '--danger-soft', hex: '#e3c6c1', border: true },
-					{ token: '--info', hex: '#388bfd' }
-				]
-			},
-			{
-				group: 'Attention',
-				swatches: [
-					{ token: '--attn-done', hex: '#22c55e' },
-					{ token: '--attn-waiting', hex: '#f59e0b' }
-				]
-			}
-		];
+	// Both the fill and the printed value are read back off the rendered chip, so this
+	// list is the only thing to touch when shell.html gains a token — and the labels
+	// can't drift from the theme the way a hardcoded hex did.
+	const palette: { group: string; tokens: string[] }[] = [
+		{ group: 'Surfaces', tokens: ['--bg', '--bg-card', '--screen-bg', '--screen-ink'] },
+		{ group: 'Ink / text', tokens: ['--ink', '--ink-soft', '--ink-faint', '--led-gray'] },
+		{ group: 'Structure', tokens: ['--edge', '--shadow', '--rule', '--rule-soft', '--grid-line'] },
+		{ group: 'Inverted fill', tokens: ['--fill', '--fill-ink'] },
+		{
+			group: 'Semantic',
+			tokens: [
+				'--warn-bg',
+				'--warn-line',
+				'--warn-ink',
+				'--ok-bg',
+				'--ok-line',
+				'--ok-ink',
+				'--danger',
+				'--danger-soft',
+				'--info'
+			]
+		},
+		{
+			group: 'Attention',
+			tokens: ['--attn-done', '--attn-waiting', '--live-dot', '--switch-on-bg']
+		}
+	];
 
-	// --- Avatar controls ---
+	const chips: Record<string, HTMLElement> = {};
+	let hexes = $state<Record<string, string>>({});
+
+	/** `rgb(r g b / a)` or `rgba(r, g, b, a)` -> `#rrggbb`, with any alpha spelled out. */
+	function toHex(value: string): string {
+		const parts = value.match(/[\d.]+/g);
+		if (!parts || parts.length < 3) return value;
+		const hex = parts
+			.slice(0, 3)
+			.map((n) => Math.round(Number(n)).toString(16).padStart(2, '0'))
+			.join('');
+		const alpha = parts.length > 3 ? Number(parts[3]) : 1;
+		return alpha < 1 ? `#${hex} ${Math.round(alpha * 100)}%` : `#${hex}`;
+	}
+
+	function readHexes() {
+		hexes = Object.fromEntries(
+			Object.entries(chips).map(([token, node]) => [
+				token,
+				toHex(getComputedStyle(node).backgroundColor)
+			])
+		);
+	}
+
+	onMount(() => {
+		readHexes();
+		// An explicit pick mutates data-theme; "auto" only moves when the OS does.
+		const obs = new MutationObserver(readHexes);
+		obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+		const scheme = window.matchMedia('(prefers-color-scheme: dark)');
+		scheme.addEventListener('change', readHexes);
+		return () => {
+			obs.disconnect();
+			scheme.removeEventListener('change', readHexes);
+		};
+	});
+
 	let avatarScale = $state(8);
 	let avatarName = $state('demo-instance');
-	let avatarId = $state('alpha');
-	// '' means "pick by id"; otherwise the value is an avatar name from the catalog.
-	let avatarArtName = $state('');
+	// '' renders an empty panel; otherwise the value is an avatar name from the catalog.
+	let avatarArtName = $state(avatars[0]!.name);
 	const avatarArt = $derived(avatars.find((a) => a.name === avatarArtName));
 
-	// --- Button controls ---
 	let btnVariant = $state<'default' | 'primary' | 'danger'>('primary');
 	let btnSize = $state<'sm' | 'md' | 'lg'>('md');
 	let btnDisabled = $state(false);
 	let btnIcon = $state(true);
 	let btnLabel = $state('New Instance');
 
-	// --- IdeLoader controls ---
 	let loaderSpeed = $state(1);
+	// The stalled state normally needs a 10s wait on a wedged health probe to appear;
+	// `stalledAfterMs: 0` renders it straight away so it's inspectable here.
+	let loaderStalled = $state(false);
 
-	// --- CredMenu controls ---
 	// Seed from the server's real preflight so the menu mirrors `/`; the presets
 	// and checkboxes below then let you exercise the other aggregate states.
 	// svelte-ignore state_referenced_locally
@@ -103,7 +117,6 @@
 		});
 	}
 
-	// --- HealthBox controls ---
 	let healthLoading = $state(false);
 	let healthChecks = $state({
 		containerRunning: true,
@@ -130,7 +143,6 @@
 				}
 	);
 
-	// --- PortsBox controls ---
 	// `openCount` of the `portCount` ports render as published (filled dot); the rest
 	// show hollow. Count 0 exercises the empty state (renders nothing).
 	let portCount = $state(3);
@@ -143,22 +155,116 @@
 		}))
 	);
 
-	// --- BranchBox controls ---
 	let branchName = $state('main');
 
-	// --- StatusBadge controls ---
+	// The dashboard's headline surface — it composes Avatar, StatusBadge, PortsBox,
+	// BranchBox and Button, so it's the one place their interplay is reviewable.
+	let cardStatus = $state<Instance['status']>('running');
+	let cardAttention = $state<Instance['attention']>('waiting');
+	let cardPending = $state<'' | 'start' | 'stop' | 'delete' | 'rebuild'>('');
+	let cardMode = $state<Instance['mode']>('ide');
+	let cardBranch = $state(true);
+	let cardEditing = $state(false);
+	let cardEditingName = $state('demo-instance');
+	const cardActions = ['', 'start', 'stop', 'delete', 'rebuild'] as const;
+	const demoInstance = $derived<Instance>({
+		id: 'demo',
+		name: 'demo-instance',
+		source_path: '/home/you/code/demo-instance',
+		workspace_path: '/home/you/.codebay/instances/demo',
+		host_port: 8001,
+		container_id: 'abc123',
+		remote_workspace_folder: '/workspaces/demo-instance',
+		status: cardStatus,
+		error: cardStatus === 'error' ? 'devcontainer up failed: exit code 1' : null,
+		created_at: 0,
+		image_source: 'local',
+		avatar: avatars[0]!.name,
+		mode: cardMode,
+		terminal_split: 0,
+		git_branch: cardBranch ? branchName : null,
+		attention: cardAttention,
+		forwarded_ports: demoPorts,
+		active_run: null
+	});
+
 	const statuses: Instance['status'][] = ['creating', 'running', 'stopped', 'error'];
 	let badgeStatus = $state<Instance['status']>('error');
+
+	// The IDE tab strip only ever renders against running instances, and this
+	// environment may have no Docker at all — so the demo fabricates them.
+	const TAB_NAMES = [
+		'orion',
+		'meridian',
+		'atlas',
+		'vesper',
+		'cobalt',
+		'juniper',
+		'halcyon',
+		'zenith',
+		'perigee',
+		'lumen'
+	];
+	let tabCount = $state(4);
+	let tabActive = $state(0);
+	let tabAttention = $state(true);
+	let tabMixModes = $state(true);
+	let tabLongNames = $state(false);
+	let tabEditingId = $state<string | null>(null);
+	let tabEditingName = $state('');
+	// Renames are applied for real, so the inline editor is inspectable end to end.
+	let tabRenames = $state<Record<string, string>>({});
+	// No container behind the demo, so a stopped tab just stays disabled.
+	let tabStopping = $state<string[]>([]);
+
+	const demoTabs = $derived(
+		Array.from({ length: tabCount }, (_, i): Instance => {
+			const id = `demo-tab-${i}`;
+			const base = TAB_NAMES[i]!;
+			return {
+				id,
+				name: tabRenames[id] ?? (tabLongNames ? `${base}-refactor-spike-2026` : base),
+				source_path: `/home/demo/${base}`,
+				workspace_path: `/data/instances/${id}`,
+				host_port: 8001 + i,
+				container_id: `container-${i}`,
+				remote_workspace_folder: null,
+				status: 'running',
+				error: null,
+				created_at: 0,
+				image_source: 'local',
+				avatar: avatars[i % avatars.length]!.name,
+				mode: tabMixModes && i % 2 === 1 ? 'terminal' : 'ide',
+				terminal_split: 0,
+				git_branch: 'main',
+				attention: null,
+				forwarded_ports: [],
+				active_run: null
+			};
+		})
+	);
+	// Clamped, since dragging the count down can strand the active index past the end.
+	const demoActiveIndex = $derived(Math.min(tabActive, tabCount - 1));
+	const demoActiveId = $derived(demoTabs[demoActiveIndex]?.id ?? '');
+	// Alternating states so both LED colors are comparable side by side.
+	const demoAttention = $derived(
+		Object.fromEntries(
+			demoTabs.map((inst, i) => [
+				inst.id,
+				tabAttention && i !== demoActiveIndex ? (i % 2 === 0 ? 'done' : 'waiting') : null
+			])
+		) as Record<string, 'done' | 'waiting' | null>
+	);
 </script>
 
-<Toaster />
+<Toaster toastOptions={TOAST_OPTIONS} />
 
 <TopBar
 	auth={providers}
 	canDelete={true}
 	ready={true}
 	creating={false}
-	onNew={() => toast('New instance (demo)')}
+	onNew={(mode) => toast(`New ${mode ?? 'default'} instance (demo)`)}
 	onDeleteAll={() => toast('Delete all (demo)')}
 />
 
@@ -166,7 +272,7 @@
 	<header>
 		<h1>UI</h1>
 		<p>Component showcase · dev preview · tweak each component’s props below</p>
-		<a class="gallery-link" href="/debug/avatars">→ Avatar sprite gallery</a>
+		<a class="gallery-link" href="/avatars">→ Avatar sprite gallery</a>
 	</header>
 
 	<div class="grid">
@@ -176,16 +282,20 @@
 				<span class="palette-hint">Design tokens — tap to expand</span>
 			</summary>
 			<div class="palette">
-				{#each palette as { group, swatches } (group)}
+				{#each palette as { group, tokens } (group)}
 					<div class="swatch-group">
 						<h3>{group}</h3>
 						<div class="swatches">
-							{#each swatches as { token, hex, border } (token)}
+							{#each tokens as token (token)}
 								<figure class="swatch">
-									<div class="chip" class:bordered={border} style="background: var({token});"></div>
+									<div
+										class="chip"
+										bind:this={chips[token]}
+										style="background: var({token});"
+									></div>
 									<figcaption>
 										<code>{token}</code>
-										<span>{hex}</span>
+										<span>{hexes[token] ?? '…'}</span>
 									</figcaption>
 								</figure>
 							{/each}
@@ -195,8 +305,66 @@
 			</div>
 		</details>
 
+		<ComponentDemo title="InstanceCard">
+			<!-- The card renders an <li>, and .card-grid mirrors the dashboard's own
+			     column so its width and hover lift match what ships. -->
+			<ul class="card-grid">
+				<InstanceCard
+					instance={demoInstance}
+					editing={cardEditing}
+					bind:editingName={cardEditingName}
+					pending={cardPending || null}
+					onact={(a) => toast(`${a} (demo)`)}
+					onstartrename={() => (cardEditing = true)}
+					oncommitrename={() => (cardEditing = false)}
+					oncancelrename={() => (cardEditing = false)}
+				/>
+			</ul>
+			{#snippet controls()}
+				<label>
+					<span>status</span>
+					<select bind:value={cardStatus}>
+						{#each statuses as s (s)}
+							<option value={s}>{s}</option>
+						{/each}
+					</select>
+				</label>
+				<label>
+					<span>attention</span>
+					<select bind:value={cardAttention}>
+						<option value={null}>none</option>
+						<option value="done">done</option>
+						<option value="waiting">waiting</option>
+					</select>
+				</label>
+				<label>
+					<span>pending (busy overlay)</span>
+					<select bind:value={cardPending}>
+						{#each cardActions as a (a)}
+							<option value={a}>{a || 'none'}</option>
+						{/each}
+					</select>
+				</label>
+				<label>
+					<span>mode</span>
+					<select bind:value={cardMode}>
+						<option value="ide">ide</option>
+						<option value="terminal">terminal</option>
+					</select>
+				</label>
+				<label class="inline">
+					<input type="checkbox" bind:checked={cardBranch} />
+					<span>git branch</span>
+				</label>
+				<label class="inline">
+					<input type="checkbox" bind:checked={cardEditing} />
+					<span>renaming</span>
+				</label>
+			{/snippet}
+		</ComponentDemo>
+
 		<ComponentDemo title="Avatar">
-			<Avatar id={avatarId} name={avatarName} scale={avatarScale} art={avatarArt} />
+			<Avatar name={avatarName} scale={avatarScale} art={avatarArt} />
 			{#snippet controls()}
 				<label>
 					<span>scale ({avatarScale})</span>
@@ -207,13 +375,9 @@
 					<input type="text" bind:value={avatarName} />
 				</label>
 				<label>
-					<span>id</span>
-					<input type="text" bind:value={avatarId} />
-				</label>
-				<label>
 					<span>art</span>
 					<select bind:value={avatarArtName}>
-						<option value="">(pick by id)</option>
+						<option value="">(none)</option>
 						{#each avatars as art (art.name)}
 							<option value={art.name}>{art.name}</option>
 						{/each}
@@ -282,14 +446,33 @@
 
 		<ComponentDemo title="IdeLoader">
 			<div class="loader-stage">
-				<IdeLoader speed={loaderSpeed} />
+				{#key loaderStalled}
+					<IdeLoader
+						speed={loaderSpeed}
+						stalledAfterMs={loaderStalled ? 0 : undefined}
+						onoverride={loaderStalled ? () => {} : undefined}
+					/>
+				{/key}
 			</div>
 			{#snippet controls()}
 				<label>
 					<span>speed ({loaderSpeed.toFixed(2)}×)</span>
 					<input type="range" min="0.25" max="3" step="0.25" bind:value={loaderSpeed} />
 				</label>
+				<label>
+					<input type="checkbox" bind:checked={loaderStalled} />
+					<span>stalled (probe never answered)</span>
+				</label>
 			{/snippet}
+		</ComponentDemo>
+
+		<ComponentDemo
+			title="DropZone"
+			note="Shown while a file drag is over an instance; the page decides when."
+		>
+			<div class="loader-stage">
+				<DropZone />
+			</div>
 		</ComponentDemo>
 
 		<ComponentDemo title="HealthBox">
@@ -374,6 +557,63 @@
 			{/snippet}
 		</ComponentDemo>
 
+		<ComponentDemo title="IdeBar">
+			<div class="ide-bar-demo">
+				<IdeBar
+					running={demoTabs}
+					active={demoActiveId}
+					attention={demoAttention}
+					editingId={tabEditingId}
+					bind:editingName={tabEditingName}
+					onreload={() => toast('Reload editor (demo)')}
+					onselect={(id) => (tabActive = demoTabs.findIndex((t) => t.id === id))}
+					stopping={tabStopping}
+					onstop={(id) => {
+						tabStopping = [...tabStopping, id];
+						toast(`Stop ${id} (demo)`);
+					}}
+					ondropfiles={(id, files) => toast(`Drop ${files.length} file(s) on ${id} (demo)`)}
+					onstartrename={(inst) => {
+						tabEditingId = inst.id;
+						tabEditingName = inst.name;
+					}}
+					oncommitrename={(id) => {
+						const name = tabEditingName.trim();
+						if (name) tabRenames[id] = name;
+						tabEditingId = null;
+					}}
+					oncancelrename={() => (tabEditingId = null)}
+				/>
+			</div>
+			<p class="demo-hint">
+				Click to select, double-click to rename. Arrow keys / Home / End move between tabs once one
+				has focus. The Alt+1–9 jump lives in AppShell rather than here, since it also installs
+				itself into the editor iframes — so it is inert in this demo.
+			</p>
+			{#snippet controls()}
+				<label>
+					<span>tabs ({tabCount})</span>
+					<input type="range" min="1" max="10" bind:value={tabCount} />
+				</label>
+				<label>
+					<span>active ({demoActiveIndex})</span>
+					<input type="range" min="0" max={tabCount - 1} bind:value={tabActive} />
+				</label>
+				<label>
+					<span>attention</span>
+					<input type="checkbox" bind:checked={tabAttention} />
+				</label>
+				<label>
+					<span>mixed modes</span>
+					<input type="checkbox" bind:checked={tabMixModes} />
+				</label>
+				<label>
+					<span>long names</span>
+					<input type="checkbox" bind:checked={tabLongNames} />
+				</label>
+			{/snippet}
+		</ComponentDemo>
+
 		<ComponentDemo title="Brand" note="No props — static branding.">
 			<Brand />
 		</ComponentDemo>
@@ -390,7 +630,6 @@
 		max-width: 740px;
 		margin: 0 auto;
 		padding: 32px;
-		background: var(--bg);
 		color: var(--ink);
 	}
 	header {
@@ -418,8 +657,8 @@
 		border-bottom: 1px solid var(--ink);
 	}
 	.gallery-link:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		color: var(--fill-ink);
 	}
 	.grid {
 		display: flex;
@@ -427,8 +666,7 @@
 		gap: 24px;
 	}
 
-	/* Shared control styling — minimal monochrome to match the LCD look.
-     `.fields` lives in the child ComponentDemo, so target it globally. */
+	/* `.fields` lives in the child ComponentDemo, hence the global selector. */
 	.showcase :global(.fields label) {
 		display: flex;
 		flex-direction: column;
@@ -457,7 +695,7 @@
 	.showcase :global(.fields input[type='checkbox']) {
 		accent-color: var(--ink);
 	}
-	/* IdeLoader is an inset:0 overlay, so give it a sized, positioned stage. */
+	/* IdeLoader and DropZone are inset:0 overlays, so give them a sized, positioned stage. */
 	.loader-stage {
 		position: relative;
 		width: 100%;
@@ -465,11 +703,29 @@
 		border: 1px solid var(--rule-soft);
 		overflow: hidden;
 	}
+	/* Matches the dashboard grid's column so the card previews at its real width. */
+	.card-grid {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		width: min(360px, 100%);
+	}
 	.badge-row {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 10px;
+	}
+	/* The bar spans the full IDE viewport in situ, so give it the whole stage here. */
+	.ide-bar-demo {
+		width: 100%;
+		border: 1px solid var(--rule-soft);
+	}
+	.demo-hint {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		color: var(--ink-faint);
 	}
 	.presets {
 		display: flex;
@@ -483,16 +739,16 @@
 		letter-spacing: 0.06em;
 		color: var(--ink);
 		background: var(--bg-card);
-		border: 1px solid var(--ink);
+		border: 1px solid var(--edge);
 		padding: 5px 0;
 		cursor: pointer;
 	}
 	.presets button:hover {
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
 	}
 
-	/* Color palette — collapsible card, matches the demo card chrome. */
 	.palette-card {
 		background: var(--bg-card);
 	}
@@ -556,10 +812,7 @@
 	}
 	.swatch .chip {
 		height: 44px;
-		border: 1px solid transparent;
-	}
-	.swatch .chip.bordered {
-		border-color: var(--rule-soft);
+		border: 1px solid var(--rule-soft);
 	}
 	.swatch figcaption {
 		display: flex;

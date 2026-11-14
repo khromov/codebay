@@ -2,7 +2,9 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, parse } from 'node:path';
+
+import { DRIVES_ROOT } from './drives.ts';
 
 // Point the DB at a throwaway dir *before* importing anything that pulls in
 // db.server (config.server reads DATA_DIR at module-eval time, and db.server
@@ -45,5 +47,29 @@ describe('browse persists and recalls the last viewed folder', () => {
 		expect(result.path).toBe(homedir());
 		// and the fallback target is now what gets persisted
 		expect(db.getOption('last_viewed_folder')).toBe(homedir());
+	});
+});
+
+// Windows has no single filesystem root, so walking up must reach a drive chooser rather than
+// dead-ending on whichever drive the user's home directory happens to be on.
+describe.if(process.platform === 'win32')('browse escapes the drive it starts on', () => {
+	test('a drive root offers the virtual drive list as its parent', async () => {
+		const driveRoot = parse(process.cwd()).root;
+		const res = await picker.browse(driveRoot);
+		expect(res.parent).toBe(DRIVES_ROOT);
+	});
+
+	test('the virtual drive list enumerates drive roots and has no parent', async () => {
+		const res = await picker.browse(DRIVES_ROOT);
+		expect(res.path).toBe(DRIVES_ROOT);
+		expect(res.parent).toBeNull();
+		expect(res.entries.length).toBeGreaterThan(0);
+		expect(res.entries.map((e) => e.path)).toContain(parse(process.cwd()).root);
+	});
+
+	test('browsing the drive list does not overwrite the last viewed folder', async () => {
+		await picker.browse(root);
+		await picker.browse(DRIVES_ROOT);
+		expect(db.getOption('last_viewed_folder')).toBe(root);
 	});
 });

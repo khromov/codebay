@@ -1,0 +1,189 @@
+<script lang="ts">
+	import { Toaster } from 'svelte-french-toast';
+	import { TOAST_OPTIONS } from '../toast.ts';
+	import AppBar from './AppBar.svelte';
+	import Avatar from './Avatar.svelte';
+	import AvatarEditor from './AvatarEditor.svelte';
+	import Bot from '@lucide/svelte/icons/bot';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import { avatars } from '../avatars/index.ts';
+	import type { AvatarArt } from '../avatars/types.ts';
+
+	let { namePlaceholder }: { namePlaceholder: string } = $props();
+
+	// The sprite currently loaded into the editor for a redraw; null is a fresh draw.
+	let editing = $state<AvatarArt | null>(null);
+	let editorEl = $state<HTMLElement | null>(null);
+
+	function startEdit(art: AvatarArt) {
+		editing = art;
+		editorEl?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
+</script>
+
+<div class="page">
+	<AppBar>
+		<span class="title">Avatars</span>
+	</AppBar>
+
+	<main class="content">
+		<!-- Keyed so switching which sprite is edited remounts the editor with fresh seed state. -->
+		<div bind:this={editorEl} class="editor-slot">
+			{#key editing?.name ?? '\0new'}
+				<AvatarEditor {namePlaceholder} {editing} oncancelEdit={() => (editing = null)} />
+			{/key}
+		</div>
+
+		<section class="catalog">
+			<header>
+				<h2>The set</h2>
+				<p>{avatars.length} hand-crafted 8×8 sprites</p>
+			</header>
+			<ul>
+				{#each avatars as art (art.name)}
+					<li>
+						<Avatar {art} name={art.name} scale={8} interactive />
+						<span class="label">
+							{#if art.robot}
+								<span class="robot-mark" title="AI-generated"><Bot size={11} /></span>
+							{/if}
+							{art.name}
+						</span>
+						{#if art.robot}
+							<!-- Only AI-generated sprites are offered for a hand-redraw. -->
+							<button
+								type="button"
+								class="edit-btn"
+								class:active={editing?.name === art.name}
+								disabled={editing?.name === art.name}
+								onclick={() => startEdit(art)}
+							>
+								<Pencil size={11} />
+								<span>{editing?.name === art.name ? 'Editing' : 'Redraw'}</span>
+							</button>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</section>
+	</main>
+</div>
+
+<!-- This page renders outside AppShell, which hosts the app-wide Toaster. -->
+<Toaster toastOptions={TOAST_OPTIONS} />
+
+<style>
+	.page {
+		display: flex;
+		flex-direction: column;
+		min-height: 100vh;
+	}
+	.title {
+		display: inline-flex;
+		align-items: center;
+		padding: 0 14px;
+		font-family: var(--font-mono);
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--ink-soft);
+	}
+	.content {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 24px;
+		padding: 32px 20px;
+	}
+	.content > :global(*) {
+		width: 100%;
+		max-width: 720px;
+	}
+	.catalog {
+		background: var(--bg-card);
+		border: 1px solid var(--rule);
+		padding: 18px;
+	}
+	.catalog header {
+		margin-bottom: 20px;
+	}
+	.catalog h2 {
+		margin: 0;
+		font-family: var(--font-display);
+		font-weight: 700;
+		font-size: 17px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+	.catalog header p {
+		margin: 4px 0 0;
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--ink-soft);
+	}
+	ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+		gap: 20px;
+	}
+	li {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
+	}
+	.label {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--ink-soft);
+	}
+	.robot-mark {
+		display: inline-flex;
+		color: var(--ink-faint);
+	}
+	.editor-slot {
+		display: flex;
+	}
+	.editor-slot > :global(*) {
+		width: 100%;
+	}
+	.edit-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 4px 8px;
+		border: 1px solid var(--rule);
+		background: var(--bg);
+		color: var(--ink-soft);
+		font-family: var(--font-mono);
+		font-size: 10px;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		cursor: pointer;
+	}
+	.edit-btn:hover {
+		border-color: var(--ink);
+		color: var(--ink);
+	}
+	.edit-btn.active {
+		background: var(--fill);
+		border-color: var(--fill);
+		color: var(--fill-ink);
+	}
+	.edit-btn:focus-visible {
+		outline: none;
+		box-shadow: 0 0 0 2px var(--rule-soft);
+	}
+	.edit-btn:disabled {
+		cursor: default;
+	}
+</style>
