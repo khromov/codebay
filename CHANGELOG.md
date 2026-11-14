@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.1](https://github.com/khromov/codebay/compare/codebay-v0.17.0...codebay-v0.17.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **claude:** carry the effort level into sandboxes and MCP runs ([#237](https://github.com/khromov/codebay/issues/237)) ([b145f0d](https://github.com/khromov/codebay/commit/b145f0de40eebf9cf775b1c4e7f9b08a7bc36131))
+* **skills:** don't copy Anthropic's synced skills into sandboxes ([#226](https://github.com/khromov/codebay/issues/226)) ([d56a0c9](https://github.com/khromov/codebay/commit/d56a0c90e82f9515d6eb4c83e416cc279c31d6bc))
+
 ## [0.17.0](https://github.com/khromov/codebay/compare/codebay-v0.16.2...codebay-v0.17.0) (2026-10-30)
 
 
