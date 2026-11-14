@@ -71,6 +71,7 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 			claudeInjection,
 			claudeCodeSkills,
 			claudeCodeIdeExtension,
+			claudeEffortLevel,
 			// Only writes `projects/**` + `history.jsonl`, which no other injection touches, and
 			// lands before the injections-done sentinel releases the launcher's `claude`.
 			claudeHistory
@@ -87,10 +88,7 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 		[claudeNoCoauthor],
 		// A settings.json writer of its own: every other stage already has one, and same-stage
 		// settings.json writers race — so output style merges last, on its own.
-		[claudeOutputStyle],
-		// Reads the model catalog out of the Claude Code binary, so it must trail claude-code-update;
-		// alone because it writes both settings.json and the rc files.
-		[claudeEffortLevel]
+		[claudeOutputStyle]
 	];
 }
 
