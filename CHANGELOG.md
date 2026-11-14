@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/khromov/codebay/compare/codebay-v0.17.1...codebay-v0.17.2) (2026-11-14)
+
+
+### Bug Fixes
+
+* **docker:** remove a sandbox's built images on delete and rebuild ([#239](https://github.com/khromov/codebay/issues/239)) ([9217302](https://github.com/khromov/codebay/commit/921730273cc266c359f482277b8a4997aadb61af))
+
 ## [0.17.1](https://github.com/khromov/codebay/compare/codebay-v0.17.0...codebay-v0.17.1) (2026-11-14)
 
 
