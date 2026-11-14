@@ -5,7 +5,8 @@ import {
 	hostPortsInUse,
 	removeContainer,
 	removeContainerOnly,
-	removeImages
+	removeImages,
+	removeOrphanedImages
 } from './docker.server.ts';
 
 /**
@@ -300,5 +301,27 @@ describe('removeImages', () => {
 		const ids = ['sha256:old', 'sha256:legacy', 'sha256:reused'];
 		expect(await removeImages(ids, { untaggedOnly: true })).toEqual([]);
 		expect(removed).toEqual(['sha256:old', 'sha256:legacy']);
+	});
+});
+
+describe('removeOrphanedImages', () => {
+	afterEach(() => {
+		g.__codebayDocker = undefined;
+	});
+
+	test('removes by ID only the old images the rebuild left untagged', async () => {
+		const removed = fakeImages({
+			images: {
+				'sha256:old': { Id: 'sha256:old', RepoTags: [] },
+				// A cache hit re-tags the very same image, which must survive.
+				'sha256:reused': { Id: 'sha256:reused', RepoTags: [`${BASE}-features:latest`] }
+			}
+		});
+		const stale = [
+			{ tag: `${BASE}-features-uid:latest`, id: 'sha256:old' },
+			{ tag: `${BASE}-features:latest`, id: 'sha256:reused' }
+		];
+		expect(await removeOrphanedImages(stale)).toEqual([]);
+		expect(removed).toEqual(['sha256:old']);
 	});
 });

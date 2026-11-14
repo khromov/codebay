@@ -41,6 +41,7 @@ import {
 	removeContainer,
 	removeContainerOnly,
 	removeImages,
+	removeOrphanedImages,
 	startContainer,
 	stopContainer
 } from './docker.server.ts';
@@ -546,11 +547,11 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			overrideConfigPath
 		});
 		appendLog(row.id, `⏱ devcontainer up: ${elapsed(upStart)}\n`);
-		// Ahead of the outcome check, since even a failed build may have re-tagged a layer away.
-		const staleIds = staleImages.map((i) => i.id);
-		for (const why of await removeImages(staleIds, { untaggedOnly: true })) {
-			appendLog(row.id, `⚠ Could not remove the previous image ${why}\n`);
-		}
+		// Ahead of the outcome check (a failed build may still have re-tagged a layer) and not awaited,
+		// since dropping gigabytes of old layers mustn't hold up the boot.
+		void removeOrphanedImages(staleImages).then((kept) => {
+			for (const why of kept) appendLog(row.id, `⚠ Could not remove the previous image ${why}\n`);
+		});
 
 		if (result.outcome !== 'success' || !result.containerId) {
 			throw new Error(

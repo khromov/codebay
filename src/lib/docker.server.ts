@@ -194,3 +194,11 @@ export async function removeImages(
 	}
 	return kept;
 }
+
+/** Only the old IDs a rebuild left nameless, and by ID, since no tag reaches them any more. */
+export function removeOrphanedImages(stale: BuiltImage[]): Promise<string[]> {
+	return removeImages(
+		stale.map((i) => i.id),
+		{ untaggedOnly: true }
+	);
+}
