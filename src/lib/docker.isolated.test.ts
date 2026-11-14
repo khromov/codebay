@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import {
 	builtImages,
 	hostPortsInUse,
@@ -179,22 +180,17 @@ describe('hostPortsInUse', () => {
 	});
 });
 
-const HASH = 'a'.repeat(64);
-const BASE = `vsc-ws-${HASH}`;
+const BASE = `vsc-ws-${'a'.repeat(64)}`;
 const httpErr = (status: number) =>
 	Object.assign(new Error(`http ${status}`), { statusCode: status });
 
 /** A fake image store: `images` maps a ref (tag or id) to its inspect result; `removeFails` rejects removal. */
 function fakeImages(opts: {
-	containerImage?: string;
 	images?: Record<string, { Id: string; RepoTags?: string[] }>;
 	removeFails?: Record<string, number>;
 }) {
 	const removed: string[] = [];
 	g.__codebayDocker = Promise.resolve({
-		getContainer: () => ({
-			inspect: async () => ({ Config: { Image: opts.containerImage } })
-		}),
 		getImage: (ref: string) => ({
 			inspect: async () => {
 				const image = opts.images?.[ref];
@@ -212,52 +208,61 @@ function fakeImages(opts: {
 }
 
 describe('builtImages', () => {
+	const WS = '/data/instances/abc/proj';
+	const OURS = `vsc-proj-${createHash('sha256').update(WS).digest('hex')}`;
+	const OTHER = `vsc-proj-${createHash('sha256').update('/data/instances/xyz/proj').digest('hex')}`;
+
 	afterEach(() => {
 		g.__codebayDocker = undefined;
 	});
 
-	test('resolves the CLI tag chain the container runs on, children before parents', async () => {
-		fakeImages({
-			containerImage: `${BASE}-features-uid`,
-			images: {
-				[`${BASE}-features-uid`]: { Id: 'sha256:uid' },
-				[`${BASE}-features`]: { Id: 'sha256:features' }
+	/** Ignores the daemon-side filter, so the client-side match is what the assertions exercise. */
+	function fakeList(images: { Id: string; RepoTags?: string[] }[]) {
+		const filters: unknown[] = [];
+		g.__codebayDocker = Promise.resolve({
+			listImages: async (opts: { filters: unknown }) => {
+				filters.push(opts.filters);
+				return images;
 			}
 		});
-		expect(await builtImages('c1')).toEqual([
-			{ tag: `${BASE}-features-uid`, id: 'sha256:uid' },
-			{ tag: `${BASE}-features`, id: 'sha256:features' }
+		return filters;
+	}
+
+	test('lists only the workspace-hash chain, children before parents', async () => {
+		const filters = fakeList([
+			{ Id: 'sha256:base', RepoTags: [`${OURS}:latest`] },
+			{ Id: 'sha256:features', RepoTags: [`${OURS}-features:latest`] },
+			{ Id: 'sha256:uid', RepoTags: [`${OURS}-features-uid:latest`] }
 		]);
+		expect(await builtImages(WS)).toEqual([
+			{ tag: `${OURS}-features-uid:latest`, id: 'sha256:uid' },
+			{ tag: `${OURS}-features:latest`, id: 'sha256:features' },
+			{ tag: `${OURS}:latest`, id: 'sha256:base' }
+		]);
+		expect(filters).toEqual([{ reference: [`vsc-*${OURS.slice('vsc-proj-'.length)}*`] }]);
 	});
 
-	test('includes the bare Dockerfile build under its layers', async () => {
-		fakeImages({
-			containerImage: `${BASE}-uid:latest`,
-			images: { [`${BASE}-uid`]: { Id: 'sha256:uid' }, [BASE]: { Id: 'sha256:base' } }
-		});
-		expect((await builtImages('c1')).map((i) => i.tag)).toEqual([`${BASE}-uid`, BASE]);
+	test('never claims another sandbox, a pulled image, or a foreign tag on our image', async () => {
+		fakeList([
+			{ Id: 'sha256:other', RepoTags: [`${OTHER}-features-uid:latest`] },
+			{ Id: 'sha256:base', RepoTags: ['mcr.microsoft.com/devcontainers/base:debian'] },
+			{
+				Id: 'sha256:mine',
+				RepoTags: [`${OURS}-features:latest`, `someone/${OURS}-features:latest`, 'keep:me']
+			},
+			{ Id: 'sha256:dangling', RepoTags: [] },
+			{ Id: 'sha256:odd', RepoTags: [`${OURS}-extra:latest`] }
+		]);
+		expect(await builtImages(WS)).toEqual([{ tag: `${OURS}-features:latest`, id: 'sha256:mine' }]);
 	});
 
-	test('never claims an image the CLI did not tag for this workspace', async () => {
-		for (const containerImage of [
-			'mcr.microsoft.com/devcontainers/base:ubuntu',
-			'vsc-ws-not-a-hash-features',
-			undefined
-		]) {
-			fakeImages({ containerImage, images: { [`${BASE}-features`]: { Id: 'sha256:x' } } });
-			expect(await builtImages('c1')).toEqual([]);
-		}
-	});
-
-	test('returns [] when the container is already gone', async () => {
+	test('returns [] when the daemon is unreachable', async () => {
 		g.__codebayDocker = Promise.resolve({
-			getContainer: () => ({
-				inspect: async () => {
-					throw httpErr(404);
-				}
-			})
+			listImages: async () => {
+				throw new Error('connect ECONNREFUSED');
+			}
 		});
-		expect(await builtImages('c1')).toEqual([]);
+		expect(await builtImages(WS)).toEqual([]);
 	});
 });
 

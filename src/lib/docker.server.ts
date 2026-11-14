@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { getDocker, resetDocker } from './docker-client.server.ts';
 
 function statusOf(err: unknown): number | undefined {
@@ -148,43 +149,32 @@ export async function removeContainer(containerId: string): Promise<boolean> {
 	return true;
 }
 
-/** `devcontainer up` tags builds `vsc-<folder>-<sha256 of the workspace path>`, plus `-features`/`-uid` layers. */
-const CLI_IMAGE_TAG = /^(vsc-.+-[0-9a-f]{64})(?:-features)?(?:-uid)?(?::latest)?$/;
-
 export type BuiltImage = { tag: string; id: string };
 
 /**
- * The images `devcontainer up` built for this container, derived from the tag it actually runs on
- * rather than a name prefix, so a pulled base image or another workspace's build is never included.
+ * `devcontainer up` tags every build `vsc-<folder>-<sha256 of the workspace path>` (plus `-features`/`-uid`
+ * layers), so the hash pins a tag to this one sandbox even when no container was ever recorded for it.
  */
-export async function builtImages(containerId: string): Promise<BuiltImage[]> {
+export async function builtImages(workspacePath: string): Promise<BuiltImage[]> {
+	const hash = createHash('sha256').update(workspacePath).digest('hex');
+	const ours = new RegExp(`^vsc-.*${hash}(?:-features)?(?:-uid)?:latest$`);
 	try {
 		const docker = await getDocker();
-		const info = await docker.getContainer(containerId).inspect();
-		const base = info.Config?.Image?.match(CLI_IMAGE_TAG)?.[1];
-		if (!base) return [];
-		const images: BuiltImage[] = [];
-		// Children first: the classic builder refuses to remove a parent while an image built on it exists.
-		for (const tag of [`${base}-features-uid`, `${base}-uid`, `${base}-features`, base]) {
-			const id = await docker
-				.getImage(tag)
-				.inspect()
-				.then(
-					(image) => image.Id,
-					() => null
-				);
-			if (id) images.push({ tag, id });
-		}
-		return images;
+		const images = await docker.listImages({ filters: { reference: [`vsc-*${hash}*`] } });
+		return (
+			images
+				.flatMap((image) =>
+					(image.RepoTags ?? []).filter((t) => ours.test(t)).map((tag) => ({ tag, id: image.Id }))
+				)
+				// A child's tag extends its parent's, and the classic builder won't remove a parent under a child.
+				.sort((a, b) => b.tag.length - a.tag.length)
+		);
 	} catch {
 		return [];
 	}
 }
 
-/**
- * Never forced, so Docker itself refuses (409) an image another container still runs on;
- * `untaggedOnly` also spares any image a tag still points at. Returns why each one was kept.
- */
+/** Never forced, so Docker itself refuses (409) an image another container still runs on. */
 export async function removeImages(
 	refs: string[],
 	opts: { untaggedOnly?: boolean } = {}
