@@ -39,6 +39,11 @@ import { NO_COAUTHOR_SETTINGS } from './claude-no-coauthor.ts';
 import { claudeTrustConfig, CLAUDE_TRUST_SETTINGS } from './claude-trust.ts';
 import { homedir } from 'node:os';
 import { INSTALL_SCRIPT, TMUX_CONF_LINES } from './tmux.ts';
+import {
+	APPLY_SCRIPT as SHELL_PATH_APPLY,
+	PATH_MARKER_END,
+	PATH_MARKER_START
+} from './shell-path.ts';
 import { INSTALL_SCRIPT as TTYD_INSTALL_SCRIPT } from './ttyd.ts';
 import { INSTALL_SCRIPT as CLAUDE_INSTALL_SCRIPT } from './claude-code-install.ts';
 import {
@@ -214,6 +219,14 @@ describe('injection registry', () => {
 		expect(firstStage).toContain('tmux');
 	});
 
+	test('shell-path applies in every mode with a health check and no auth chip', () => {
+		const p = injections.find((i) => i.id === 'shell-path');
+		expect(p).toBeDefined();
+		expect(p!.modes).toBeUndefined();
+		expect(typeof p!.check).toBe('function');
+		expect(p!.auth).toBeUndefined();
+	});
+
 	test('ttyd is registered as a terminal-only injection with a health check', () => {
 		const t = injections.find((i) => i.id === 'ttyd');
 		expect(t).toBeDefined();
@@ -251,6 +264,7 @@ describe('resolveInjectionStages — clobber safety', () => {
 		'claude-no-coauthor': ['settings-json'],
 		'claude-output-style': ['settings-json', 'output-styles-dir'],
 		'host-env-vars': ['host-env-file', 'rc'],
+		'shell-path': ['rc'],
 		// Writes nothing to the container — values ride containerEnv, so it can share any stage.
 		'custom-env-vars': []
 	};
@@ -302,6 +316,7 @@ describe('resolveInjectionStages — clobber safety', () => {
 		expect(at.get('claude-code-models')!).toBeLessThan(at.get('claude-permission-mode')!);
 		expect(at.get('claude-permission-mode')!).toBeLessThan(at.get('claude-aliases')!);
 		expect(at.get('claude-aliases')!).toBeLessThan(at.get('host-env-vars')!);
+		expect(at.get('host-env-vars')!).toBeLessThan(at.get('shell-path')!);
 		// ~/.claude.json: the Claude slot seeds it before trust merges into it.
 		expect(at.get('claude-code-credentials')!).toBeLessThan(at.get('claude-trust')!);
 		// apt/dpkg lock: tmux and ttyd can never run side by side.
@@ -453,6 +468,100 @@ describe('tmux injection scripts', () => {
 
 	test('conf makes a copy reach the browser clipboard on any TERM', () => {
 		expect(TMUX_CONF_LINES).toContain("set -as terminal-overrides ',*:Ms=\\E]52;%p1%s;%p2%s\\007'");
+	});
+});
+
+describe('shell-path injection script', () => {
+	let home: string;
+
+	beforeEach(() => {
+		home = mkdtempSync(join(tmpdir(), 'codebay-home-'));
+	});
+	afterEach(() => rmSync(home, { recursive: true, force: true }));
+
+	// Absolute, because the tests hand bash a fake PATH (macOS keeps bash only in /bin).
+	const BASH = Bun.which('bash') ?? 'bash';
+
+	/** Runs the apply script as if `path` were the container's login PATH. */
+	function apply(path: string): number {
+		const res = Bun.spawnSync([BASH, '-c', SHELL_PATH_APPLY, 'shell-path', home], {
+			env: { ...process.env, PATH: path }
+		});
+		return res.exitCode;
+	}
+
+	/** Sources the rc file the way a non-login interactive shell would, starting from `path`. */
+	function resolvedPath(rc: string, path: string): string {
+		const res = Bun.spawnSync([BASH, '-c', '. "$1"; printf %s "$PATH"', 'probe', join(home, rc)], {
+			env: { PATH: path }
+		});
+		return res.stdout.toString();
+	}
+
+	const SYS = '/usr/local/bin:/usr/bin:/bin';
+
+	test.skipIf(POSIX_SHELL_ONLY)('appends only the missing login entries, in order', () => {
+		expect(apply(`/usr/local/share/npm-global/bin:${SYS}:/home/u/.local/bin`)).toBe(0);
+		for (const rc of ['.bashrc', '.zshrc']) {
+			expect(resolvedPath(rc, '/usr/bin:/bin')).toBe(
+				'/usr/bin:/bin:/usr/local/share/npm-global/bin:/usr/local/bin:/home/u/.local/bin'
+			);
+			// Already-complete PATH: the block is a no-op.
+			expect(resolvedPath(rc, `${SYS}:/usr/local/share/npm-global/bin:/home/u/.local/bin`)).toBe(
+				`${SYS}:/usr/local/share/npm-global/bin:/home/u/.local/bin`
+			);
+		}
+	});
+
+	test.skipIf(POSIX_SHELL_ONLY)('writes the block once across re-applies', () => {
+		expect(apply(`/opt/a:${SYS}`)).toBe(0);
+		expect(apply(`/opt/a:/opt/b:${SYS}`)).toBe(0);
+		const rc = readFileSync(join(home, '.bashrc'), 'utf8');
+		expect(rc.split(PATH_MARKER_START).length - 1).toBe(1);
+		expect(rc.split(PATH_MARKER_END).length - 1).toBe(1);
+	});
+
+	test.skipIf(POSIX_SHELL_ONLY)('keeps entries with spaces and globs literal', () => {
+		mkdirSync(join(home, 'x1'));
+		mkdirSync(join(home, 'x2'));
+		const glob = `${home}/x*`;
+		expect(apply(`/opt/my tools/bin:${glob}:/usr/bin`)).toBe(0);
+		expect(resolvedPath('.bashrc', '/usr/bin')).toBe(`/usr/bin:/opt/my tools/bin:${glob}`);
+	});
+
+	test.skipIf(POSIX_SHELL_ONLY)('drops relative, empty and single-quoted entries', () => {
+		expect(apply(`.::rel/bin:/opt/it's:/opt/ok:/usr/bin`)).toBe(0);
+		expect(resolvedPath('.bashrc', '/usr/bin')).toBe('/usr/bin:/opt/ok');
+	});
+
+	test.skipIf(POSIX_SHELL_ONLY)('never glues the marker onto an unterminated last line', () => {
+		writeFileSync(join(home, '.bashrc'), 'alias ll="ls -l"');
+		expect(apply(`/opt/a:/usr/bin`)).toBe(0);
+		const lines = readFileSync(join(home, '.bashrc'), 'utf8').split('\n');
+		expect(lines[0]).toBe('alias ll="ls -l"');
+		expect(lines[1]).toBe(PATH_MARKER_START);
+	});
+
+	test.skipIf(POSIX_SHELL_ONLY)('leaves no helper function behind', () => {
+		expect(apply(`/opt/a:/usr/bin`)).toBe(0);
+		const res = Bun.spawnSync(
+			[
+				BASH,
+				'-c',
+				'. "$1"; type codebay_path_add >/dev/null 2>&1 && echo leaked || echo clean',
+				'probe',
+				join(home, '.bashrc')
+			],
+			{ env: { PATH: '/usr/bin:/bin' } }
+		);
+		expect(res.stdout.toString().trim()).toBe('clean');
+	});
+
+	test.skipIf(POSIX_SHELL_ONLY)('reports failure when an rc file is unwritable', () => {
+		mkdirSync(join(home, '.bashrc'));
+		expect(apply(`/opt/a:/usr/bin`)).not.toBe(0);
+		// The other rc file is still written.
+		expect(readFileSync(join(home, '.zshrc'), 'utf8')).toContain(PATH_MARKER_START);
 	});
 });
 

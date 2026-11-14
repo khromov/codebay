@@ -24,6 +24,7 @@ import { claudePermissionMode } from '../container-injections/claude-permission-
 import { claudeTrust } from '../container-injections/claude-trust.ts';
 import { claudeAliases } from '../container-injections/claude-aliases.ts';
 import { claudeNoCoauthor } from '../container-injections/claude-no-coauthor.ts';
+import { shellPath } from '../container-injections/shell-path.ts';
 import { hostEnvVars } from '../container-injections/host-env-vars.ts';
 import { customEnvVars } from '../container-injections/custom-env-vars.ts';
 
@@ -85,7 +86,9 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 		// claude-trust edits ~/.claude.json, which the stage-1 Claude slot also writes.
 		// custom-env-vars writes nothing (values ride containerEnv) — it only verifies + health-checks.
 		[claudeTrust, hostEnvVars, customEnvVars],
-		[claudeNoCoauthor],
+		// shell-path is the last rc writer: it appends after every other rc line, and snapshots the
+		// login PATH once the stage-1/2 installs have landed whatever they put on it.
+		[claudeNoCoauthor, shellPath],
 		// A settings.json writer of its own: every other stage already has one, and same-stage
 		// settings.json writers race — so output style merges last, on its own.
 		[claudeOutputStyle]
