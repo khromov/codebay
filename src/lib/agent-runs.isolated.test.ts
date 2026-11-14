@@ -1,14 +1,22 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { PassThrough } from 'node:stream';
-import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync
+} from 'node:fs';
 import { join } from 'node:path';
-import { LOGS_DIR } from './config.server.ts';
+import { DATA_DIR, LOGS_DIR } from './config.server.ts';
 import {
 	deleteInstanceRow,
 	getRun,
 	insertInstance,
 	listRuns,
 	openRunFor,
+	setOption,
 	type InstanceRow
 } from './db.server.ts';
 import {
@@ -202,6 +210,87 @@ describe('the staged launcher', () => {
 		const body = calls.map(stdinOf).find((s) => s.includes('claude -p'))!;
 		expect(body).toContain('--permission-mode plan');
 		expect(body).not.toContain('--dangerously-skip-permissions');
+	});
+});
+
+describe('the effort a run carries', () => {
+	const hostDir = join(DATA_DIR, 'runs-host-claude');
+	beforeEach(() => {
+		rmSync(hostDir, { recursive: true, force: true });
+		mkdirSync(hostDir, { recursive: true });
+		// The maintainer's host: xhigh both top-level and per model, as /effort saves it.
+		writeFileSync(
+			join(hostDir, 'settings.json'),
+			JSON.stringify({
+				effortLevel: 'xhigh',
+				modelSettings: {
+					'claude-opus-5-5': { effortLevel: 'xhigh' },
+					'claude-fable-5-2': { effortLevel: 'xhigh' }
+				}
+			})
+		);
+		setOption('claude_config_dir', hostDir);
+	});
+	afterEach(() => {
+		setOption('claude_config_dir', '');
+		setOption('claude_effort_level', '');
+	});
+
+	async function stagedFlags(opts: Parameters<typeof startRun>[2]): Promise<string> {
+		const calls = fakeDocker();
+		const inst = seed();
+		created.push(inst.id);
+		const run = startRun(inst, 'how hard are you thinking?', opts);
+		await pollRunNow(run.id);
+		const body = calls.map(stdinOf).find((s) => s.includes('claude -p'))!;
+		return body.slice(body.indexOf('claude -p'));
+	}
+
+	test('a run with no options inherits the host’s xhigh rather than the medium default', async () => {
+		expect(await stagedFlags({})).toContain("--effort 'xhigh'");
+	});
+
+	test('a resumed run keeps the configured effort', async () => {
+		const flags = await stagedFlags({ resumeSessionId: 'sess-1' });
+		expect(flags).toContain("--resume 'sess-1'");
+		expect(flags).toContain("--effort 'xhigh'");
+	});
+
+	test('a run that names a model keeps the configured effort', async () => {
+		const flags = await stagedFlags({ model: 'claude-opus-5-5' });
+		expect(flags).toContain("--model 'claude-opus-5-5'");
+		expect(flags).toContain("--effort 'xhigh'");
+	});
+
+	test('a fixed Codebay level wins over the host’s', async () => {
+		setOption('claude_effort_level', 'max');
+		expect(await stagedFlags({})).toContain("--effort 'max'");
+	});
+
+	test('an explicit effort wins over both', async () => {
+		expect(await stagedFlags({ effort: 'low' })).toContain("--effort 'low'");
+	});
+
+	test('host levels that differ per model leave the choice to the container’s settings.json', async () => {
+		writeFileSync(
+			join(hostDir, 'settings.json'),
+			JSON.stringify({
+				modelSettings: {
+					'claude-opus-5-5': { effortLevel: 'xhigh' },
+					'claude-sonnet-5-5': { effortLevel: 'low' }
+				}
+			})
+		);
+		expect(await stagedFlags({ model: 'sonnet' })).not.toContain('--effort');
+	});
+
+	test('the resolved effort is reported on the run, and stays put if the setting changes later', () => {
+		fakeDocker();
+		const inst = seed({ status: 'creating', container_id: null });
+		created.push(inst.id);
+		const run = startRun(inst, 'later');
+		setOption('claude_effort_level', 'low');
+		expect(runDetail(getRun(run.id)!).effort).toBe('xhigh');
 	});
 });
 
