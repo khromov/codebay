@@ -207,33 +207,37 @@ describe('reading the installed Claude Code’s model catalog', () => {
 		]);
 	});
 
-	test('the script finds the ids inside a binary reached through a symlinked `claude`', async () => {
-		const dir = join(DATA_DIR, 'effort-fake-claude');
-		rmSync(dir, { recursive: true, force: true });
-		mkdirSync(join(dir, 'bin'), { recursive: true });
-		const binary = join(dir, 'claude.exe');
-		// Minified-catalog shaped: ids as string literals among binary noise, plus a future model.
-		writeFileSync(
-			binary,
-			Buffer.concat([
-				Buffer.from([0, 1, 2, 255]),
-				Buffer.from(
-					'var x=["claude-mythos-5-2","claude-mythos-6","claude-fable-5-2"],y="claude-code-sdk",' +
-						'z="claude-sonnet-4-5-20250929";'
-				),
-				Buffer.from([0, 0, 254])
-			])
-		);
-		chmodSync(binary, 0o755);
-		symlinkSync(binary, join(dir, 'bin', 'claude'));
-		const proc = Bun.spawn(['bash', '-c', INSTALLED_MODELS_SCRIPT], {
-			env: { ...process.env, PATH: `${join(dir, 'bin')}:/usr/bin:/bin` },
-			stdout: 'pipe'
-		});
-		const ids = parseModelIds(await new Response(proc.stdout).text());
-		expect(ids).toEqual(['claude-fable-5-2', 'claude-mythos-5-2', 'claude-mythos-6']);
-		rmSync(dir, { recursive: true, force: true });
-	});
+	// Runs the real script through bash, which a Windows runner doesn't have.
+	test.skipIf(process.platform === 'win32')(
+		'the script finds the ids inside a binary reached through a symlinked `claude`',
+		async () => {
+			const dir = join(DATA_DIR, 'effort-fake-claude');
+			rmSync(dir, { recursive: true, force: true });
+			mkdirSync(join(dir, 'bin'), { recursive: true });
+			const binary = join(dir, 'claude.exe');
+			// Minified-catalog shaped: ids as string literals among binary noise, plus a future model.
+			writeFileSync(
+				binary,
+				Buffer.concat([
+					Buffer.from([0, 1, 2, 255]),
+					Buffer.from(
+						'var x=["claude-mythos-5-2","claude-mythos-6","claude-fable-5-2"],y="claude-code-sdk",' +
+							'z="claude-sonnet-4-5-20250929";'
+					),
+					Buffer.from([0, 0, 254])
+				])
+			);
+			chmodSync(binary, 0o755);
+			symlinkSync(binary, join(dir, 'bin', 'claude'));
+			const proc = Bun.spawn(['bash', '-c', INSTALLED_MODELS_SCRIPT], {
+				env: { ...process.env, PATH: `${join(dir, 'bin')}:/usr/bin:/bin` },
+				stdout: 'pipe'
+			});
+			const ids = parseModelIds(await new Response(proc.stdout).text());
+			expect(ids).toEqual(['claude-fable-5-2', 'claude-mythos-5-2', 'claude-mythos-6']);
+			rmSync(dir, { recursive: true, force: true });
+		}
+	);
 });
 
 describe('apply()', () => {
