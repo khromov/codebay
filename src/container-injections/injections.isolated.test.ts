@@ -239,7 +239,7 @@ describe('resolveInjectionStages — clobber safety', () => {
 		'code-server-dark': ['code-server-install', 'code-server-user-settings'],
 		'git-identity': ['gitconfig'],
 		'github-credentials': ['gh-hosts', 'gitconfig'],
-		'claude-effort-level': ['settings-json'],
+		'claude-effort-level': ['settings-json', 'effort-env-file', 'rc'],
 		'attention-hooks': ['bridge-header', 'settings-json'],
 		'claude-statusline': ['statusline-script', 'settings-json'],
 		'claude-code-models': ['models-env-file', 'rc'],
@@ -291,12 +291,14 @@ describe('resolveInjectionStages — clobber safety', () => {
 		expect(at.get('git-safe-directory')!).toBeLessThan(at.get('git-identity')!);
 		expect(at.get('git-identity')!).toBeLessThan(at.get('github-credentials')!);
 		// ~/.claude/settings.json merge chain.
-		expect(at.get('claude-effort-level')!).toBeLessThan(at.get('attention-hooks')!);
 		expect(at.get('attention-hooks')!).toBeLessThan(at.get('claude-statusline')!);
 		expect(at.get('claude-statusline')!).toBeLessThan(at.get('claude-model')!);
 		expect(at.get('claude-model')!).toBeLessThan(at.get('claude-trust')!);
 		expect(at.get('claude-trust')!).toBeLessThan(at.get('claude-no-coauthor')!);
 		expect(at.get('claude-no-coauthor')!).toBeLessThan(at.get('claude-output-style')!);
+		// The effort injection reads the model catalog from whatever binary the update left behind.
+		expect(at.get('claude-code-update')!).toBeLessThan(at.get('claude-effort-level')!);
+		expect(at.get('claude-code-install')!).toBeLessThan(at.get('claude-effort-level')!);
 		// rc-file append chain.
 		expect(at.get('claude-code-models')!).toBeLessThan(at.get('claude-permission-mode')!);
 		expect(at.get('claude-permission-mode')!).toBeLessThan(at.get('claude-aliases')!);
