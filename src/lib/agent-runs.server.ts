@@ -37,8 +37,10 @@ import {
 import {
 	claudePermissionFlags,
 	type AgentRunSummary,
+	type ClaudeEffortLevel,
 	type ClaudePermissionMode
 } from '../types.ts';
+import { defaultRunEffort } from '../container-injections/claude-effort-level.ts';
 import {
 	STRUCTURED_OUTPUT_FAILED_ERROR,
 	emptyRunState,
@@ -80,6 +82,8 @@ export interface StartRunOptions {
 	jsonSchema?: string;
 	/** Defaults to full autonomy — an MCP run is unattended, and the container is the sandbox. */
 	permissionMode?: ClaudePermissionMode;
+	/** Resolved at `startRun`, so a run follows the setting as it is now, not as it was at boot. */
+	effort?: ClaudeEffortLevel;
 	timeoutMs?: number;
 }
 
@@ -104,6 +108,7 @@ function runScript(runId: string, row: InstanceRow, opts: StartRunOptions): stri
 	];
 	if (opts.resumeSessionId) flags.push(`--resume ${quote(opts.resumeSessionId)}`);
 	if (opts.model) flags.push(`--model ${quote(opts.model)}`);
+	if (opts.effort) flags.push(`--effort ${quote(opts.effort)}`);
 	if (opts.maxTurns) flags.push(`--max-turns ${opts.maxTurns}`);
 	if (opts.jsonSchema) flags.push('--json-schema "$(cat "$d/schema.json")"');
 
@@ -308,6 +313,7 @@ export function runDetail(row: AgentRunRow) {
 		resume_session_id: row.resume_session_id,
 		model: row.model,
 		requested_model: requestedModel(row),
+		effort: optionsOf(row).effort ?? null,
 		last_activity: row.last_activity,
 		result: row.result,
 		structured_output: row.structured_output
@@ -612,6 +618,8 @@ export function startRun(
 	if (open) throw new Error(`sandbox already has an active run (${open.id})`);
 
 	const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+	// Null leaves it to the container's settings.json, which holds the host's per-model table.
+	const effort = opts.effort ?? defaultRunEffort() ?? undefined;
 
 	const row: AgentRunRow = {
 		id,
@@ -621,7 +629,7 @@ export function startRun(
 		session_id: null,
 		model: null,
 		resume_session_id: opts.resumeSessionId ?? null,
-		options: JSON.stringify(opts),
+		options: JSON.stringify({ ...opts, effort }),
 		result: null,
 		structured_output: null,
 		rejected_structured_output: null,

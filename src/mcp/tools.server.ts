@@ -43,7 +43,8 @@ import {
 import { currentHealthSnapshots } from '../lib/health.server.ts';
 import { proxyPathFor } from '../lib/proxy.server.ts';
 import { PUBLIC_ORIGIN } from '../lib/config.server.ts';
-import { CLAUDE_PERMISSION_MODES, normalizeMode } from '../types.ts';
+import { CLAUDE_EFFORT_LEVELS, CLAUDE_PERMISSION_MODES, normalizeMode } from '../types.ts';
+import { describeDefaultEffort } from '../container-injections/claude-effort-level.ts';
 
 /** Long-polling `get_run` past this would start tripping MCP clients' own request timeouts. */
 const MAX_WAIT_SECONDS = 60;
@@ -126,6 +127,27 @@ function safe<T>(run: (input: T) => unknown) {
 	};
 }
 
+/**
+ * A `v.description` re-read on every `tools/list`, since the adapter converts the schema per call —
+ * so the effort default a caller sees is the live setting, not the one at server build time.
+ */
+function liveDescription<T>(text: () => string) {
+	const action = v.description<T, string>('');
+	Object.defineProperty(action, 'description', { get: text, enumerable: true });
+	return action;
+}
+
+/** Exported for the descriptor test, which asserts the exact text a calling model reads. */
+export const effortParamDescription = () =>
+	`Reasoning effort for this run. Omit to use the configured default (currently ` +
+	`${describeDefaultEffort()}). Callers should normally omit it; pass a level only when the user ` +
+	`explicitly asks for a different effort, since any value here overrides theirs.`;
+
+/** Appended to the descriptions of the tools that start a run. */
+export const effortToolNote = () =>
+	` Leave \`effort\` unset to run at the user's configured effort (currently ` +
+	`${describeDefaultEffort()}).`;
+
 const runOptions = {
 	resume_session_id: v.optional(
 		v.pipe(
@@ -140,6 +162,12 @@ const runOptions = {
 				'Model alias or id, e.g. "sonnet". Omit for the sandbox default. The run reports the id ' +
 					'Claude actually used as `model` once it starts.'
 			)
+		)
+	),
+	effort: v.optional(
+		v.pipe(
+			v.picklist(CLAUDE_EFFORT_LEVELS),
+			liveDescription<(typeof CLAUDE_EFFORT_LEVELS)[number]>(effortParamDescription)
 		)
 	),
 	max_turns: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
@@ -185,6 +213,7 @@ function toStartOptions(input: RunOptionInput) {
 		maxTurns: input.max_turns,
 		jsonSchema: input.json_schema,
 		permissionMode: input.permission_mode,
+		effort: input.effort,
 		timeoutMs: input.timeout_minutes ? input.timeout_minutes * 60_000 : undefined
 	};
 }
@@ -203,11 +232,15 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 	define(
 		{
 			name: 'create_sandbox',
-			description:
-				'Create an isolated devcontainer sandbox from a Git repo URL or a local folder path on ' +
-				'the Codebay host. Returns immediately while the container builds in the background; poll ' +
-				'get_sandbox until status is "running". Pass a prompt to queue an agent run that starts ' +
-				'as soon as the sandbox is up.',
+			get description() {
+				return (
+					'Create an isolated devcontainer sandbox from a Git repo URL or a local folder path on ' +
+					'the Codebay host. Returns immediately while the container builds in the background; ' +
+					'poll get_sandbox until status is "running". Pass a prompt to queue an agent run that ' +
+					'starts as soon as the sandbox is up.' +
+					effortToolNote()
+				);
+			},
 			schema: v.object({
 				source: v.pipe(
 					v.string(),
@@ -418,10 +451,14 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 	define(
 		{
 			name: 'run_agent',
-			description:
-				'Run Claude Code non-interactively against the sandbox and return a run handle. The run ' +
-				'continues in the background; poll get_run for progress and the final result. Only one ' +
-				'run at a time per sandbox.',
+			get description() {
+				return (
+					'Run Claude Code non-interactively against the sandbox and return a run handle. The run ' +
+					'continues in the background; poll get_run for progress and the final result. Only one ' +
+					'run at a time per sandbox.' +
+					effortToolNote()
+				);
+			},
 			schema: v.object({
 				sandbox_id: sandboxId,
 				prompt: promptSchema('What Claude should do.'),

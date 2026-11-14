@@ -4,7 +4,7 @@
 	import SettingsView from '../components/SettingsView.svelte';
 	import type { AvatarArt } from '../avatars/index.ts';
 	import type {
-		ClaudeEffortLevel,
+		ClaudeEffortSetting,
 		ClaudeOutputStyle,
 		ClaudePermissionMode,
 		InstanceMode
@@ -61,7 +61,7 @@
 		pet?: AvatarArt;
 		defaultMode: InstanceMode;
 		claudePermissionMode: ClaudePermissionMode;
-		claudeEffortLevel: ClaudeEffortLevel;
+		claudeEffortLevel: ClaudeEffortSetting;
 		claudeOutputStyle: ClaudeOutputStyle;
 		defaultImage: string;
 		builtinImage: string;

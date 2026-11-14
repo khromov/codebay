@@ -4,6 +4,7 @@ import {
 	SHELL_RC_FILES
 } from '../lib/container-files.server.ts';
 import { getOption } from '../lib/db.server.ts';
+import { EFFORT_ENV_VAR } from './claude-effort-level.ts';
 import { claudePermissionFlags, normalizePermissionMode } from '../types.ts';
 import type { ClaudePermissionMode } from '../types.ts';
 import type { Injection } from '../lib/injections.server.ts';
@@ -13,7 +14,9 @@ export function getClaudePermissionMode(): ClaudePermissionMode {
 	return normalizePermissionMode(getOption('claude_permission_mode'));
 }
 
-const aliasLine = () => `alias claude='claude ${claudePermissionFlags(getClaudePermissionMode())}'`;
+/** The effort var expands per use, so a hand-typed `claude` picks up a session-only `max` too. */
+const aliasLine = () =>
+	`alias claude='claude ${claudePermissionFlags(getClaudePermissionMode())} \${${EFFORT_ENV_VAR}:+--effort "$${EFFORT_ENV_VAR}"}'`;
 
 /**
  * Keeps a hand-typed `claude` on the same permission mode the auto-launched session gets.

@@ -3,7 +3,7 @@ import {
 	claudePermissionFlags,
 	isInstanceFilter,
 	isTheme,
-	normalizeEffortLevel,
+	normalizeEffortSetting,
 	normalizePermissionMode
 } from './types.ts';
 
@@ -49,16 +49,16 @@ describe('normalizePermissionMode', () => {
 	});
 });
 
-describe('normalizeEffortLevel', () => {
-	test('keeps the five supported levels', () => {
-		for (const level of ['low', 'medium', 'high', 'xhigh', 'max'] as const) {
-			expect(normalizeEffortLevel(level)).toBe(level);
+describe('normalizeEffortSetting', () => {
+	test('keeps the five supported levels and the inherit choice', () => {
+		for (const level of ['default', 'low', 'medium', 'high', 'xhigh', 'max'] as const) {
+			expect(normalizeEffortSetting(level)).toBe(level);
 		}
 	});
 
-	test('falls back to high for anything unrecognised', () => {
+	test('inherits the host for anything unrecognised, including an unset option', () => {
 		for (const v of ['', 'HIGH', 'ultra', null, undefined, 0, {}]) {
-			expect(normalizeEffortLevel(v)).toBe('high');
+			expect(normalizeEffortSetting(v)).toBe('default');
 		}
 	});
 });

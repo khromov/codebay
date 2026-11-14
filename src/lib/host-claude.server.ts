@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -25,6 +25,17 @@ export async function readHostClaudeSettings(): Promise<Record<string, unknown> 
 	if (!existsSync(file)) return null;
 	try {
 		return JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
+	} catch {
+		return null;
+	}
+}
+
+/** Sync twin for callers that can't await, e.g. an MCP tool description resolved per `tools/list`. */
+export function readHostClaudeSettingsSync(): Record<string, unknown> | null {
+	const file = hostClaudeFile('settings.json');
+	if (!existsSync(file)) return null;
+	try {
+		return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
 	} catch {
 		return null;
 	}
