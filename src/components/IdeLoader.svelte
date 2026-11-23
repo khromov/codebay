@@ -61,8 +61,9 @@
 		{/each}
 	</div>
 	<div class="label">
-		Loading {isTerminal ? 'terminal' : 'editor'}<span class="dot">.</span><span class="dot">.</span
-		><span class="dot">.</span>
+		Loading {isTerminal ? 'terminal' : 'editor'}<span class="dot">.</span><span class="dot">
+			.
+		</span><span class="dot">.</span>
 	</div>
 	{#if stalled}
 		<div class="stalled">

@@ -999,9 +999,9 @@
 								Browsers hand out clipboard access only on a secure origin, and
 								<code>{insecure.origin}</code> isn't one — so a copy out of an instance's VS Code
 								terminal reaches nothing (codebay's own terminal falls back to a legacy copy that
-								usually still works). Either open codebay through <code>localhost</code> (<code
-									>{insecure.tunnel}</code
-								>), or allow this exact origin under
+								usually still works). Either open codebay through <code>localhost</code> (<code>
+									{insecure.tunnel}
+								</code>), or allow this exact origin under
 								<code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>.
 							</div>
 						</div>
@@ -1682,9 +1682,9 @@
 						<div class="name">
 							Set tokens manually
 							{#if customEndpoint}
-								<span class="arch" title="Disabled while LiteLLM + Bedrock mode is on"
-									>disabled</span
-								>
+								<span class="arch" title="Disabled while LiteLLM + Bedrock mode is on">
+									disabled
+								</span>
 							{/if}
 						</div>
 						<div class="desc">

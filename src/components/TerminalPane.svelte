@@ -270,8 +270,10 @@
 		type="button"
 		onclick={reload}
 		title="Reload terminal (reconnects, keeps the session)"
-		aria-label="Reload terminal"><RotateCw size={14} /></button
+		aria-label="Reload terminal"
 	>
+		<RotateCw size={14} />
+	</button>
 </div>
 
 <style>

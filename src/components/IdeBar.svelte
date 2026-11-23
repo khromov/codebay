@@ -155,8 +155,10 @@
 					class="page"
 					disabled={atStart}
 					onclick={() => page(-1)}
-					aria-label="Scroll tabs left"><ChevronLeft size={16} /></button
+					aria-label="Scroll tabs left"
 				>
+					<ChevronLeft size={16} />
+				</button>
 			{/if}
 			<div class="viewport" bind:this={viewport}>
 				<!-- A nav of buttons rather than a tablist: a tablist may only own tabs, so the
@@ -259,8 +261,10 @@
 					class="page trailing"
 					disabled={atEnd}
 					onclick={() => page(1)}
-					aria-label="Scroll tabs right"><ChevronRight size={16} /></button
+					aria-label="Scroll tabs right"
 				>
+					<ChevronRight size={16} />
+				</button>
 			{/if}
 		</div>
 	{/if}
@@ -271,8 +275,10 @@
 				class="reload"
 				onclick={onreload}
 				title="Reload editor"
-				aria-label="Reload editor"><RotateCw size={18} /></button
+				aria-label="Reload editor"
 			>
+				<RotateCw size={18} />
+			</button>
 		{/if}
 		<a
 			class="cog"
@@ -280,8 +286,10 @@
 			target="_blank"
 			rel="noopener noreferrer"
 			title="Settings"
-			aria-label="Settings"><Settings size={18} /></a
+			aria-label="Settings"
 		>
+			<Settings size={18} />
+		</a>
 	</div>
 </AppBar>
 {#if dropTarget}

@@ -227,9 +227,9 @@
 				{restarting || building ? 'Restarting…' : 'Restart container'}
 			</button>
 		</form>
-		<a class="open" href={url} target="_blank" rel="noopener"
-			>Open in new tab <ArrowUpRight size={15} /></a
-		>
+		<a class="open" href={url} target="_blank" rel="noopener">
+			Open in new tab <ArrowUpRight size={15} />
+		</a>
 	{/if}
 </header>
 {#if restartError}<p class="restart-err">{restartError}</p>{/if}
@@ -292,13 +292,13 @@
 						<li>
 							<span class="cp">:{f.container_port}</span>
 							<span class="arr">→</span>
-							<a href={forwardedPortUrl(f.host_port)} target="_blank" rel="noopener"
-								>{forwardedPortUrl(f.host_port).replace('http://', '')}
-								<ArrowUpRight size={12} /></a
-							>
-							<button class="rm" title="Remove" onclick={() => removePort(f.container_port)}
-								>×</button
-							>
+							<a href={forwardedPortUrl(f.host_port)} target="_blank" rel="noopener">
+								{forwardedPortUrl(f.host_port).replace('http://', '')}
+								<ArrowUpRight size={12} />
+							</a>
+							<button class="rm" title="Remove" onclick={() => removePort(f.container_port)}>
+								×
+							</button>
 						</li>
 					{/each}
 				</ul>

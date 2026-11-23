@@ -120,23 +120,29 @@
 				size="sm"
 				href={withPopupMarker(`/instances/${instance.id}`)}
 				target="_blank"
-				rel="noopener noreferrer">View logs</Button
+				rel="noopener noreferrer"
 			>
+				View logs
+			</Button>
 		{/if}
 		{#if canRebuild}
 			<Button
 				size="sm"
 				title="Recreate the container and re-run setup (credentials, hooks, port forwards)"
-				onclick={() => onact('rebuild')}>Rebuild</Button
+				onclick={() => onact('rebuild')}
 			>
+				Rebuild
+			</Button>
 		{/if}
 		<Button
 			size="sm"
 			ghost
 			href={withPopupMarker(`/instances/${instance.id}`)}
 			target="_blank"
-			rel="noopener noreferrer">Details</Button
+			rel="noopener noreferrer"
 		>
+			Details
+		</Button>
 		<Button variant="danger" size="sm" onclick={() => onact('delete')}>Delete</Button>
 	</div>
 </li>

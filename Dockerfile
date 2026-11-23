@@ -7,7 +7,7 @@
 # + a same-path DATA_DIR bind mount are both required).
 
 # ---- builder: install deps, produce the production build ----
-FROM oven/bun:1.3.14-alpine AS builder
+FROM oven/bun:1.4.5-alpine AS builder
 WORKDIR /app
 
 # Install layer: only the manifest, lockfile, and patches, so it caches
@@ -22,7 +22,7 @@ COPY . .
 RUN bun run build
 
 # ---- runtime: slim image with the CLIs the manager shells out to ----
-FROM oven/bun:1.3.14-alpine
+FROM oven/bun:1.4.5-alpine
 WORKDIR /app
 
 # Runtime tools the manager invokes as subprocesses:

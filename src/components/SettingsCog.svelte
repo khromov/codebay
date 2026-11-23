@@ -9,8 +9,10 @@
 	target="_blank"
 	rel="noopener noreferrer"
 	aria-label="Settings"
-	title="Settings"><Settings size={16} /></a
+	title="Settings"
 >
+	<Settings size={16} />
+</a>
 
 <style>
 	.cog {
