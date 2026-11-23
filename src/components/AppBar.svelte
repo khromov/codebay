@@ -12,8 +12,10 @@
 		href="/"
 		title="All instances"
 		aria-label="All instances"
-		onclick={onBackLinkClick}><House size={18} /></a
+		onclick={onBackLinkClick}
 	>
+		<House size={18} />
+	</a>
 	{@render children?.()}
 </header>
 

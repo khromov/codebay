@@ -18,8 +18,9 @@
 					target="_blank"
 					rel="noopener"
 					title={`container :${f.container_port} → ${forwardedPortUrl(f.host_port)} ${f.open ? '(open)' : '(not published yet)'}`}
-					>{f.container_port}</a
 				>
+					{f.container_port}
+				</a>
 			{/each}
 		</span>
 	</div>

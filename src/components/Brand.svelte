@@ -7,12 +7,13 @@
 	let { pet }: { pet?: AvatarArt } = $props();
 </script>
 
-<a class="brand" href="/"
-	><span class="logo"
-		>{#if pet}<Avatar art={pet} name={pet.name} scale={4} />{:else}<Package size={22} />{/if}</span
-	><span class="words"><span>Codebay</span><span class="tagline">devcontainer manager</span></span
-	></a
->
+<a class="brand" href="/">
+	<span class="logo">
+		{#if pet}<Avatar art={pet} name={pet.name} scale={4} />{:else}<Package size={22} />{/if}
+	</span><span class="words">
+		<span>Codebay</span><span class="tagline">devcontainer manager</span>
+	</span>
+</a>
 
 <style>
 	.brand {

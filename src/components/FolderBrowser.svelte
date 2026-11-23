@@ -275,19 +275,19 @@
 		{#if result && !result.hasDevcontainer && !atDrivesRoot}
 			<div class="warn">
 				<TriangleAlert size={15} />
-				<span
-					>No <code>devcontainer.json</code> in this folder — a default image will be used if you select
-					it.</span
-				>
+				<span>
+					No <code>devcontainer.json</code> in this folder — a default image will be used if you select
+					it.
+				</span>
 			</div>
 		{/if}
 
 		<div class="foot">
-			<span class="hint"
-				>{atDrivesRoot
+			<span class="hint">
+				{atDrivesRoot
 					? 'Pick a drive to browse.'
-					: 'Browse to a folder, then select this folder or any subfolder.'}</span
-			>
+					: 'Browse to a folder, then select this folder or any subfolder.'}
+			</span>
 			<button
 				class="primary"
 				disabled={!result || atDrivesRoot}
