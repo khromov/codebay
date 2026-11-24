@@ -1,8 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	antigravityPermissionFlags,
 	claudePermissionFlags,
+	isAgentProvider,
 	isInstanceFilter,
 	isTheme,
+	normalizeAgentProvider,
+	normalizeAntigravityPermissionMode,
 	normalizeEffortSetting,
 	normalizePermissionMode
 } from './types.ts';
@@ -73,5 +77,30 @@ describe('claudePermissionFlags', () => {
 		for (const mode of ['manual', 'auto', 'plan'] as const) {
 			expect(claudePermissionFlags(mode)).toBe(`--permission-mode ${mode}`);
 		}
+	});
+});
+
+describe('Antigravity provider and permission helpers', () => {
+	test('normalizeAgentProvider accepts claude/antigravity and defaults to claude', () => {
+		expect(isAgentProvider('claude')).toBe(true);
+		expect(isAgentProvider('antigravity')).toBe(true);
+		expect(isAgentProvider('agy')).toBe(false);
+		expect(normalizeAgentProvider('antigravity')).toBe('antigravity');
+		expect(normalizeAgentProvider('unknown')).toBe('claude');
+	});
+
+	test('normalizeAntigravityPermissionMode keeps all five modes and defaults to bypass', () => {
+		for (const mode of ['default', 'manual', 'accept-edits', 'auto', 'plan'] as const) {
+			expect(normalizeAntigravityPermissionMode(mode)).toBe(mode);
+		}
+		expect(normalizeAntigravityPermissionMode('unknown')).toBe('default');
+	});
+
+	test('antigravityPermissionFlags emits bypass for default, empty for manual, and --mode= otherwise', () => {
+		expect(antigravityPermissionFlags('default')).toBe('--dangerously-skip-permissions');
+		expect(antigravityPermissionFlags('manual')).toBe('');
+		expect(antigravityPermissionFlags('accept-edits')).toBe('--mode=accept-edits');
+		expect(antigravityPermissionFlags('auto')).toBe('--mode=auto');
+		expect(antigravityPermissionFlags('plan')).toBe('--mode=plan');
 	});
 });

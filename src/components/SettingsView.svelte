@@ -43,14 +43,19 @@
 	import Avatar from './Avatar.svelte';
 	import { avatars, findAvatar, type AvatarArt } from '../avatars/index.ts';
 	import {
+		AGENT_PROVIDERS,
+		ANTIGRAVITY_PERMISSION_MODES,
 		CLAUDE_PERMISSION_MODES,
 		CLAUDE_EFFORT_SETTINGS,
 		CLAUDE_OUTPUT_STYLES,
+		type AgentProvider,
+		type AntigravityPermissionMode,
 		type ClaudePermissionMode,
 		type ClaudeEffortSetting,
 		type ClaudeOutputStyle,
 		type InstanceMode
 	} from '../types.ts';
+	import Bot from '@lucide/svelte/icons/bot';
 	import Terminal from '@lucide/svelte/icons/terminal';
 	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
@@ -68,6 +73,14 @@
 		claudePermissionMode,
 		claudeEffortLevel,
 		claudeOutputStyle,
+		antigravityEnabled,
+		defaultAgent,
+		antigravityPermissionMode,
+		antigravityEffortLevel,
+		antigravityModel,
+		antigravityConfigDir,
+		antigravityGeminiApiKeySet,
+		antigravityGeminiBaseUrl,
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
@@ -115,6 +128,14 @@
 		claudePermissionMode: ClaudePermissionMode;
 		claudeEffortLevel: ClaudeEffortSetting;
 		claudeOutputStyle: ClaudeOutputStyle;
+		antigravityEnabled: boolean;
+		defaultAgent: AgentProvider;
+		antigravityPermissionMode: AntigravityPermissionMode;
+		antigravityEffortLevel: ClaudeEffortSetting;
+		antigravityModel: string;
+		antigravityConfigDir: string;
+		antigravityGeminiApiKeySet: boolean;
+		antigravityGeminiBaseUrl: string;
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
@@ -352,6 +373,171 @@
 		outputStyleFormEl?.requestSubmit();
 	}
 
+	// Antigravity (agy) provider settings — opt-in, off by default.
+	// svelte-ignore state_referenced_locally
+	let antigravity = $state(antigravityEnabled);
+	let savingAntigravityToggle = $state(false);
+	let antigravityToggleError = $state<string | null>(null);
+
+	const antigravityToggleOpts = toggleOpts({
+		set: (v) => (antigravity = v),
+		setSaving: (v) => (savingAntigravityToggle = v),
+		setError: (v) => (antigravityToggleError = v)
+	});
+
+	// svelte-ignore state_referenced_locally
+	let agentChoice = $state<AgentProvider>(defaultAgent);
+	let savingAgent = $state(false);
+	let agentError = $state<string | null>(null);
+	let agentFormEl = $state<HTMLFormElement>();
+
+	const defaultAgentOpts = saveOpts<{ agent: AgentProvider }>({
+		setSaving: (v) => (savingAgent = v),
+		setError: (v) => (agentError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.agent) agentChoice = data.agent;
+		}
+	});
+
+	const AGENT_LABELS: Record<AgentProvider, string> = {
+		claude: 'Claude',
+		antigravity: 'Antigravity'
+	};
+
+	function chooseDefaultAgent(next: AgentProvider) {
+		if (next === agentChoice) return;
+		flushSync(() => (agentChoice = next));
+		agentFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let agyPermissionChoice = $state<AntigravityPermissionMode>(antigravityPermissionMode);
+	let savingAgyPermission = $state(false);
+	let agyPermissionError = $state<string | null>(null);
+	let agyPermissionFormEl = $state<HTMLFormElement>();
+
+	const agyPermissionModeOpts = saveOpts<{ mode: AntigravityPermissionMode }>({
+		setSaving: (v) => (savingAgyPermission = v),
+		setError: (v) => (agyPermissionError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.mode) agyPermissionChoice = data.mode;
+		}
+	});
+
+	const AGY_PERMISSION_LABELS: Record<AntigravityPermissionMode, string> = {
+		default: 'Default',
+		manual: 'Manual',
+		'accept-edits': 'Edits',
+		auto: 'Auto',
+		plan: 'Plan'
+	};
+
+	function chooseAgyPermissionMode(next: AntigravityPermissionMode) {
+		if (next === agyPermissionChoice) return;
+		flushSync(() => (agyPermissionChoice = next));
+		agyPermissionFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let agyEffortChoice = $state<ClaudeEffortSetting>(antigravityEffortLevel);
+	let savingAgyEffort = $state(false);
+	let agyEffortError = $state<string | null>(null);
+	let agyEffortFormEl = $state<HTMLFormElement>();
+
+	const agyEffortLevelOpts = saveOpts<{ level: ClaudeEffortSetting }>({
+		setSaving: (v) => (savingAgyEffort = v),
+		setError: (v) => (agyEffortError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.level) agyEffortChoice = data.level;
+		}
+	});
+
+	function chooseAgyEffort(next: ClaudeEffortSetting) {
+		if (next === agyEffortChoice) return;
+		flushSync(() => (agyEffortChoice = next));
+		agyEffortFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let agyModel = $state(antigravityModel);
+	let savingAgyModel = $state(false);
+	let agyModelError = $state<string | null>(null);
+	let agyModelSaved = $state(false);
+	let agyModelFormEl = $state<HTMLFormElement>();
+
+	const agyModelOpts = saveOpts<{ model: string }>({
+		setSaving: (v) => (savingAgyModel = v),
+		setError: (v) => (agyModelError = v),
+		setMsg: (v) => (agyModelSaved = !!v),
+		onSuccess: (data) => {
+			agyModel = data?.model ?? agyModel;
+			agyModelSaved = true;
+		}
+	});
+
+	function resetAgyModel() {
+		flushSync(() => (agyModel = ''));
+		agyModelFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let agyDir = $state(antigravityConfigDir);
+	let savingAgyDir = $state(false);
+	let agyDirError = $state<string | null>(null);
+	let agyDirSaved = $state(false);
+	let agyDirFormEl = $state<HTMLFormElement>();
+
+	const agyDirOpts = saveOpts<{ dir: string }>({
+		setSaving: (v) => (savingAgyDir = v),
+		setError: (v) => (agyDirError = v),
+		setMsg: (v) => (agyDirSaved = !!v),
+		onSuccess: (data) => {
+			agyDir = data?.dir ?? agyDir;
+			agyDirSaved = true;
+		}
+	});
+
+	function resetAgyDir() {
+		flushSync(() => (agyDir = ''));
+		agyDirFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let agyApiKeySaved = $state(antigravityGeminiApiKeySet);
+	let agyApiKey = $state('');
+	let savingAgyApiKey = $state(false);
+	let agyApiKeyMsg = $state<string | null>(null);
+	let agyApiKeyError = $state<string | null>(null);
+
+	const agyApiKeyOpts = saveOpts<{ set: boolean }>({
+		setSaving: (v) => (savingAgyApiKey = v),
+		setError: (v) => (agyApiKeyError = v),
+		setMsg: (v) => (agyApiKeyMsg = v),
+		onSuccess: (data) => {
+			agyApiKeySaved = data?.set ?? false;
+			agyApiKey = '';
+			agyApiKeyMsg = agyApiKeySaved ? 'Saved.' : 'Cleared.';
+		}
+	});
+
+	// svelte-ignore state_referenced_locally
+	let agyBaseUrl = $state(antigravityGeminiBaseUrl);
+	let savingAgyBaseUrl = $state(false);
+	let agyBaseUrlMsg = $state<string | null>(null);
+	let agyBaseUrlError = $state<string | null>(null);
+
+	const agyBaseUrlOpts = saveOpts<{ set: boolean }>({
+		setSaving: (v) => (savingAgyBaseUrl = v),
+		setError: (v) => (agyBaseUrlError = v),
+		setMsg: (v) => (agyBaseUrlMsg = v),
+		onSuccess: (data) => {
+			agyBaseUrlMsg = data?.set ? 'Saved.' : 'Cleared.';
+		}
+	});
+
 	// svelte-ignore state_referenced_locally
 	let image = $state(defaultImage);
 	let savingImage = $state(false);
@@ -462,6 +648,11 @@
 
 	const mcpCommand = $derived(
 		`claude mcp add --transport http codebay ${mcpUrl} --header "Authorization: Bearer ${mcpTokenValue}"`
+	);
+
+	// `agy mcp add` requires flags before `<name>`, unlike `claude mcp add`.
+	const agyMcpCommand = $derived(
+		`agy mcp add --header "Authorization: Bearer ${mcpTokenValue}" codebay ${mcpUrl}`
 	);
 
 	async function copyMcp(label: string, text: string) {
@@ -1186,6 +1377,322 @@
 
 		<section class="card">
 			<form
+				class="row"
+				method="POST"
+				action="?/antigravityToggle"
+				{@attach enhance(antigravityToggleOpts)}
+			>
+				<div class="label">
+					<Bot size={20} />
+					<div class="text">
+						<div class="name">Antigravity (agy)</div>
+						<div class="desc">
+							Install and configure Antigravity CLI alongside Claude Code in every new container,
+							transfer host credentials and model/effort settings, and enable Antigravity runs over
+							MCP. Off by default.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						checked={antigravity}
+						disabled={savingAntigravityToggle}
+						onchange={(e) => {
+							antigravity = e.currentTarget.checked;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if antigravityToggleError}
+				<div class="sub"><div class="msg error">{antigravityToggleError}</div></div>
+			{/if}
+
+			{#if antigravity}
+				<form
+					class="row divided"
+					method="POST"
+					action="?/defaultAgent"
+					bind:this={agentFormEl}
+					{@attach enhance(defaultAgentOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Default agent</div>
+							<div class="desc">
+								Which CLI auto-launches in the IDE terminal and Terminal mode, and runs when an MCP
+								call omits <code>provider</code>. Applies on create and rebuild; MCP runs pick up a
+								change immediately.
+							</div>
+						</div>
+					</div>
+					<input type="hidden" name="agent" value={agentChoice} />
+					<div class="mode-toggle" role="group" aria-label="Default agent">
+						{#each AGENT_PROVIDERS as option (option)}
+							<button
+								type="button"
+								class="mode-btn"
+								class:active={agentChoice === option}
+								aria-pressed={agentChoice === option}
+								disabled={savingAgent}
+								onclick={() => chooseDefaultAgent(option)}
+							>
+								{AGENT_LABELS[option]}
+							</button>
+						{/each}
+					</div>
+				</form>
+				{#if agentError}
+					<div class="sub"><div class="msg error">{agentError}</div></div>
+				{/if}
+
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/antigravityPermissionMode"
+					bind:this={agyPermissionFormEl}
+					{@attach enhance(agyPermissionModeOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Antigravity permission mode</div>
+							<div class="desc">
+								The mode <code>agy</code> starts in inside new instances. <strong>Default</strong>
+								runs <code>--dangerously-skip-permissions</code> with <code>always-proceed</code>
+								(no guardrails); <strong>Manual</strong> asks before edits and commands;
+								<strong>Edits</strong>, <strong>Auto</strong>, and <strong>Plan</strong> pass
+								<code>--mode</code>. Applies on create and rebuild.
+							</div>
+						</div>
+					</div>
+					<input type="hidden" name="mode" value={agyPermissionChoice} />
+					<div class="mode-toggle" role="group" aria-label="Antigravity permission mode">
+						{#each ANTIGRAVITY_PERMISSION_MODES as option (option)}
+							<button
+								type="button"
+								class="mode-btn"
+								class:active={agyPermissionChoice === option}
+								aria-pressed={agyPermissionChoice === option}
+								disabled={savingAgyPermission}
+								onclick={() => chooseAgyPermissionMode(option)}
+							>
+								{AGY_PERMISSION_LABELS[option]}
+							</button>
+						{/each}
+					</div>
+				</form>
+				{#if agyPermissionError}
+					<div class="sub"><div class="msg error">{agyPermissionError}</div></div>
+				{/if}
+
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/antigravityEffortLevel"
+					bind:this={agyEffortFormEl}
+					{@attach enhance(agyEffortLevelOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Antigravity effort level</div>
+							<div class="desc">
+								Reasoning effort for Antigravity sessions and MCP runs. <strong>Host</strong>
+								carries over your host <code>~/.gemini/antigravity-cli/settings.json</code>; any
+								other choice passes <code>--effort</code>.
+							</div>
+						</div>
+					</div>
+					<input type="hidden" name="level" value={agyEffortChoice} />
+					<div class="mode-toggle" role="group" aria-label="Antigravity effort level">
+						{#each CLAUDE_EFFORT_SETTINGS as option (option)}
+							<button
+								type="button"
+								class="mode-btn"
+								class:active={agyEffortChoice === option}
+								aria-pressed={agyEffortChoice === option}
+								disabled={savingAgyEffort}
+								onclick={() => chooseAgyEffort(option)}
+							>
+								{EFFORT_LABELS[option]}
+							</button>
+						{/each}
+					</div>
+				</form>
+				{#if agyEffortError}
+					<div class="sub"><div class="msg error">{agyEffortError}</div></div>
+				{/if}
+
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/antigravityModel"
+					bind:this={agyModelFormEl}
+					{@attach enhance(agyModelOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Antigravity model</div>
+							<div class="desc">
+								Optional model slug or label (e.g. <code>gemini-4-neon-xhigh</code>). Leave blank to
+								inherit your host <code>~/.gemini/antigravity-cli/settings.json</code>.
+							</div>
+						</div>
+					</div>
+					<div class="image-controls">
+						<input
+							type="text"
+							name="model"
+							class="image-input"
+							bind:value={agyModel}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							placeholder="inherit from host"
+						/>
+						<Button type="submit" disabled={savingAgyModel}>Save</Button>
+						<Button
+							type="button"
+							icon={RotateCcw}
+							disabled={savingAgyModel}
+							onclick={resetAgyModel}
+							title="Reset to host default"
+							aria-label="Reset Antigravity model to host default"
+						/>
+					</div>
+					{#if agyModelError}
+						<div class="msg error">{agyModelError}</div>
+					{:else if agyModelSaved}
+						<div class="msg ok">Saved.</div>
+					{/if}
+				</form>
+
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/antigravityGeminiApiKey"
+					{@attach enhance(agyApiKeyOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Gemini API key</div>
+							<div class="desc">
+								Optional override instead of discovering your host <code>agy</code> OAuth session
+								(Keychain / Secret Service / <code>antigravity-oauth-token</code>). Injects
+								<code>GEMINI_API_KEY</code> and sets <code>modelProvider: "gemini"</code>. Leave
+								blank and Save to clear.
+							</div>
+						</div>
+					</div>
+					<div class="image-controls">
+						<input
+							type="password"
+							name="apiKey"
+							class="image-input"
+							bind:value={agyApiKey}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							autocomplete="off"
+							placeholder={agyApiKeySaved ? '•••••••• (saved)' : 'AIza…'}
+						/>
+						<Button type="submit" disabled={savingAgyApiKey}>Save</Button>
+					</div>
+					{#if agyApiKeyError}
+						<div class="msg error">{agyApiKeyError}</div>
+					{:else if agyApiKeyMsg}
+						<div class="msg ok">{agyApiKeyMsg}</div>
+					{/if}
+				</form>
+
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/antigravityGeminiBaseUrl"
+					{@attach enhance(agyBaseUrlOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Gemini base URL</div>
+							<div class="desc">
+								Optional custom Gemini-compatible endpoint passed as
+								<code>GOOGLE_GEMINI_BASE_URL</code> when using a Gemini API key. Leave blank for Google's
+								default endpoint.
+							</div>
+						</div>
+					</div>
+					<div class="image-controls">
+						<input
+							type="text"
+							name="baseUrl"
+							class="image-input"
+							bind:value={agyBaseUrl}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							autocomplete="off"
+							placeholder="https://generativelanguage.googleapis.com"
+						/>
+						<Button type="submit" disabled={savingAgyBaseUrl}>Save</Button>
+					</div>
+					{#if agyBaseUrlError}
+						<div class="msg error">{agyBaseUrlError}</div>
+					{:else if agyBaseUrlMsg}
+						<div class="msg ok">{agyBaseUrlMsg}</div>
+					{/if}
+				</form>
+
+				<form
+					class="row divided token-row"
+					method="POST"
+					action="?/antigravityConfigDir"
+					bind:this={agyDirFormEl}
+					{@attach enhance(agyDirOpts)}
+				>
+					<div class="label">
+						<div class="text">
+							<div class="name">Antigravity config directory</div>
+							<div class="desc">
+								Host directory Antigravity helpers read from (<code>settings.json</code> and
+								<code>antigravity-oauth-token</code>). Leave blank to use
+								<code>~/.gemini/antigravity-cli</code>.
+							</div>
+						</div>
+					</div>
+					<div class="image-controls">
+						<input
+							type="text"
+							name="dir"
+							class="image-input"
+							bind:value={agyDir}
+							spellcheck="false"
+							autocapitalize="off"
+							autocorrect="off"
+							placeholder="~/.gemini/antigravity-cli"
+						/>
+						<Button type="submit" disabled={savingAgyDir}>Save</Button>
+						<Button
+							type="button"
+							icon={RotateCcw}
+							disabled={savingAgyDir}
+							onclick={resetAgyDir}
+							title="Reset to default (~/.gemini/antigravity-cli)"
+							aria-label="Reset to default Antigravity config directory"
+						/>
+					</div>
+					{#if agyDirError}
+						<div class="msg error">{agyDirError}</div>
+					{:else if agyDirSaved}
+						<div class="msg ok">Saved.</div>
+					{/if}
+				</form>
+			{/if}
+		</section>
+
+		<section class="card">
+			<form
 				class="row image-row"
 				method="POST"
 				action="?/defaultImage"
@@ -1440,6 +1947,11 @@
 							<Button type="button" onclick={() => copyMcp('command', mcpCommand)}>
 								{mcpCopied === 'command' ? 'Copied' : 'Copy claude mcp add'}
 							</Button>
+							{#if antigravity}
+								<Button type="button" onclick={() => copyMcp('agy-command', agyMcpCommand)}>
+									{mcpCopied === 'agy-command' ? 'Copied' : 'Copy agy mcp add'}
+								</Button>
+							{/if}
 							<form method="POST" action="?/mcpRegenerateToken" {@attach enhance(mcpTokenOpts)}>
 								<Button type="submit" disabled={savingMcpToken}>
 									{savingMcpToken ? 'Regenerating…' : 'Regenerate'}
@@ -1447,6 +1959,9 @@
 							</form>
 						</div>
 						<code class="mcp-command">{mcpCommand}</code>
+						{#if antigravity}
+							<code class="mcp-command">{agyMcpCommand}</code>
+						{/if}
 						{#if mcpTokenError}
 							<div class="msg error">{mcpTokenError}</div>
 						{/if}

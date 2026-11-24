@@ -266,7 +266,17 @@ describe('resolveInjectionStages — clobber safety', () => {
 		'host-env-vars': ['host-env-file', 'rc'],
 		'shell-path': ['rc'],
 		// Writes nothing to the container — values ride containerEnv, so it can share any stage.
-		'custom-env-vars': []
+		'custom-env-vars': [],
+		'antigravity-install': ['usr-local-bin', 'rc'],
+		'antigravity-credentials': [
+			'antigravity-env-file',
+			'rc',
+			'antigravity-token',
+			'antigravity-onboarding',
+			'antigravity-settings-json'
+		],
+		'antigravity-config': ['antigravity-settings-json', 'antigravity-config-env-file', 'rc'],
+		'antigravity-attention-hooks': ['antigravity-bridge-header', 'antigravity-hooks-json']
 	};
 
 	function stageOf(stages: { id: string }[][]): Map<string, number> {
@@ -290,14 +300,18 @@ describe('resolveInjectionStages — clobber safety', () => {
 		}
 	}
 
-	test('no two injections in one stage write the same resource (both Claude slots, both modes)', () => {
-		for (const enabled of ['0', '1']) {
-			setOption('custom_endpoint_enabled', enabled);
-			for (const mode of [undefined, 'ide', 'terminal'] as const) {
-				assertNoSameStageClobber(resolveInjectionStages(mode));
+	test('no two injections in one stage write the same resource (both Claude slots, Antigravity on/off, both modes)', () => {
+		for (const agyEnabled of ['0', '1']) {
+			setOption('antigravity_enabled', agyEnabled);
+			for (const enabled of ['0', '1']) {
+				setOption('custom_endpoint_enabled', enabled);
+				for (const mode of [undefined, 'ide', 'terminal'] as const) {
+					assertNoSameStageClobber(resolveInjectionStages(mode));
+				}
 			}
 		}
 		setOption('custom_endpoint_enabled', '0');
+		setOption('antigravity_enabled', '0');
 	});
 
 	test('shared resources keep their pre-parallelization write order across stages', () => {

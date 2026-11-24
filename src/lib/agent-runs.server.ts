@@ -35,12 +35,22 @@ import {
 	WAIT_FOR_INJECTIONS
 } from './devcontainer.server.ts';
 import {
+	antigravityPermissionFlags,
 	claudePermissionFlags,
+	normalizeAgentProvider,
+	normalizeAntigravityPermissionMode,
+	type AgentProvider,
 	type AgentRunSummary,
+	type AntigravityPermissionMode,
 	type ClaudeEffortLevel,
 	type ClaudePermissionMode
 } from '../types.ts';
 import { defaultRunEffort } from '../container-injections/claude-effort-level.ts';
+import {
+	defaultAntigravityRunEffort,
+	getAntigravityModelSetting
+} from '../container-injections/antigravity-config.ts';
+import { antigravityEnabled, getDefaultAgent } from './host-antigravity.server.ts';
 import {
 	STRUCTURED_OUTPUT_FAILED_ERROR,
 	emptyRunState,
@@ -50,6 +60,11 @@ import {
 	type RunStreamState,
 	type RunTimelineEntry
 } from './agent-run-stream.ts';
+import {
+	parseAntigravityTimeline,
+	readAntigravityRunChunk,
+	readAntigravityRunFile
+} from './antigravity-run-stream.ts';
 
 /** Fast enough that a caller polling `get_run` sees movement, cheap enough to leave always-on. */
 const POLL_MS = 3000;
@@ -76,12 +91,14 @@ export const PROMPT_MAX_BYTES = EXEC_STDIN_MAX_BYTES;
 const STOP_DRAIN_SECONDS = 5;
 
 export interface StartRunOptions {
+	/** Agent CLI to run; defaults to the configured default agent (Claude unless Antigravity is selected). */
+	provider?: AgentProvider;
 	resumeSessionId?: string;
 	model?: string;
 	maxTurns?: number;
 	jsonSchema?: string;
 	/** Defaults to full autonomy — an MCP run is unattended, and the container is the sandbox. */
-	permissionMode?: ClaudePermissionMode;
+	permissionMode?: AntigravityPermissionMode;
 	/** Resolved at `startRun`, so a run follows the setting as it is now, not as it was at boot. */
 	effort?: ClaudeEffortLevel;
 	timeoutMs?: number;
@@ -95,24 +112,62 @@ export function runMirrorPath(runId: string): string {
 
 const mirrorSize = (runId: string) => sizeOnDisk(runMirrorPath(runId));
 
+function parseChunkFor(
+	provider: AgentProvider,
+	state: RunStreamState,
+	carry: string,
+	chunk: string
+): { state: RunStreamState; carry: string } {
+	return provider === 'antigravity'
+		? readAntigravityRunChunk(state, carry, chunk)
+		: readRunChunk(state, carry, chunk);
+}
+
+function parseFileFor(provider: AgentProvider, text: string): RunStreamState {
+	return provider === 'antigravity' ? readAntigravityRunFile(text) : readRunFile(text);
+}
+
 /**
  * The script the detached process actually runs. It writes its own PGID first so `stopRun` can
  * signal the whole group, and writes the exit file last so the poller can treat that file's
  * appearance as proof the stream is complete.
  */
-function runScript(runId: string, row: InstanceRow, opts: StartRunOptions): string {
-	const flags = [
-		'--output-format stream-json',
-		'--verbose',
-		claudePermissionFlags(opts.permissionMode ?? 'default')
-	];
-	if (opts.resumeSessionId) flags.push(`--resume ${quote(opts.resumeSessionId)}`);
-	if (opts.model) flags.push(`--model ${quote(opts.model)}`);
-	if (opts.effort) flags.push(`--effort ${quote(opts.effort)}`);
-	if (opts.maxTurns) flags.push(`--max-turns ${opts.maxTurns}`);
-	if (opts.jsonSchema) flags.push('--json-schema "$(cat "$d/schema.json")"');
-
+function runScript(
+	runId: string,
+	row: InstanceRow,
+	provider: AgentProvider,
+	opts: StartRunOptions
+): string {
 	const cd = row.remote_workspace_folder ? `cd ${quote(row.remote_workspace_folder)}` : 'cd "$h"';
+	const isAgy = provider === 'antigravity';
+	const binary = isAgy ? 'agy' : 'claude';
+
+	let invocation: string;
+	if (isAgy) {
+		const flags = ['--output-format stream-json'];
+		const permFlag = antigravityPermissionFlags(
+			normalizeAntigravityPermissionMode(opts.permissionMode ?? 'default')
+		);
+		if (permFlag) flags.push(permFlag);
+		if (opts.resumeSessionId) flags.push(`--conversation ${quote(opts.resumeSessionId)}`);
+		if (opts.model) flags.push(`--model ${quote(opts.model)}`);
+		if (opts.effort) flags.push(`--effort ${quote(opts.effort)}`);
+		// `agy --json-schema` reads schema files directly, avoiding command-substitution limits.
+		if (opts.jsonSchema) flags.push('--json-schema "$d/schema.json"');
+		invocation = `agy -p "$(cat "$d/prompt.txt")" ${flags.join(' ')}`;
+	} else {
+		const flags = [
+			'--output-format stream-json',
+			'--verbose',
+			claudePermissionFlags((opts.permissionMode ?? 'default') as ClaudePermissionMode)
+		];
+		if (opts.resumeSessionId) flags.push(`--resume ${quote(opts.resumeSessionId)}`);
+		if (opts.model) flags.push(`--model ${quote(opts.model)}`);
+		if (opts.effort) flags.push(`--effort ${quote(opts.effort)}`);
+		if (opts.maxTurns) flags.push(`--max-turns ${opts.maxTurns}`);
+		if (opts.jsonSchema) flags.push('--json-schema "$(cat "$d/schema.json")"');
+		invocation = `claude -p "$(cat "$d/prompt.txt")" ${flags.join(' ')}`;
+	}
 
 	return (
 		`#!/usr/bin/env bash\n` +
@@ -123,23 +178,23 @@ function runScript(runId: string, row: InstanceRow, opts: StartRunOptions): stri
 		`die(){ printf 'codebay: %s\\n' "$2" >> "$d/stderr.log"; w exit "$1"; exit "$1"; }\n` +
 		// setsid made this the session leader, so $$ is also the PGID stopRun signals.
 		`w pgid "$$"\n` +
-		// Tells the IDE/terminal launchers not to start a second Claude beside this one. The KILL
+		// Tells the IDE/terminal launchers not to start a second agent beside this one. The KILL
 		// step of stopScript removes it itself.
 		`m="$HOME/${AGENT_RUN_MARKER}"; : > "$m"; trap 'rm -f "$m"' EXIT\n` +
 		// A trapped signal only runs its handler and lets bash carry on, so without the explicit
-		// exit a cancel that lands during the wait loops below would still go on to launch claude.
+		// exit a cancel that lands during the wait loops below would still go on to launch the CLI.
 		`trap 'w exit 130; exit 130' INT; trap 'w exit 143; exit 143' TERM\n` +
 		// Claude Code refuses --dangerously-skip-permissions under uid 0, which is exactly what an
 		// instance with no resolved remote_user execs as.
-		`[ "$(id -u)" = 0 ] && export IS_SANDBOX=1\n` +
+		(isAgy ? '' : `[ "$(id -u)" = 0 ] && export IS_SANDBOX=1\n`) +
 		// A run queued while the instance was still booting must not race the injections that
-		// install and authenticate Claude Code.
+		// install and authenticate the agent CLI.
 		`${WAIT_FOR_INJECTIONS}\n` +
 		`${cd} || die 127 "workspace folder is missing"\n` +
 		`${SOURCE_INJECTED_ENV}\n` +
-		`i=0; until command -v claude >/dev/null 2>&1 || [ "$i" -ge ${CLAUDE_BINARY_WAIT_SECONDS} ]; do sleep 1; i=$((i + 1)); done\n` +
-		`command -v claude >/dev/null 2>&1 || die 127 "claude is not installed in this container"\n` +
-		`claude -p "$(cat "$d/prompt.txt")" ${flags.join(' ')} </dev/null > "$d/stream.jsonl" 2> "$d/stderr.log"\n` +
+		`i=0; until command -v ${binary} >/dev/null 2>&1 || [ "$i" -ge ${CLAUDE_BINARY_WAIT_SECONDS} ]; do sleep 1; i=$((i + 1)); done\n` +
+		`command -v ${binary} >/dev/null 2>&1 || die 127 "${binary} is not installed in this container"\n` +
+		`${invocation} </dev/null > "$d/stream.jsonl" 2> "$d/stderr.log"\n` +
 		`w exit "$?"\n`
 	);
 }
@@ -267,22 +322,31 @@ function mirrorChunk(runId: string, stdout: string): Buffer | null {
 }
 
 /** The mirror is the record; the cursor is only a cache of it, and can lag it. */
-function stateFromMirror(runId: string, fallback: RunStreamState): RunStreamState {
+function stateFromMirror(
+	runId: string,
+	provider: AgentProvider,
+	fallback: RunStreamState
+): RunStreamState {
 	try {
-		return readRunFile(readFileSync(runMirrorPath(runId), 'utf8'));
+		return parseFileFor(provider, readFileSync(runMirrorPath(runId), 'utf8'));
 	} catch {
 		return fallback;
 	}
 }
 
 /** Rebuilt from the host mirror, so a manager restart mid-run picks up exactly where it left off. */
-function cursorFor(runId: string): RunCursor {
+function cursorFor(runId: string, provider: AgentProvider): RunCursor {
 	let cursor = registry.cursors.get(runId);
 	if (!cursor) {
 		let state = emptyRunState();
 		let carry = '';
 		try {
-			({ state, carry } = readRunChunk(state, '', readFileSync(runMirrorPath(runId), 'utf8')));
+			({ state, carry } = parseChunkFor(
+				provider,
+				state,
+				'',
+				readFileSync(runMirrorPath(runId), 'utf8')
+			));
 		} catch {
 			// No mirror yet — a run that hasn't produced output.
 		}
@@ -307,6 +371,7 @@ export function runDetail(row: AgentRunRow) {
 	return {
 		id: row.id,
 		instance_id: row.instance_id,
+		provider: normalizeAgentProvider(row.provider),
 		status: row.status,
 		prompt: row.prompt,
 		session_id: row.session_id,
@@ -335,9 +400,9 @@ export function runDetail(row: AgentRunRow) {
 }
 
 export function runSummary(row: AgentRunRow): AgentRunSummary {
-	const { id, instance_id, status, last_activity, started_at, finished_at, is_error } =
+	const { id, instance_id, provider, status, last_activity, started_at, finished_at, is_error } =
 		runDetail(row);
-	return { id, instance_id, status, last_activity, started_at, finished_at, is_error };
+	return { id, instance_id, provider, status, last_activity, started_at, finished_at, is_error };
 }
 
 /** Seeds a freshly connected socket, the way `currentHealthSnapshots` does for health. */
@@ -444,7 +509,10 @@ async function stage(row: AgentRunRow, instance: InstanceRow): Promise<string | 
 	const script = await writeContainerFile(
 		target,
 		{ dir, name: 'run.sh', mode: '700' },
-		runScript(row.id, instance, { ...opts, resumeSessionId: row.resume_session_id ?? undefined })
+		runScript(row.id, instance, normalizeAgentProvider(row.provider), {
+			...opts,
+			resumeSessionId: row.resume_session_id ?? undefined
+		})
 	);
 	return script.ok ? null : `could not stage the run script: ${script.error}`;
 }
@@ -487,7 +555,8 @@ function launch(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 
 function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 	return once(row.id, async () => {
-		const cursor = cursorFor(row.id);
+		const provider = normalizeAgentProvider(row.provider);
+		const cursor = cursorFor(row.id, provider);
 		const res = await execInContainer(targetFor(instance), {
 			script: pollScript(row.id, mirrorSize(row.id)),
 			capture: true,
@@ -515,7 +584,7 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 		const changed = bytes !== null;
 		if (bytes) {
 			const text = cursor.decoder.decode(bytes, { stream: true });
-			const next = readRunChunk(cursor.state, cursor.carry, text);
+			const next = parseChunkFor(provider, cursor.state, cursor.carry, text);
 			cursor.state = next.state;
 			cursor.carry = next.carry;
 		}
@@ -525,7 +594,7 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 
 		// The terminal fold reads the whole mirror rather than trusting the cursor: a chunk this
 		// process never fetched (a second manager on the same DATA_DIR did) is still on disk.
-		const state = exitRaw ? stateFromMirror(row.id, cursor.state) : cursor.state;
+		const state = exitRaw ? stateFromMirror(row.id, provider, cursor.state) : cursor.state;
 		if (changed) {
 			updateRun(row.id, {
 				session_id: state.sessionId,
@@ -541,6 +610,7 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 			const exitCode = Number.parseInt(exitRaw, 10);
 			const failed = state.isError || exitCode !== 0;
 			const stderr = markerLine(res.stdout, ERR_MARKER)?.trim();
+			const binary = provider === 'antigravity' ? 'agy' : 'claude';
 			finish(row.id, {
 				status: failed ? 'error' : 'done',
 				exit_code: exitCode,
@@ -555,12 +625,12 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 				model: state.model,
 				last_activity: state.lastActivity,
 				// A schema failure gets its own marker so a caller can tell "answered but the payload
-				// never validated" (result holds that answer) from "claude crashed"; otherwise the
-				// stream's own result text beats stderr, which only fills in on an outright crash.
+				// never validated" (result holds that answer) from a crash; otherwise a structured
+				// stream error or stderr beats result text, which only fills in when neither is present.
 				error: failed
 					? state.structuredOutputFailed
 						? STRUCTURED_OUTPUT_FAILED_ERROR
-						: stderr || state.result || `claude exited ${exitCode}`
+						: state.errorMessage || stderr || state.result || `${binary} exited ${exitCode}`
 					: null
 			});
 			return;
@@ -613,23 +683,43 @@ export function startRun(
 		);
 	}
 	if (instance.status === 'error') throw new Error('sandbox failed to build');
-	// Claude Code keeps one session directory per project, so two concurrent runs would interleave.
+
+	const provider = opts.provider ? normalizeAgentProvider(opts.provider) : getDefaultAgent();
+	if (provider === 'antigravity') {
+		if (!antigravityEnabled()) {
+			throw new Error('Antigravity is not enabled — turn it on in Settings first');
+		}
+		if (opts.maxTurns !== undefined) {
+			throw new Error('max_turns is only supported for Claude runs');
+		}
+	} else if (opts.permissionMode === 'accept-edits') {
+		throw new Error('permission_mode "accept-edits" is only supported for Antigravity runs');
+	}
+
+	// Only one run at a time per sandbox so concurrent runs can't fight over the workspace.
 	const open = openRunFor(instance.id);
 	if (open) throw new Error(`sandbox already has an active run (${open.id})`);
 
 	const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-	// Null leaves it to the container's settings.json, which holds the host's per-model table.
-	const effort = opts.effort ?? defaultRunEffort() ?? undefined;
+	// Null leaves it to the container's settings.json, which holds the mirrored host config.
+	const effort =
+		opts.effort ??
+		(provider === 'antigravity' ? defaultAntigravityRunEffort() : defaultRunEffort()) ??
+		undefined;
+	const model =
+		opts.model ??
+		(provider === 'antigravity' ? (getAntigravityModelSetting() ?? undefined) : undefined);
 
 	const row: AgentRunRow = {
 		id,
 		instance_id: instance.id,
+		provider,
 		prompt,
 		status: 'queued',
 		session_id: null,
 		model: null,
 		resume_session_id: opts.resumeSessionId ?? null,
-		options: JSON.stringify({ ...opts, effort }),
+		options: JSON.stringify({ ...opts, provider, model, effort }),
 		result: null,
 		structured_output: null,
 		rejected_structured_output: null,
@@ -664,8 +754,13 @@ export async function stopRun(
 	const row = getRun(runId);
 	if (!row) throw new Error('Run not found');
 	if (row.status !== 'running' && row.status !== 'queued') return row;
+	const provider = normalizeAgentProvider(row.provider);
 	// The mirror, not the cursor: after a manager restart no cursor exists until the first pass.
-	const state = stateFromMirror(runId, registry.cursors.get(runId)?.state ?? emptyRunState());
+	const state = stateFromMirror(
+		runId,
+		provider,
+		registry.cursors.get(runId)?.state ?? emptyRunState()
+	);
 	// Settled before the signal goes out, so a caller that doesn't await (rebuild) still sees the
 	// slot free and the poller stops exec'ing into a container that is on its way out.
 	finish(runId, {
@@ -707,7 +802,8 @@ async function drainAfterStop(runId: string, instance: InstanceRow): Promise<voi
 			timeoutMs: (STOP_DRAIN_SECONDS + 25) * 1000
 		});
 		if (!res.ok || !mirrorChunk(runId, res.stdout)) return;
-		const state = stateFromMirror(runId, emptyRunState());
+		const provider = normalizeAgentProvider(getRun(runId)?.provider);
+		const state = stateFromMirror(runId, provider, emptyRunState());
 		updateRun(runId, {
 			session_id: state.sessionId,
 			model: state.model,
@@ -726,7 +822,11 @@ async function drainAfterStop(runId: string, instance: InstanceRow): Promise<voi
  */
 export function runTimeline(runId: string, limit = 500): RunTimelineEntry[] {
 	try {
-		return parseRunTimeline(readFileSync(runMirrorPath(runId), 'utf8')).slice(-limit);
+		const raw = readFileSync(runMirrorPath(runId), 'utf8');
+		const provider = normalizeAgentProvider(getRun(runId)?.provider);
+		const parsed =
+			provider === 'antigravity' ? parseAntigravityTimeline(raw) : parseRunTimeline(raw);
+		return parsed.slice(-limit);
 	} catch {
 		return [];
 	}

@@ -3,7 +3,7 @@ import { migrate, getMigrations } from '@zihaolam/bun-sqlite-migrations';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DATA_DIR, DB_PATH } from './config.server.ts';
-import type { AgentRunStatus, FolderHistoryEntry } from '../types.ts';
+import type { AgentProvider, AgentRunStatus, FolderHistoryEntry } from '../types.ts';
 
 // db.server.ts lives in src/lib, so ../../migrations resolves to the repo root.
 const MIGRATIONS_DIR = join(import.meta.dir, '../../migrations');
@@ -214,10 +214,11 @@ export function setOption(key: string, value: string): void {
 	).run({ $key: key, $value: value });
 }
 
-/** One `claude -p` invocation inside an instance, driven by the MCP server. */
+/** One non-interactive agent invocation (`claude -p` or `agy -p`) inside an instance, driven by MCP. */
 export interface AgentRunRow {
 	id: string;
 	instance_id: string;
+	provider: AgentProvider;
 	prompt: string;
 	status: AgentRunStatus;
 	/** Claude's own session id, parsed out of the stream's `init` event; resumable. */
@@ -251,11 +252,12 @@ const OPEN_RUN_STATUSES = "('queued', 'running')";
 export function insertRun(row: AgentRunRow): void {
 	db.query(
 		`INSERT INTO agent_runs
-       (id, instance_id, prompt, status, session_id, model, resume_session_id, options, result, structured_output, rejected_structured_output, last_activity, is_error, exit_code, cost_usd, duration_ms, num_turns, error, created_at, started_at, finished_at)
-     VALUES ($id, $instance_id, $prompt, $status, $session_id, $model, $resume_session_id, $options, $result, $structured_output, $rejected_structured_output, $last_activity, $is_error, $exit_code, $cost_usd, $duration_ms, $num_turns, $error, $created_at, $started_at, $finished_at)`
+       (id, instance_id, provider, prompt, status, session_id, model, resume_session_id, options, result, structured_output, rejected_structured_output, last_activity, is_error, exit_code, cost_usd, duration_ms, num_turns, error, created_at, started_at, finished_at)
+     VALUES ($id, $instance_id, $provider, $prompt, $status, $session_id, $model, $resume_session_id, $options, $result, $structured_output, $rejected_structured_output, $last_activity, $is_error, $exit_code, $cost_usd, $duration_ms, $num_turns, $error, $created_at, $started_at, $finished_at)`
 	).run({
 		$id: row.id,
 		$instance_id: row.instance_id,
+		$provider: row.provider,
 		$prompt: row.prompt,
 		$status: row.status,
 		$session_id: row.session_id,

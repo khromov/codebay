@@ -28,6 +28,13 @@ import {
 import { getClaudePermissionMode } from './container-injections/claude-permission-mode.ts';
 import { getClaudeEffortSetting } from './container-injections/claude-effort-level.ts';
 import { getClaudeOutputStyle } from './container-injections/claude-output-style.ts';
+import {
+	getAntigravityEffortSetting,
+	getAntigravityModelSetting,
+	getAntigravityPermissionMode
+} from './container-injections/antigravity-config.ts';
+import { configuredGeminiApiKey } from './container-injections/antigravity-credentials.ts';
+import { antigravityEnabled, getDefaultAgent } from './lib/host-antigravity.server.ts';
 import { browse } from './lib/picker.server.ts';
 import { pickNamePrompt } from './avatars/name-prompts.ts';
 import { avatars, findAvatar } from './avatars/index.ts';
@@ -89,6 +96,8 @@ import { UPLOAD_ENABLED_KEY, uploadEnabled, uploadRoutes } from './lib/uploads.s
 import {
 	isInstanceFilter,
 	isTheme,
+	normalizeAgentProvider,
+	normalizeAntigravityPermissionMode,
 	normalizeMode,
 	normalizePermissionMode,
 	normalizeEffortSetting,
@@ -230,6 +239,14 @@ export const routes: Record<string, MochiRouteValue> = {
 				claudePermissionMode: getClaudePermissionMode(),
 				claudeEffortLevel: getClaudeEffortSetting(),
 				claudeOutputStyle: getClaudeOutputStyle(),
+				antigravityEnabled: antigravityEnabled(),
+				defaultAgent: getDefaultAgent(),
+				antigravityPermissionMode: getAntigravityPermissionMode(),
+				antigravityEffortLevel: getAntigravityEffortSetting(),
+				antigravityModel: getAntigravityModelSetting() ?? '',
+				antigravityConfigDir: getOption('antigravity_config_dir') ?? '',
+				antigravityGeminiApiKeySet: !!configuredGeminiApiKey(),
+				antigravityGeminiBaseUrl: getOption('antigravity_gemini_base_url') ?? '',
 				defaultImage: getOption('default_image') ?? DEFAULT_IMAGE,
 				builtinImage: DEFAULT_IMAGE,
 				disableBuildCache: getOption('disable_build_cache') === '1',
@@ -316,6 +333,48 @@ export const routes: Record<string, MochiRouteValue> = {
 				const style = normalizeOutputStyle(str(formData, 'style'));
 				setOption('claude_output_style', style);
 				return success({ style });
+			},
+
+			antigravityToggle: ({ formData }) => {
+				const enabled = onChecked(formData, 'enabled');
+				setOption('antigravity_enabled', enabled ? '1' : '0');
+				return success({ enabled });
+			},
+			defaultAgent: ({ formData }) => {
+				const agent = normalizeAgentProvider(str(formData, 'agent'));
+				setOption('default_agent', agent);
+				return success({ agent });
+			},
+			antigravityPermissionMode: ({ formData }) => {
+				const mode = normalizeAntigravityPermissionMode(str(formData, 'mode'));
+				setOption('antigravity_permission_mode', mode);
+				return success({ mode });
+			},
+			antigravityEffortLevel: ({ formData }) => {
+				const level = normalizeEffortSetting(str(formData, 'level'));
+				setOption('antigravity_effort_level', level);
+				return success({ level });
+			},
+			antigravityModel: ({ formData }) => {
+				const model = str(formData, 'model');
+				setOption('antigravity_model', model);
+				return success({ model });
+			},
+			antigravityConfigDir: ({ formData }) => {
+				const dir = str(formData, 'dir');
+				setOption('antigravity_config_dir', dir);
+				return success({ dir });
+			},
+			antigravityGeminiApiKey: ({ formData }) => {
+				const value = str(formData, 'apiKey');
+				setOption('antigravity_gemini_api_key', value);
+				invalidateSecretValues();
+				return success({ set: value.length > 0 });
+			},
+			antigravityGeminiBaseUrl: ({ formData }) => {
+				const value = str(formData, 'baseUrl');
+				setOption('antigravity_gemini_base_url', value);
+				return success({ set: value.length > 0 });
 			},
 
 			// Persist the default container image used when a source folder ships no devcontainer.json.

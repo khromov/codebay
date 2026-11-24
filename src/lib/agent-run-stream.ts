@@ -32,6 +32,11 @@ export interface RunStreamState {
 	rejectedStructuredOutput: string | null;
 	/** True when the run died on `--json-schema` retry exhaustion rather than a crash. */
 	structuredOutputFailed: boolean;
+	/** Explicit error string carried by the terminal result event (e.g. Antigravity `result.error`). */
+	errorMessage: string | null;
+	/** Provider-internal accumulator for incremental `text_delta` streams keyed by step index. */
+	activeStepIndex?: number | null;
+	activeStepText?: string;
 	isError: boolean;
 	/** True once the terminal `result` event has been seen, whatever its subtype. */
 	resultSeen: boolean;
@@ -51,6 +56,7 @@ export function emptyRunState(): RunStreamState {
 		lastStructuredOutputInput: null,
 		rejectedStructuredOutput: null,
 		structuredOutputFailed: false,
+		errorMessage: null,
 		isError: false,
 		resultSeen: false
 	};

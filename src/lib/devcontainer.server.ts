@@ -5,10 +5,17 @@ import { homedir } from 'node:os';
 import { INSTALL_SCRIPT as TMUX_INSTALL_SCRIPT } from '../container-injections/tmux.ts';
 import { INSTALL_SCRIPT as TTYD_INSTALL_SCRIPT } from '../container-injections/ttyd.ts';
 import { INSTALL_SCRIPT as CLAUDE_INSTALL_SCRIPT } from '../container-injections/claude-code-install.ts';
+import { INSTALL_SCRIPT as ANTIGRAVITY_INSTALL_SCRIPT } from '../container-injections/antigravity-install.ts';
 import { EXTENSION_ID as CLAUDE_CODE_EXTENSION_ID } from '../container-injections/claude-code-ide-extension.ts';
 import { ENV_FILE_NAME as CUSTOM_ENV_FILE } from '../container-injections/claude-code-custom.ts';
 import { ENV_FILE_NAME as MODELS_ENV_FILE } from '../container-injections/claude-code-models.ts';
 import { ENV_FILE_NAME as HOST_ENV_FILE } from '../container-injections/host-env-vars.ts';
+import { ENV_FILE_NAME as ANTIGRAVITY_ENV_FILE } from '../container-injections/antigravity-credentials.ts';
+import {
+	EFFORT_ENV_VAR as AGY_EFFORT_ENV_VAR,
+	ENV_FILE_NAME as ANTIGRAVITY_CONFIG_ENV_FILE,
+	MODEL_ENV_VAR as AGY_MODEL_ENV_VAR
+} from '../container-injections/antigravity-config.ts';
 import {
 	EFFORT_ENV_VAR,
 	ENV_FILE_NAME as EFFORT_ENV_FILE
@@ -25,7 +32,14 @@ import {
 import { spawnCapture } from './spawn.server.ts';
 import { isTrackedFile, restoreTrackedFile } from './git.server.ts';
 import { getOption, type InstanceMode } from './db.server.ts';
-import { claudePermissionFlags, type ClaudePermissionMode, type PortForward } from '../types.ts';
+import {
+	antigravityPermissionFlags,
+	claudePermissionFlags,
+	type AgentProvider,
+	type AntigravityPermissionMode,
+	type ClaudePermissionMode,
+	type PortForward
+} from '../types.ts';
 
 const CODE_SERVER_FEATURE = 'ghcr.io/coder/devcontainer-features/code-server:1';
 
@@ -104,6 +118,25 @@ const CLAUDE_FEATURE_INSTALL =
 	') || echo "codebay-claude: install failed (non-fatal); the manager retries after the container starts"\n' +
 	'exit 0\n';
 
+/** Relative to .devcontainer/. Written whenever Antigravity support is enabled in Settings. */
+const ANTIGRAVITY_FEATURE_DIR = 'codebay-antigravity';
+
+const ANTIGRAVITY_FEATURE_METADATA = {
+	id: 'codebay-antigravity',
+	version: '1.0.0',
+	name: 'Antigravity CLI (Codebay, best-effort)',
+	description:
+		'Installs Antigravity CLI (agy) at image build time when Antigravity is enabled. Never fails the build.'
+};
+
+/** Best-effort like tmux/ttyd/claude: failures fall through to the post-up injection. */
+const ANTIGRAVITY_FEATURE_INSTALL =
+	'#!/bin/sh\n' +
+	'(\n' +
+	`${ANTIGRAVITY_INSTALL_SCRIPT}\n` +
+	') || echo "codebay-antigravity: install failed (non-fatal); the manager retries after the container starts"\n' +
+	'exit 0\n';
+
 /** Manager-dropped files the project's own .gitignore won't cover, kept out of git status. */
 const MANAGER_GIT_EXCLUDES = [
 	'/.devcontainer/codebay.devcontainer.json',
@@ -117,10 +150,12 @@ const MANAGER_GIT_EXCLUDES = [
 	'/.devcontainer/*/codebay-tmux/',
 	'/.devcontainer/*/codebay-ttyd/',
 	'/.devcontainer/*/codebay-claude/',
+	'/.devcontainer/*/codebay-antigravity/',
 	'*.codebay-backup',
 	'/.devcontainer/codebay-tmux/',
 	'/.devcontainer/codebay-ttyd/',
 	'/.devcontainer/codebay-claude/',
+	'/.devcontainer/codebay-antigravity/',
 	'/.devcontainer/codebay-terminal.sh',
 	'/.vscode/tasks.json',
 	// Self-excluding on top of this (see uploads.server.ts), so an already-running instance whose
@@ -223,6 +258,28 @@ export const launchClaude = (permissionMode: ClaudePermissionMode): string =>
 	`fi; `;
 
 /**
+ * Antigravity twin of `launchClaude`. Uses `set --` rather than `$(echo …)` so model labels with
+ * spaces (e.g. `"Gemini 4 Neon (XHigh)"`) stay a single argument without single quotes or `${`.
+ */
+export const launchAntigravity = (permissionMode: AntigravityPermissionMode): string => {
+	const perm = antigravityPermissionFlags(permissionMode);
+	const permPart = perm ? ` ${perm}` : '';
+	return (
+		`if [ -e "$HOME/${AGENT_RUN_MARKER}" ]; then ` +
+		`echo "codebay: an agent run is active in this container — opening a shell instead."; ` +
+		`echo "codebay: run agy yourself once it finishes, or watch it in the Agent log."; ` +
+		`else ` +
+		`if [ ! -e "$HOME/${INJECTIONS_DONE_FILE}" ]; then i=0; until command -v agy >/dev/null 2>&1 || [ "$i" -ge ${CLAUDE_BINARY_WAIT_SECONDS} ]; do sleep 1; i=$((i + 1)); done; fi; ` +
+		`if command -v agy >/dev/null 2>&1; then ` +
+		`set --; [ -n "$${AGY_MODEL_ENV_VAR}" ] && set -- "$@" --model "$${AGY_MODEL_ENV_VAR}"; ` +
+		`[ -n "$${AGY_EFFORT_ENV_VAR}" ] && set -- "$@" --effort "$${AGY_EFFORT_ENV_VAR}"; ` +
+		`agy${permPart} "$@"; ` +
+		`else echo "codebay: agy is not installed in this container — check the boot log, then Rebuild"; fi; ` +
+		`fi; `
+	);
+};
+
+/**
  * claude scans `~/.claude/ide/*.lock` once at startup and never retries, so it must not race
  * the code-server extension host writing that lock — hold it briefly until the bridge appears.
  * Bounded so an offline/uninstalled instance (lock never written) still yields a usable terminal.
@@ -233,9 +290,9 @@ export const launchClaude = (permissionMode: ClaudePermissionMode): string =>
 const WAIT_FOR_IDE_BRIDGE = `i=0; until ls "$HOME/.claude/ide/" 2>/dev/null | grep -q "\\.lock$" || [ "$i" -ge 30 ]; do sleep 1; i=$((i + 1)); done; `;
 
 /**
- * The injections deliver `ANTHROPIC_*` (and host) env vars through `~/.bashrc`/`~/.zshrc`, which no
- * auto-launch path reads — ttyd runs `bash <script>` and tmux runs its command via `$SHELL -c`, both
- * non-interactive. LiteLLM first, so it wins over the manual override if both files somehow exist.
+ * The injections deliver `ANTHROPIC_*` (and host/Antigravity) env vars through `~/.bashrc`/`~/.zshrc`,
+ * which no auto-launch path reads — ttyd runs `bash <script>` and tmux runs its command via `$SHELL -c`,
+ * both non-interactive. LiteLLM first, so it wins over the manual override if both files somehow exist.
  * An explicit list, never a glob: tmux runs this under the user's shell, and zsh would print
  * "no matches found" when a file is absent.
  */
@@ -243,7 +300,9 @@ export const SOURCE_INJECTED_ENV = `for f in ${[
 	CUSTOM_ENV_FILE,
 	MODELS_ENV_FILE,
 	HOST_ENV_FILE,
-	EFFORT_ENV_FILE
+	EFFORT_ENV_FILE,
+	ANTIGRAVITY_ENV_FILE,
+	ANTIGRAVITY_CONFIG_ENV_FILE
 ]
 	.map((name) => `"$HOME/${name}"`)
 	.join(' ')}; do [ -r "$f" ] && . "$f"; done; `;
@@ -251,29 +310,57 @@ export const SOURCE_INJECTED_ENV = `for f in ${[
 /** The label/`runOn` pair that identifies our task in a project's own tasks.json. */
 const TERMINAL_TASK_LABEL = 'Terminal';
 
+export interface AntigravityOverrideOptions {
+	enabled: boolean;
+	defaultAgent: AgentProvider;
+	permissionMode: AntigravityPermissionMode;
+}
+
+const DEFAULT_ANTIGRAVITY_OPTIONS: AntigravityOverrideOptions = {
+	enabled: false,
+	defaultAgent: 'claude',
+	permissionMode: 'default'
+};
+
+function agentLauncher(
+	permissionMode: ClaudePermissionMode,
+	antigravity: AntigravityOverrideOptions
+): { launch: string; waitIdeBridge: string } {
+	if (antigravity.enabled && antigravity.defaultAgent === 'antigravity') {
+		return { launch: launchAntigravity(antigravity.permissionMode), waitIdeBridge: '' };
+	}
+	return { launch: launchClaude(permissionMode), waitIdeBridge: WAIT_FOR_IDE_BRIDGE };
+}
+
 /**
- * Runs under tmux so Claude survives the browser closing — code-server reaps the
+ * Runs under tmux so the agent survives the browser closing — code-server reaps the
  * detached PTY, which only kills the tmux client. `-A` doubles as the run-once gate.
  */
-const terminalTask = (permissionMode: ClaudePermissionMode) => ({
-	label: TERMINAL_TASK_LABEL,
-	type: 'shell',
-	command:
-		// `"$SHELL"` must reach tmux unexpanded; VS Code would substitute a `${…}` form first.
-		`if command -v tmux >/dev/null 2>&1; then exec tmux new-session -A -s ${TMUX_SESSION} '${WAIT_FOR_INJECTIONS}${WAIT_FOR_IDE_BRIDGE}${SOURCE_INJECTED_ENV}${launchClaude(permissionMode)}exec "$SHELL" -l'; fi; ` +
-		// Without tmux there's no run-once gate, and folderOpen re-fires on every workspace load.
-		'MARK="$HOME/' +
-		TERMINAL_LAUNCHED_MARKER +
-		'"; [ -e "$MARK" ] && exit 0; touch "$MARK"; ' +
-		WAIT_FOR_INJECTIONS +
-		WAIT_FOR_IDE_BRIDGE +
-		SOURCE_INJECTED_ENV +
-		launchClaude(permissionMode) +
-		'exec ${env:SHELL} -l',
-	presentation: { reveal: 'always', panel: 'shared', focus: true },
-	runOptions: { runOn: 'folderOpen' },
-	problemMatcher: []
-});
+const terminalTask = (
+	permissionMode: ClaudePermissionMode,
+	antigravity: AntigravityOverrideOptions = DEFAULT_ANTIGRAVITY_OPTIONS
+) => {
+	const { launch, waitIdeBridge } = agentLauncher(permissionMode, antigravity);
+	return {
+		label: TERMINAL_TASK_LABEL,
+		type: 'shell',
+		command:
+			// `"$SHELL"` must reach tmux unexpanded; VS Code would substitute a `${…}` form first.
+			`if command -v tmux >/dev/null 2>&1; then exec tmux new-session -A -s ${TMUX_SESSION} '${WAIT_FOR_INJECTIONS}${waitIdeBridge}${SOURCE_INJECTED_ENV}${launch}exec "$SHELL" -l'; fi; ` +
+			// Without tmux there's no run-once gate, and folderOpen re-fires on every workspace load.
+			'MARK="$HOME/' +
+			TERMINAL_LAUNCHED_MARKER +
+			'"; [ -e "$MARK" ] && exit 0; touch "$MARK"; ' +
+			WAIT_FOR_INJECTIONS +
+			waitIdeBridge +
+			SOURCE_INJECTED_ENV +
+			launch +
+			'exec ${env:SHELL} -l',
+		presentation: { reveal: 'always', panel: 'shared', focus: true },
+		runOptions: { runOn: 'folderOpen' },
+		problemMatcher: []
+	};
+};
 
 const CODE_SERVER_USER_DIR = '~/.local/share/code-server/User';
 
@@ -340,25 +427,32 @@ export const TTYD_SHELL_ARG = 'shell';
  * compare and never an eval. The shell branch sits above the injections wait so the split view's
  * scratch shell opens immediately instead of blocking on Claude's boot sentinel.
  */
-const ttydLaunchScript = (permissionMode: ClaudePermissionMode): string =>
-	'#!/usr/bin/env bash\n' +
-	'export SHELL="${SHELL:-/bin/bash}"\n' +
-	`if [ "$1" = "${TTYD_SHELL_ARG}" ]; then\n` +
-	'  if command -v tmux >/dev/null 2>&1; then\n' +
-	`    exec tmux new-session -A -s ${TMUX_SHELL_SESSION}\n` +
-	'  fi\n' +
-	'  exec "$SHELL" -l\n' +
-	'fi\n' +
-	WAIT_FOR_INJECTIONS +
-	'\n' +
-	`if command -v tmux >/dev/null 2>&1; then\n` +
-	`  exec tmux new-session -A -s ${TMUX_SESSION} '${SOURCE_INJECTED_ENV}${launchClaude(permissionMode)}exec "$SHELL" -l'\n` +
-	'fi\n' +
-	SOURCE_INJECTED_ENV +
-	'\n' +
-	launchClaude(permissionMode) +
-	'\n' +
-	'exec "$SHELL" -l\n';
+const ttydLaunchScript = (
+	permissionMode: ClaudePermissionMode,
+	antigravity: AntigravityOverrideOptions = DEFAULT_ANTIGRAVITY_OPTIONS
+): string => {
+	const { launch } = agentLauncher(permissionMode, antigravity);
+	return (
+		'#!/usr/bin/env bash\n' +
+		'export SHELL="${SHELL:-/bin/bash}"\n' +
+		`if [ "$1" = "${TTYD_SHELL_ARG}" ]; then\n` +
+		'  if command -v tmux >/dev/null 2>&1; then\n' +
+		`    exec tmux new-session -A -s ${TMUX_SHELL_SESSION}\n` +
+		'  fi\n' +
+		'  exec "$SHELL" -l\n' +
+		'fi\n' +
+		WAIT_FOR_INJECTIONS +
+		'\n' +
+		`if command -v tmux >/dev/null 2>&1; then\n` +
+		`  exec tmux new-session -A -s ${TMUX_SESSION} '${SOURCE_INJECTED_ENV}${launch}exec "$SHELL" -l'\n` +
+		'fi\n' +
+		SOURCE_INJECTED_ENV +
+		'\n' +
+		launch +
+		'\n' +
+		'exec "$SHELL" -l\n'
+	);
+};
 
 // ttyd defaults to read-only, so --writable is required for keyboard input. Guarded by `pgrep -x`
 // (process name) so a folderOpen/rebuild can't stack a second daemon — never `pgrep -f`, whose
@@ -611,7 +705,8 @@ export async function writeOverrideConfig(
 	mode: InstanceMode = 'ide',
 	permissionMode: ClaudePermissionMode = 'default',
 	envVars: { name: string; value: string }[] = [],
-	claudeRestoreDir: string | null = null
+	claudeRestoreDir: string | null = null,
+	antigravity: AntigravityOverrideOptions = DEFAULT_ANTIGRAVITY_OPTIONS
 ): Promise<{ imageSource: string; configPath: string | null; overrideConfigPath: string }> {
 	const isTerminal = mode === 'terminal';
 	const canonical = findDevcontainerConfig(workspaceDir);
@@ -649,6 +744,7 @@ export async function writeOverrideConfig(
 	const tmuxFeatureKey = featureKey(TMUX_FEATURE_DIR);
 	const ttydFeatureKey = featureKey(TTYD_FEATURE_DIR);
 	const claudeFeatureKey = featureKey(CLAUDE_FEATURE_DIR);
+	const antigravityFeatureKey = featureKey(ANTIGRAVITY_FEATURE_DIR);
 
 	// Terminal mode swaps code-server for ttyd; otherwise (tmux, tooling) the two are identical.
 	// Claude Code: the default image needs the upstream features, while terminal mode on a
@@ -667,7 +763,8 @@ export async function writeOverrideConfig(
 			? { [NODE_FEATURE]: {}, [CLAUDE_CODE_FEATURE]: {} }
 			: isTerminal
 				? { [claudeFeatureKey]: {} }
-				: {})
+				: {}),
+		...(antigravity.enabled ? { [antigravityFeatureKey]: {} } : {})
 	};
 
 	const servedPort = isTerminal ? TTYD_PORT : CODE_SERVER_PORT;
@@ -716,7 +813,7 @@ export async function writeOverrideConfig(
 
 	if (isTerminal) {
 		await writeTtydFeature(featureRoot);
-		await writeTerminalLaunchScript(workspaceDir, permissionMode);
+		await writeTerminalLaunchScript(workspaceDir, permissionMode, antigravity);
 	} else {
 		// Staged next to the config; codeServerLaunch copies it into the user-data dir on first start.
 		await writeFile(
@@ -725,12 +822,13 @@ export async function writeOverrideConfig(
 			'utf8'
 		);
 		// The VS Code Terminal task is code-server-only; ttyd runs its own launcher script instead.
-		await writeTerminalTask(workspaceDir, permissionMode);
+		await writeTerminalTask(workspaceDir, permissionMode, antigravity);
 	}
 
 	await writeTmuxFeature(featureRoot);
 
 	if (isTerminal && hadConfig) await writeClaudeFeature(featureRoot);
+	if (antigravity.enabled) await writeAntigravityFeature(featureRoot);
 
 	await writeLocalGitExclude(workspaceDir);
 
@@ -767,7 +865,8 @@ function stripLegacyInjections(config: DevcontainerConfig): void {
 				key === CODE_SERVER_FEATURE ||
 				key.includes(TMUX_FEATURE_DIR) ||
 				key.includes(TTYD_FEATURE_DIR) ||
-				key.includes(CLAUDE_FEATURE_DIR)
+				key.includes(CLAUDE_FEATURE_DIR) ||
+				key.includes(ANTIGRAVITY_FEATURE_DIR)
 			) {
 				delete config.features[key];
 			}
@@ -960,20 +1059,35 @@ async function writeTtydFeature(featureRoot: string): Promise<void> {
 	await chmod(installPath, 0o755);
 }
 
+async function writeAntigravityFeature(featureRoot: string): Promise<void> {
+	const dir = join(featureRoot, ANTIGRAVITY_FEATURE_DIR);
+	await mkdir(dir, { recursive: true }).catch(() => {});
+	await writeFile(
+		join(dir, 'devcontainer-feature.json'),
+		JSON.stringify(ANTIGRAVITY_FEATURE_METADATA, null, 2) + '\n',
+		'utf8'
+	);
+	const installPath = join(dir, 'install.sh');
+	await writeFile(installPath, ANTIGRAVITY_FEATURE_INSTALL, 'utf8');
+	await chmod(installPath, 0o755);
+}
+
 /** Staged next to the config; TTYD_LAUNCH runs it as ttyd's command. */
 async function writeTerminalLaunchScript(
 	workspaceDir: string,
-	permissionMode: ClaudePermissionMode
+	permissionMode: ClaudePermissionMode,
+	antigravity: AntigravityOverrideOptions = DEFAULT_ANTIGRAVITY_OPTIONS
 ): Promise<void> {
 	const path = join(workspaceDir, '.devcontainer', TTYD_LAUNCH_SCRIPT_FILE);
-	await writeFile(path, ttydLaunchScript(permissionMode), 'utf8');
+	await writeFile(path, ttydLaunchScript(permissionMode, antigravity), 'utf8');
 	await chmod(path, 0o755);
 }
 
 /** Replaces the managed task rather than skipping it, so a rebuild picks up command changes. */
 async function writeTerminalTask(
 	workspaceDir: string,
-	permissionMode: ClaudePermissionMode
+	permissionMode: ClaudePermissionMode,
+	antigravity: AntigravityOverrideOptions = DEFAULT_ANTIGRAVITY_OPTIONS
 ): Promise<void> {
 	const tasksPath = join(workspaceDir, '.vscode', 'tasks.json');
 	let config: { version?: string; tasks?: unknown[] } = {};
@@ -994,7 +1108,10 @@ async function writeTerminalTask(
 		t !== null &&
 		(t as Record<string, unknown>).label === TERMINAL_TASK_LABEL &&
 		((t as Record<string, { runOn?: string }>).runOptions?.runOn ?? '') === 'folderOpen';
-	config.tasks = [...tasks.filter((t) => !isManagedTask(t)), terminalTask(permissionMode)];
+	config.tasks = [
+		...tasks.filter((t) => !isManagedTask(t)),
+		terminalTask(permissionMode, antigravity)
+	];
 
 	await mkdir(join(workspaceDir, '.vscode'), { recursive: true }).catch(() => {});
 	await writeFile(tasksPath, JSON.stringify(config, null, 2) + '\n', 'utf8');

@@ -105,10 +105,17 @@ export const CLAUDE_CODE_TOKEN =
 	(process.env.CODEBAY_CLAUDE_CODE_TOKEN ?? process.env.DCM_CLAUDE_CODE_TOKEN)?.trim() || '';
 export const GITHUB_TOKEN =
 	(process.env.CODEBAY_GITHUB_TOKEN ?? process.env.DCM_GITHUB_TOKEN)?.trim() || '';
+export const CODEBAY_GEMINI_API_KEY = process.env.CODEBAY_GEMINI_API_KEY?.trim() || '';
 
 /** macOS only — the Linux fallback (~/.claude/.credentials.json) has no service name. */
 export const CLAUDE_KEYCHAIN_SERVICE =
 	process.env.CODEBAY_CLAUDE_KEYCHAIN_SERVICE?.trim() || 'Claude Code-credentials';
+
+/** Keyring coordinates `agy` uses on macOS Keychain and Linux Secret Service. */
+export const ANTIGRAVITY_KEYCHAIN_SERVICE =
+	process.env.CODEBAY_ANTIGRAVITY_KEYCHAIN_SERVICE?.trim() || 'gemini';
+export const ANTIGRAVITY_KEYCHAIN_ACCOUNT =
+	process.env.CODEBAY_ANTIGRAVITY_KEYCHAIN_ACCOUNT?.trim() || 'antigravity';
 
 /**
  * `.git` is deliberately absent so each instance keeps its history/remote.
