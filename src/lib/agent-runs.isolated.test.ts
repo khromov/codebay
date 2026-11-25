@@ -695,4 +695,32 @@ describe('Antigravity (-p) runs', () => {
 		]);
 		rmSync(runMirrorPath(run.id), { force: true });
 	});
+
+	test('a schema run that ends on prose fails as structured_output_failed, keeping the answer', async () => {
+		setOption('antigravity_enabled', '1');
+		fakeDocker([
+			pollReply({
+				exit: '0',
+				alive: '0',
+				stream: line({
+					event: 'result',
+					result: { conversation_id: 'conv-7', status: 'SUCCESS', response: 'It is fixed.\n' }
+				})
+			})
+		]);
+		const inst = seed();
+		created.push(inst.id);
+		const run = startRun(inst, 'go', {
+			provider: 'antigravity',
+			jsonSchema: '{"type":"object","properties":{"fixed":{"type":"boolean"}}}'
+		});
+
+		await pollRunNow(run.id);
+		const done = await pollRunNow(run.id);
+		expect(done?.status).toBe('error');
+		expect(done?.error).toBe('structured_output_failed');
+		expect(done?.result).toBe('It is fixed.');
+		expect(runDetail(done!).structured_output).toBeNull();
+		rmSync(runMirrorPath(run.id), { force: true });
+	});
 });

@@ -1876,266 +1876,272 @@
 							: 'turn on Antigravity above to configure'}
 					</span>
 				</summary>
-
-				<div class="setting">
-					<form
-						class="row"
-						method="POST"
-						action="?/antigravityPermissionMode"
-						bind:this={agyPermissionFormEl}
-						{@attach enhance(agyPermissionModeOpts)}
-					>
-						<div class="label">
-							<ShieldCheck size={20} />
-							<div class="text">
-								<div class="name">Antigravity permission mode</div>
-								<div class="desc">
-									The mode <code>agy</code> starts in inside new instances.
-									<strong>Default</strong>
-									runs <code>--dangerously-skip-permissions</code> with
-									<code>always-proceed</code>
-									(no guardrails); <strong>Manual</strong> asks before edits and commands;
-									<strong>Edits</strong>, <strong>Auto</strong>, and <strong>Plan</strong> pass
-									<code>--mode</code>. Applies on create and rebuild.
+				<div inert={!antigravity}>
+					<div class="setting">
+						<form
+							class="row"
+							method="POST"
+							action="?/antigravityPermissionMode"
+							bind:this={agyPermissionFormEl}
+							{@attach enhance(agyPermissionModeOpts)}
+						>
+							<div class="label">
+								<ShieldCheck size={20} />
+								<div class="text">
+									<div class="name">Antigravity permission mode</div>
+									<div class="desc">
+										The mode <code>agy</code> starts in inside new instances.
+										<strong>Default</strong>
+										runs <code>--dangerously-skip-permissions</code> with
+										<code>always-proceed</code>
+										(no guardrails); <strong>Manual</strong> asks before edits and commands;
+										<strong>Edits</strong>, <strong>Auto</strong>, and <strong>Plan</strong> pass
+										<code>--mode</code>. Applies on create and rebuild.
+									</div>
 								</div>
 							</div>
-						</div>
-						<input type="hidden" name="mode" value={agyPermissionChoice} />
-						<div class="mode-toggle" role="group" aria-label="Antigravity permission mode">
-							{#each ANTIGRAVITY_PERMISSION_MODES as option (option)}
-								<button
+							<input type="hidden" name="mode" value={agyPermissionChoice} />
+							<div class="mode-toggle" role="group" aria-label="Antigravity permission mode">
+								{#each ANTIGRAVITY_PERMISSION_MODES as option (option)}
+									<button
+										type="button"
+										class="mode-btn"
+										class:active={agyPermissionChoice === option}
+										aria-pressed={agyPermissionChoice === option}
+										disabled={savingAgyPermission}
+										onclick={() => chooseAgyPermissionMode(option)}
+									>
+										{AGY_PERMISSION_LABELS[option]}
+									</button>
+								{/each}
+							</div>
+						</form>
+						{#if agyPermissionError}
+							<div class="sub"><div class="msg error">{agyPermissionError}</div></div>
+						{/if}
+					</div>
+
+					<div class="setting">
+						<form
+							class="row"
+							method="POST"
+							action="?/antigravityEffortLevel"
+							bind:this={agyEffortFormEl}
+							{@attach enhance(agyEffortLevelOpts)}
+						>
+							<div class="label">
+								<Gauge size={20} />
+								<div class="text">
+									<div class="name">Antigravity effort level</div>
+									<div class="desc">
+										Reasoning effort for Antigravity sessions and MCP runs. <strong>Host</strong>
+										carries over your host <code>~/.gemini/antigravity-cli/settings.json</code>; any
+										other choice passes <code>--effort</code>.
+									</div>
+								</div>
+							</div>
+							<input type="hidden" name="level" value={agyEffortChoice} />
+							<div class="mode-toggle" role="group" aria-label="Antigravity effort level">
+								{#each CLAUDE_EFFORT_SETTINGS as option (option)}
+									<button
+										type="button"
+										class="mode-btn"
+										class:active={agyEffortChoice === option}
+										aria-pressed={agyEffortChoice === option}
+										disabled={savingAgyEffort}
+										onclick={() => chooseAgyEffort(option)}
+									>
+										{EFFORT_LABELS[option]}
+									</button>
+								{/each}
+							</div>
+						</form>
+						{#if agyEffortError}
+							<div class="sub"><div class="msg error">{agyEffortError}</div></div>
+						{/if}
+					</div>
+
+					<div class="setting">
+						<form
+							class="row image-row"
+							method="POST"
+							action="?/antigravityModel"
+							bind:this={agyModelFormEl}
+							{@attach enhance(agyModelOpts)}
+						>
+							<div class="label">
+								<Cpu size={20} />
+								<div class="text">
+									<div class="name">Antigravity model</div>
+									<div class="desc">
+										Optional model slug or label (e.g. <code>gemini-4-neon-xhigh</code>). Leave
+										blank to inherit your host
+										<code>~/.gemini/antigravity-cli/settings.json</code>.
+									</div>
+								</div>
+							</div>
+							<div class="image-controls">
+								<input
+									type="text"
+									name="model"
+									aria-label="Antigravity model"
+									class="image-input"
+									bind:value={agyModel}
+									spellcheck="false"
+									autocapitalize="off"
+									autocorrect="off"
+									placeholder="inherit from host"
+								/>
+								<Button type="submit" disabled={savingAgyModel}>Save</Button>
+								<Button
 									type="button"
-									class="mode-btn"
-									class:active={agyPermissionChoice === option}
-									aria-pressed={agyPermissionChoice === option}
-									disabled={savingAgyPermission}
-									onclick={() => chooseAgyPermissionMode(option)}
-								>
-									{AGY_PERMISSION_LABELS[option]}
-								</button>
-							{/each}
-						</div>
-					</form>
-					{#if agyPermissionError}
-						<div class="sub"><div class="msg error">{agyPermissionError}</div></div>
-					{/if}
-				</div>
+									icon={RotateCcw}
+									disabled={savingAgyModel}
+									onclick={resetAgyModel}
+									title="Reset to host default"
+									aria-label="Reset Antigravity model to host default"
+								/>
+							</div>
+							{#if agyModelError}
+								<div class="msg error">{agyModelError}</div>
+							{:else if agyModelSaved}
+								<div class="msg ok">Saved.</div>
+							{/if}
+						</form>
+					</div>
 
-				<div class="setting">
-					<form
-						class="row"
-						method="POST"
-						action="?/antigravityEffortLevel"
-						bind:this={agyEffortFormEl}
-						{@attach enhance(agyEffortLevelOpts)}
-					>
-						<div class="label">
-							<Gauge size={20} />
-							<div class="text">
-								<div class="name">Antigravity effort level</div>
-								<div class="desc">
-									Reasoning effort for Antigravity sessions and MCP runs. <strong>Host</strong>
-									carries over your host <code>~/.gemini/antigravity-cli/settings.json</code>; any
-									other choice passes <code>--effort</code>.
+					<div class="setting">
+						<form
+							class="row image-row"
+							method="POST"
+							action="?/antigravityGeminiApiKey"
+							{@attach enhance(agyApiKeyOpts)}
+						>
+							<div class="label">
+								<KeyRound size={20} />
+								<div class="text">
+									<div class="name">Gemini API key</div>
+									<div class="desc">
+										Optional override instead of discovering your host <code>agy</code> OAuth
+										session (Keychain / Secret Service / <code>antigravity-oauth-token</code>).
+										Injects
+										<code>GEMINI_API_KEY</code> and sets <code>modelProvider: "gemini"</code>. Leave
+										blank and Save to clear.
+									</div>
 								</div>
 							</div>
-						</div>
-						<input type="hidden" name="level" value={agyEffortChoice} />
-						<div class="mode-toggle" role="group" aria-label="Antigravity effort level">
-							{#each CLAUDE_EFFORT_SETTINGS as option (option)}
-								<button
+							<div class="image-controls">
+								<input
+									type="password"
+									name="apiKey"
+									aria-label="Gemini API key"
+									class="image-input"
+									bind:value={agyApiKey}
+									spellcheck="false"
+									autocapitalize="off"
+									autocorrect="off"
+									autocomplete="off"
+									placeholder={agyApiKeySaved ? '•••••••• (saved)' : 'AIza…'}
+								/>
+								<Button type="submit" disabled={savingAgyApiKey}>Save</Button>
+							</div>
+							{#if agyApiKeyError}
+								<div class="msg error">{agyApiKeyError}</div>
+							{:else if agyApiKeyMsg}
+								<div class="msg ok">{agyApiKeyMsg}</div>
+							{/if}
+						</form>
+					</div>
+
+					<div class="setting">
+						<form
+							class="row image-row"
+							method="POST"
+							action="?/antigravityGeminiBaseUrl"
+							{@attach enhance(agyBaseUrlOpts)}
+						>
+							<div class="label">
+								<Globe size={20} />
+								<div class="text">
+									<div class="name">Gemini base URL</div>
+									<div class="desc">
+										Optional custom Gemini-compatible endpoint passed as
+										<code>GOOGLE_GEMINI_BASE_URL</code> when using a Gemini API key. Leave blank for Google's
+										default endpoint.
+									</div>
+								</div>
+							</div>
+							<div class="image-controls">
+								<input
+									type="text"
+									name="baseUrl"
+									aria-label="Gemini base URL"
+									class="image-input"
+									bind:value={agyBaseUrl}
+									spellcheck="false"
+									autocapitalize="off"
+									autocorrect="off"
+									autocomplete="off"
+									placeholder="https://generativelanguage.googleapis.com"
+								/>
+								<Button type="submit" disabled={savingAgyBaseUrl}>Save</Button>
+							</div>
+							{#if agyBaseUrlError}
+								<div class="msg error">{agyBaseUrlError}</div>
+							{:else if agyBaseUrlMsg}
+								<div class="msg ok">{agyBaseUrlMsg}</div>
+							{/if}
+						</form>
+					</div>
+
+					<div class="setting">
+						<form
+							class="row image-row"
+							method="POST"
+							action="?/antigravityConfigDir"
+							bind:this={agyDirFormEl}
+							{@attach enhance(agyDirOpts)}
+						>
+							<div class="label">
+								<FolderCog size={20} />
+								<div class="text">
+									<div class="name">Antigravity config directory</div>
+									<div class="desc">
+										Host directory Antigravity helpers read from (<code>settings.json</code> and
+										<code>antigravity-oauth-token</code>). Leave blank to use
+										<code>~/.gemini/antigravity-cli</code>.
+									</div>
+								</div>
+							</div>
+							<div class="image-controls">
+								<input
+									type="text"
+									name="dir"
+									aria-label="Antigravity config directory"
+									class="image-input"
+									bind:value={agyDir}
+									spellcheck="false"
+									autocapitalize="off"
+									autocorrect="off"
+									placeholder="~/.gemini/antigravity-cli"
+								/>
+								<Button type="submit" disabled={savingAgyDir}>Save</Button>
+								<Button
 									type="button"
-									class="mode-btn"
-									class:active={agyEffortChoice === option}
-									aria-pressed={agyEffortChoice === option}
-									disabled={savingAgyEffort}
-									onclick={() => chooseAgyEffort(option)}
-								>
-									{EFFORT_LABELS[option]}
-								</button>
-							{/each}
-						</div>
-					</form>
-					{#if agyEffortError}
-						<div class="sub"><div class="msg error">{agyEffortError}</div></div>
-					{/if}
-				</div>
-
-				<div class="setting">
-					<form
-						class="row image-row"
-						method="POST"
-						action="?/antigravityModel"
-						bind:this={agyModelFormEl}
-						{@attach enhance(agyModelOpts)}
-					>
-						<div class="label">
-							<Cpu size={20} />
-							<div class="text">
-								<div class="name">Antigravity model</div>
-								<div class="desc">
-									Optional model slug or label (e.g. <code>gemini-4-neon-xhigh</code>). Leave blank
-									to inherit your host
-									<code>~/.gemini/antigravity-cli/settings.json</code>.
-								</div>
+									icon={RotateCcw}
+									disabled={savingAgyDir}
+									onclick={resetAgyDir}
+									title="Reset to default (~/.gemini/antigravity-cli)"
+									aria-label="Reset to default Antigravity config directory"
+								/>
 							</div>
-						</div>
-						<div class="image-controls">
-							<input
-								type="text"
-								name="model"
-								class="image-input"
-								bind:value={agyModel}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								placeholder="inherit from host"
-							/>
-							<Button type="submit" disabled={savingAgyModel}>Save</Button>
-							<Button
-								type="button"
-								icon={RotateCcw}
-								disabled={savingAgyModel}
-								onclick={resetAgyModel}
-								title="Reset to host default"
-								aria-label="Reset Antigravity model to host default"
-							/>
-						</div>
-						{#if agyModelError}
-							<div class="msg error">{agyModelError}</div>
-						{:else if agyModelSaved}
-							<div class="msg ok">Saved.</div>
-						{/if}
-					</form>
-				</div>
-
-				<div class="setting">
-					<form
-						class="row image-row"
-						method="POST"
-						action="?/antigravityGeminiApiKey"
-						{@attach enhance(agyApiKeyOpts)}
-					>
-						<div class="label">
-							<KeyRound size={20} />
-							<div class="text">
-								<div class="name">Gemini API key</div>
-								<div class="desc">
-									Optional override instead of discovering your host <code>agy</code> OAuth session
-									(Keychain / Secret Service / <code>antigravity-oauth-token</code>). Injects
-									<code>GEMINI_API_KEY</code> and sets <code>modelProvider: "gemini"</code>. Leave
-									blank and Save to clear.
-								</div>
-							</div>
-						</div>
-						<div class="image-controls">
-							<input
-								type="password"
-								name="apiKey"
-								class="image-input"
-								bind:value={agyApiKey}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								autocomplete="off"
-								placeholder={agyApiKeySaved ? '•••••••• (saved)' : 'AIza…'}
-							/>
-							<Button type="submit" disabled={savingAgyApiKey}>Save</Button>
-						</div>
-						{#if agyApiKeyError}
-							<div class="msg error">{agyApiKeyError}</div>
-						{:else if agyApiKeyMsg}
-							<div class="msg ok">{agyApiKeyMsg}</div>
-						{/if}
-					</form>
-				</div>
-
-				<div class="setting">
-					<form
-						class="row image-row"
-						method="POST"
-						action="?/antigravityGeminiBaseUrl"
-						{@attach enhance(agyBaseUrlOpts)}
-					>
-						<div class="label">
-							<Globe size={20} />
-							<div class="text">
-								<div class="name">Gemini base URL</div>
-								<div class="desc">
-									Optional custom Gemini-compatible endpoint passed as
-									<code>GOOGLE_GEMINI_BASE_URL</code> when using a Gemini API key. Leave blank for Google's
-									default endpoint.
-								</div>
-							</div>
-						</div>
-						<div class="image-controls">
-							<input
-								type="text"
-								name="baseUrl"
-								class="image-input"
-								bind:value={agyBaseUrl}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								autocomplete="off"
-								placeholder="https://generativelanguage.googleapis.com"
-							/>
-							<Button type="submit" disabled={savingAgyBaseUrl}>Save</Button>
-						</div>
-						{#if agyBaseUrlError}
-							<div class="msg error">{agyBaseUrlError}</div>
-						{:else if agyBaseUrlMsg}
-							<div class="msg ok">{agyBaseUrlMsg}</div>
-						{/if}
-					</form>
-				</div>
-
-				<div class="setting">
-					<form
-						class="row image-row"
-						method="POST"
-						action="?/antigravityConfigDir"
-						bind:this={agyDirFormEl}
-						{@attach enhance(agyDirOpts)}
-					>
-						<div class="label">
-							<FolderCog size={20} />
-							<div class="text">
-								<div class="name">Antigravity config directory</div>
-								<div class="desc">
-									Host directory Antigravity helpers read from (<code>settings.json</code> and
-									<code>antigravity-oauth-token</code>). Leave blank to use
-									<code>~/.gemini/antigravity-cli</code>.
-								</div>
-							</div>
-						</div>
-						<div class="image-controls">
-							<input
-								type="text"
-								name="dir"
-								class="image-input"
-								bind:value={agyDir}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								placeholder="~/.gemini/antigravity-cli"
-							/>
-							<Button type="submit" disabled={savingAgyDir}>Save</Button>
-							<Button
-								type="button"
-								icon={RotateCcw}
-								disabled={savingAgyDir}
-								onclick={resetAgyDir}
-								title="Reset to default (~/.gemini/antigravity-cli)"
-								aria-label="Reset to default Antigravity config directory"
-							/>
-						</div>
-						{#if agyDirError}
-							<div class="msg error">{agyDirError}</div>
-						{:else if agyDirSaved}
-							<div class="msg ok">Saved.</div>
-						{/if}
-					</form>
+							{#if agyDirError}
+								<div class="msg error">{agyDirError}</div>
+							{:else if agyDirSaved}
+								<div class="msg ok">Saved.</div>
+							{/if}
+						</form>
+					</div>
 				</div>
 			</details>
 		</section>

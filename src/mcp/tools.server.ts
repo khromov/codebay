@@ -206,8 +206,8 @@ const runOptions = {
 			v.description(
 				'A JSON Schema (as a string). When set, the run’s structured_output matches it. If no ' +
 					'payload ever validates the run fails with error "structured_output_failed", and its ' +
-					'result holds the agent’s plain-text answer with rejected_structured_output the last ' +
-					'payload the schema refused.'
+					'result holds the agent’s plain-text answer; for Claude runs, rejected_structured_output ' +
+					'holds the last payload the schema refused (Antigravity reports none).'
 			)
 		)
 	),

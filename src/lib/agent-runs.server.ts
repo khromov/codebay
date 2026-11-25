@@ -621,7 +621,16 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 
 		if (exitRaw) {
 			const exitCode = Number.parseInt(exitRaw, 10);
-			const failed = state.isError || exitCode !== 0;
+			// agy reports no retry-exhaustion subtype: a schema run that ends on prose is just SUCCESS
+			// with no structured_output, which would otherwise finish as a clean `done`.
+			const schemaMissed =
+				provider === 'antigravity' &&
+				!!optionsOf(row).jsonSchema &&
+				!state.isError &&
+				exitCode === 0 &&
+				state.structuredOutput === null;
+			const structuredOutputFailed = state.structuredOutputFailed || schemaMissed;
+			const failed = state.isError || exitCode !== 0 || schemaMissed;
 			const stderr = markerLine(res.stdout, ERR_MARKER)?.trim();
 			const binary = provider === 'antigravity' ? 'agy' : 'claude';
 			finish(row.id, {
@@ -641,7 +650,7 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 				// never validated" (result holds that answer) from a crash; otherwise a structured
 				// stream error or stderr beats result text, which only fills in when neither is present.
 				error: failed
-					? state.structuredOutputFailed
+					? structuredOutputFailed
 						? STRUCTURED_OUTPUT_FAILED_ERROR
 						: state.errorMessage || stderr || state.result || `${binary} exited ${exitCode}`
 					: null

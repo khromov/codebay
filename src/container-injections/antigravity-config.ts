@@ -62,24 +62,12 @@ export function antigravityPermissionSettings(
 			enableTerminalSandbox: false
 		};
 	}
-	if (mode === 'manual') {
-		return {
-			toolPermission: 'request-review',
-			agentMode: '',
-			enableTerminalSandbox: false
-		};
-	}
-	if (mode === 'auto') {
-		return {
-			toolPermission: 'request-review',
-			agentMode: 'auto'
-		};
-	}
-	return {
-		toolPermission: 'request-review',
-		agentMode: mode,
-		enableTerminalSandbox: false
-	};
+	// A run's `--settings` only overlays the keys it names, so a guarded mode resets what `'default'`
+	// loosens; artifactReviewPolicy can't be, since agy rejects every value but the two permissive ones.
+	const guarded = { toolPermission: 'request-review', allowNonWorkspaceAccess: false };
+	if (mode === 'manual') return { ...guarded, agentMode: '', enableTerminalSandbox: false };
+	if (mode === 'auto') return { ...guarded, agentMode: 'auto' };
+	return { ...guarded, agentMode: mode, enableTerminalSandbox: false };
 }
 
 export interface HostAntigravityConfig {

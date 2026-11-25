@@ -346,6 +346,17 @@ describe('Antigravity config, guardrails, hooks, and install', () => {
 		});
 	});
 
+	test('guarded modes reset the workspace-access key default mode loosens, so a run overlay cannot inherit it', () => {
+		for (const mode of ['manual', 'accept-edits', 'auto', 'plan'] as const) {
+			expect(antigravityPermissionSettings(mode)).toMatchObject({
+				toolPermission: 'request-review',
+				allowNonWorkspaceAccess: false
+			});
+			// agy accepts only always-proceed / agent-decides here, so a guarded mode can't set one.
+			expect(antigravityPermissionSettings(mode)).not.toHaveProperty('artifactReviewPolicy');
+		}
+	});
+
 	test.skipIf(POSIX_SHELL_ONLY)('agy alias and launcher preserve spaces in model labels', () => {
 		const script = [
 			'shopt -s expand_aliases',
