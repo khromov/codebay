@@ -13,6 +13,7 @@ import {
 } from '../lib/devcontainer.server.ts';
 import { invalidateSecretValues, redactSecrets } from '../lib/instances.server.ts';
 import { INSTALL_SCRIPT as AGY_INSTALL_SCRIPT } from './antigravity-install.ts';
+import { ANTIGRAVITY_ONBOARDING_FILE } from '../lib/antigravity-settings.server.ts';
 import {
 	antigravityEnvFileContent,
 	decodeKeychainSecret,
@@ -106,6 +107,11 @@ describe('Antigravity credential helpers', () => {
 		expect(decodeKeychainSecret(b64Wrapped)).toBe(sampleToken);
 		expect(decodeKeychainSecret(hexPlain)).toBe(sampleToken);
 		expect(decodeKeychainSecret(hexWrapped)).toBe(sampleToken);
+	});
+
+	test('onboarding state targets the cache/ file agy actually reads', () => {
+		expect(ANTIGRAVITY_ONBOARDING_FILE.dir).toBe('$h/.gemini/antigravity-cli/cache');
+		expect(ANTIGRAVITY_ONBOARDING_FILE.name).toBe('onboarding.json');
 	});
 
 	test('isValidOAuthToken accepts StoredToken, legacy flat token, and refreshable expired tokens', () => {
@@ -373,6 +379,9 @@ describe('Antigravity config, guardrails, hooks, and install', () => {
 		expect(entry.Stop[0]!.command).toContain('state=done');
 		expect(entry.Stop[0]!.command).toContain("printf '%s\\n' '{}'");
 		expect(entry.PreInvocation[0]!.command).toContain('state=busy');
+		// PreInvocation fires per model call, so only its ping is detached from the agent loop.
+		expect(entry.PreInvocation[0]!.command).toContain('>/dev/null 2>&1 & ');
+		expect(entry.Stop[0]!.command).not.toContain(' & ');
 		expect(entry.PreToolUse[0]!.matcher).toBe('ask_question|ask_permission');
 		expect(entry.PreToolUse[0]!.hooks[0]!.command).toContain('state=waiting');
 		expect(entry.PreToolUse[0]!.hooks[0]!.command).toContain('{"decision":"allow"}');
@@ -490,5 +499,16 @@ describe('Settings actions for Antigravity', () => {
 
 		post('antigravityToggle', {});
 		expect(getOption('antigravity_enabled')).toBe('0');
+	});
+
+	test('SSR shows the stored default agent even while Antigravity is disabled', async () => {
+		const serverProps = (
+			routes['/settings'] as unknown as { serverProps: () => Promise<{ defaultAgent: string }> }
+		).serverProps;
+		post('defaultAgent', { agent: 'antigravity' });
+		post('antigravityToggle', {});
+		// Re-enabling in place must not show Claude while the saved default is already Antigravity.
+		expect((await serverProps()).defaultAgent).toBe('antigravity');
+		expect(getDefaultAgent()).toBe('claude');
 	});
 });

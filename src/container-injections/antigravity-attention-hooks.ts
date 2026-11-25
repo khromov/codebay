@@ -22,15 +22,16 @@ const HOOK_LOG = '$HOME/.gemini/antigravity-cli/.bridge-hook.log';
  */
 function hookCommand(id: string, state: 'done' | 'waiting' | 'busy', stdoutJson: string): string {
 	const url = `${bridgeUrl()}?id=${encodeURIComponent(id)}&state=${state}`;
-	return (
+	const ping =
 		`log="${HOOK_LOG}"; ` +
 		`http=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H @"${HEADER_FILE}" '${url}' 2>>"$log"); ` +
 		`rc=$?; ` +
 		`printf '[%s] state=${state} http=%s curl_exit=%s\\n' "$(date -Is 2>/dev/null || date)" "$http" "$rc" >> "$log" 2>/dev/null; ` +
-		`t=$(tail -n 500 "$log" 2>/dev/null) && printf '%s\\n' "$t" > "$log" 2>/dev/null; ` +
-		`printf '%s\\n' '${stdoutJson}'; ` +
-		`true`
-	);
+		`t=$(tail -n 500 "$log" 2>/dev/null) && printf '%s\\n' "$t" > "$log" 2>/dev/null`;
+	// PreInvocation runs before every model call and hooks block the agent loop, so `busy` must
+	// never wait on the bridge; the fds are closed so agy isn't left reading the hook's stdout.
+	const send = state === 'busy' ? `( ${ping} ) </dev/null >/dev/null 2>&1 & ` : `${ping}; `;
+	return `${send}printf '%s\\n' '${stdoutJson}'; true`;
 }
 
 /**

@@ -290,6 +290,16 @@ export function listRuns(instanceId: string, limit = 50): AgentRunRow[] {
 		.all({ $id: instanceId, $limit: limit }) as AgentRunRow[];
 }
 
+/** The provider that produced a session, so a resume keeps it even after the default agent changes. */
+export function sessionProvider(instanceId: string, sessionId: string): AgentProvider | null {
+	const row = db
+		.query(
+			'SELECT provider FROM agent_runs WHERE instance_id = $id AND session_id = $session ORDER BY created_at DESC LIMIT 1'
+		)
+		.get({ $id: instanceId, $session: sessionId }) as { provider: AgentProvider } | null;
+	return row?.provider ?? null;
+}
+
 /** Every unfinished run, across all instances — what the poller's timer works from. */
 export function openRuns(): AgentRunRow[] {
 	return db

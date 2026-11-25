@@ -51,6 +51,7 @@ import {
 	type AgentProvider
 } from '../types.ts';
 import { describeDefaultEffort } from '../container-injections/claude-effort-level.ts';
+import { describeAntigravityDefaultEffort } from '../container-injections/antigravity-config.ts';
 import { antigravityEnabled, getDefaultAgent } from '../lib/host-antigravity.server.ts';
 
 /** Long-polling `get_run` past this would start tripping MCP clients' own request timeouts. */
@@ -144,16 +145,22 @@ function liveDescription<T>(text: () => string) {
 	return action;
 }
 
+/** Each provider resolves its own default effort, so name both once Antigravity runs are possible. */
+const describeEffortDefaults = () =>
+	antigravityEnabled()
+		? `Claude: ${describeDefaultEffort()}; Antigravity: ${describeAntigravityDefaultEffort()}`
+		: describeDefaultEffort();
+
 /** Exported for the descriptor test, which asserts the exact text a calling model reads. */
 export const effortParamDescription = () =>
 	`Reasoning effort for this run. Omit to use the configured default (currently ` +
-	`${describeDefaultEffort()}). Callers should normally omit it; pass a level only when the user ` +
+	`${describeEffortDefaults()}). Callers should normally omit it; pass a level only when the user ` +
 	`explicitly asks for a different effort, since any value here overrides theirs.`;
 
 /** Appended to the descriptions of the tools that start a run. */
 export const effortToolNote = () =>
 	` Leave \`effort\` unset to run at the user's configured effort (currently ` +
-	`${describeDefaultEffort()}).`;
+	`${describeEffortDefaults()}).`;
 
 export const providerParamDescription = () =>
 	antigravityEnabled()

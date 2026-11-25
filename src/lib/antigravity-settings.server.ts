@@ -6,7 +6,7 @@ import {
 	type ContainerFile
 } from './container-files.server.ts';
 
-/** A file in `~/.gemini/antigravity-cli` (settings.json, onboarding.json, oauth token, etc.). */
+/** A file in `~/.gemini/antigravity-cli` (settings.json, oauth token, etc.). */
 export const antigravityConfigFile = (name: string, mode?: string): ContainerFile => ({
 	dir: '$h/.gemini/antigravity-cli',
 	name,
@@ -18,10 +18,12 @@ export const ANTIGRAVITY_SETTINGS_FILE: ContainerFile = antigravityConfigFile(
 	'600'
 );
 
-export const ANTIGRAVITY_ONBOARDING_FILE: ContainerFile = antigravityConfigFile(
-	'onboarding.json',
-	'600'
-);
+/** `agy` reads first-run state from `cache/`; a top-level `onboarding.json` is ignored and the wizard still runs. */
+export const ANTIGRAVITY_ONBOARDING_FILE: ContainerFile = {
+	dir: '$h/.gemini/antigravity-cli/cache',
+	name: 'onboarding.json',
+	mode: '600'
+};
 
 export const ANTIGRAVITY_TOKEN_FILE: ContainerFile = antigravityConfigFile(
 	'antigravity-oauth-token',

@@ -17,6 +17,7 @@ import {
 	listRuns,
 	openRunFor,
 	setOption,
+	updateRun,
 	type InstanceRow
 } from './db.server.ts';
 import {
@@ -590,8 +591,48 @@ describe('Antigravity (-p) runs', () => {
 		expect(body).toContain("--model 'gemini-4-neon-xhigh'");
 		expect(body).toContain("--effort 'high'");
 		expect(body).toContain('--json-schema "$d/schema.json"');
+		expect(body).toContain('--settings "$d/settings.json"');
 		expect(body).not.toContain('--verbose');
 		expect(body).not.toContain('IS_SANDBOX=1');
+
+		const settings = calls.find((c) => stdinOf(c).includes('"toolPermission"'))!;
+		expect(JSON.parse(stdinOf(settings)).toolPermission).toBe('always-proceed');
+	});
+
+	test('a manual run stages request-review settings instead of inheriting the container mode', async () => {
+		setOption('antigravity_enabled', '1');
+		const calls = fakeDocker();
+		const inst = seed();
+		created.push(inst.id);
+
+		const run = startRun(inst, 'look around', {
+			provider: 'antigravity',
+			permissionMode: 'manual'
+		});
+		await pollRunNow(run.id);
+
+		const body = stdinOf(calls.find((c) => stdinOf(c).includes('agy -p'))!);
+		expect(body).toContain('--settings "$d/settings.json"');
+		expect(body).not.toContain('--dangerously-skip-permissions');
+		const settings = calls.find((c) => stdinOf(c).includes('"toolPermission"'))!;
+		expect(JSON.parse(stdinOf(settings)).toolPermission).toBe('request-review');
+	});
+
+	test('a resume without provider keeps the provider that created the session', () => {
+		setOption('antigravity_enabled', '1');
+		fakeDocker();
+		const inst = seed();
+		created.push(inst.id);
+
+		const first = startRun(inst, 'start', { provider: 'claude' });
+		updateRun(first.id, { status: 'done', session_id: 'sess-claude' });
+		setOption('default_agent', 'antigravity');
+
+		const resumed = startRun(inst, 'continue', { resumeSessionId: 'sess-claude' });
+		expect(resumed.provider).toBe('claude');
+		updateRun(resumed.id, { status: 'done' });
+
+		expect(startRun(inst, 'fresh', {}).provider).toBe('antigravity');
 	});
 
 	test('polls Antigravity stream-json events into the run row and Agent log timeline', async () => {

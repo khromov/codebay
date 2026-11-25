@@ -7,6 +7,7 @@ import {
 	insertRun,
 	openRunFor,
 	openRuns,
+	sessionProvider,
 	updateRun,
 	type AgentRunRow,
 	type InstanceRow
@@ -47,6 +48,7 @@ import {
 } from '../types.ts';
 import { defaultRunEffort } from '../container-injections/claude-effort-level.ts';
 import {
+	antigravityPermissionSettings,
 	defaultAntigravityRunEffort,
 	getAntigravityModelSetting
 } from '../container-injections/antigravity-config.ts';
@@ -127,6 +129,9 @@ function parseFileFor(provider: AgentProvider, text: string): RunStreamState {
 	return provider === 'antigravity' ? readAntigravityRunFile(text) : readRunFile(text);
 }
 
+const antigravityRunMode = (opts: StartRunOptions): AntigravityPermissionMode =>
+	normalizeAntigravityPermissionMode(opts.permissionMode ?? 'default');
+
 /**
  * The script the detached process actually runs. It writes its own PGID first so `stopRun` can
  * signal the whole group, and writes the exit file last so the poller can treat that file's
@@ -144,10 +149,10 @@ function runScript(
 
 	let invocation: string;
 	if (isAgy) {
-		const flags = ['--output-format stream-json'];
-		const permFlag = antigravityPermissionFlags(
-			normalizeAntigravityPermissionMode(opts.permissionMode ?? 'default')
-		);
+		// The staged per-run settings overlay the container's settings.json, whose guardrails follow
+		// the interactive Settings mode; without it a `manual` run inherited `always-proceed`.
+		const flags = ['--output-format stream-json', '--settings "$d/settings.json"'];
+		const permFlag = antigravityPermissionFlags(antigravityRunMode(opts));
 		if (permFlag) flags.push(permFlag);
 		if (opts.resumeSessionId) flags.push(`--conversation ${quote(opts.resumeSessionId)}`);
 		if (opts.model) flags.push(`--model ${quote(opts.model)}`);
@@ -506,6 +511,14 @@ async function stage(row: AgentRunRow, instance: InstanceRow): Promise<string | 
 		);
 		if (!schema.ok) return `could not stage the schema: ${schema.error}`;
 	}
+	if (normalizeAgentProvider(row.provider) === 'antigravity') {
+		const settings = await writeContainerFile(
+			target,
+			{ dir, name: 'settings.json', mode: '600' },
+			JSON.stringify(antigravityPermissionSettings(antigravityRunMode(opts)))
+		);
+		if (!settings.ok) return `could not stage the run settings: ${settings.error}`;
+	}
 	const script = await writeContainerFile(
 		target,
 		{ dir, name: 'run.sh', mode: '700' },
@@ -684,7 +697,10 @@ export function startRun(
 	}
 	if (instance.status === 'error') throw new Error('sandbox failed to build');
 
-	const provider = opts.provider ? normalizeAgentProvider(opts.provider) : getDefaultAgent();
+	const provider = opts.provider
+		? normalizeAgentProvider(opts.provider)
+		: (opts.resumeSessionId && sessionProvider(instance.id, opts.resumeSessionId)) ||
+			getDefaultAgent();
 	if (provider === 'antigravity') {
 		if (!antigravityEnabled()) {
 			throw new Error('Antigravity is not enabled — turn it on in Settings first');
