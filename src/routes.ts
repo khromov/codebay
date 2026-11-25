@@ -34,7 +34,7 @@ import {
 	getAntigravityPermissionMode
 } from './container-injections/antigravity-config.ts';
 import { configuredGeminiApiKey } from './container-injections/antigravity-credentials.ts';
-import { antigravityEnabled } from './lib/host-antigravity.server.ts';
+import { antigravityEnabled, storedDefaultAgent } from './lib/host-antigravity.server.ts';
 import { browse } from './lib/picker.server.ts';
 import { pickNamePrompt } from './avatars/name-prompts.ts';
 import { avatars, findAvatar } from './avatars/index.ts';
@@ -240,9 +240,7 @@ export const routes: Record<string, MochiRouteValue> = {
 				claudeEffortLevel: getClaudeEffortSetting(),
 				claudeOutputStyle: getClaudeOutputStyle(),
 				antigravityEnabled: antigravityEnabled(),
-				// The stored choice, not getDefaultAgent(): that masks it to claude while Antigravity is off,
-				// so re-enabling in place would show Claude while the saved default is already Antigravity.
-				defaultAgent: normalizeAgentProvider(getOption('default_agent')),
+				defaultAgent: storedDefaultAgent(),
 				antigravityPermissionMode: getAntigravityPermissionMode(),
 				antigravityEffortLevel: getAntigravityEffortSetting(),
 				antigravityModel: getAntigravityModelSetting() ?? '',

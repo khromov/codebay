@@ -11,9 +11,14 @@ export function antigravityEnabled(): boolean {
 	return getOption('antigravity_enabled') === '1';
 }
 
+/** Unmasked, for Settings: showing the masked value made re-enabling in place display Claude while Antigravity was saved. */
+export function storedDefaultAgent(): AgentProvider {
+	return normalizeAgentProvider(getOption('default_agent'));
+}
+
 /** Falls back to Claude whenever Antigravity is disabled so launchers never target an uninstalled CLI. */
 export function getDefaultAgent(): AgentProvider {
-	return antigravityEnabled() ? normalizeAgentProvider(getOption('default_agent')) : 'claude';
+	return antigravityEnabled() ? storedDefaultAgent() : 'claude';
 }
 
 /** Host directory Antigravity config/credential helpers read from; defaults to `~/.gemini/antigravity-cli`. */

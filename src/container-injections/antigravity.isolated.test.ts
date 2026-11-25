@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import { getOption, setOption } from '../lib/db.server.ts';
 import { routes } from '../routes.ts';
 import { resolveInjections, resolveInjectionStages } from '../lib/injections.server.ts';
-import { antigravityEnabled, getDefaultAgent } from '../lib/host-antigravity.server.ts';
+import {
+	antigravityEnabled,
+	getDefaultAgent,
+	storedDefaultAgent
+} from '../lib/host-antigravity.server.ts';
 import {
 	launchAntigravity,
 	SOURCE_INJECTED_ENV,
@@ -501,14 +505,11 @@ describe('Settings actions for Antigravity', () => {
 		expect(getOption('antigravity_enabled')).toBe('0');
 	});
 
-	test('SSR shows the stored default agent even while Antigravity is disabled', async () => {
-		const serverProps = (
-			routes['/settings'] as unknown as { serverProps: () => Promise<{ defaultAgent: string }> }
-		).serverProps;
+	test('Settings sees the stored default agent even while Antigravity is disabled', () => {
 		post('defaultAgent', { agent: 'antigravity' });
 		post('antigravityToggle', {});
 		// Re-enabling in place must not show Claude while the saved default is already Antigravity.
-		expect((await serverProps()).defaultAgent).toBe('antigravity');
+		expect(storedDefaultAgent()).toBe('antigravity');
 		expect(getDefaultAgent()).toBe('claude');
 	});
 });
