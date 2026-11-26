@@ -6,6 +6,7 @@ import {
 	mkdirSync,
 	readFileSync,
 	rmSync,
+	utimesSync,
 	writeFileSync
 } from 'node:fs';
 import { join } from 'node:path';
@@ -463,6 +464,137 @@ describe('polling', () => {
 		const settled = await pollRunNow(run.id);
 		expect(settled?.status).toBe('error');
 		expect(settled?.error).toContain('not running');
+	});
+});
+
+describe('a run that answered while its background work kept claude up', () => {
+	// What `claude -p` streams when Claude answers with a dev server it started still running: the
+	// result lands, then nothing, while the process waits on the server for up to its time limit.
+	const answer = { summary: 'dev server started on 18080' };
+	const answered =
+		line({ type: 'system', subtype: 'init', session_id: 'sess-bg' }) +
+		line({
+			type: 'assistant',
+			message: {
+				content: [
+					{
+						type: 'tool_use',
+						name: 'Bash',
+						input: { command: 'python3 -m http.server 18080', run_in_background: true }
+					}
+				]
+			}
+		}) +
+		line({
+			type: 'system',
+			subtype: 'background_tasks_changed',
+			tasks: [{ task_id: 'b1', task_type: 'local_bash', description: 'dev server' }]
+		}) +
+		line({
+			type: 'assistant',
+			message: { content: [{ type: 'tool_use', name: 'StructuredOutput', input: answer }] }
+		}) +
+		line({
+			type: 'result',
+			subtype: 'success',
+			is_error: false,
+			terminal_reason: 'completed',
+			result: JSON.stringify(answer),
+			structured_output: answer,
+			num_turns: 10,
+			total_cost_usd: 0.3,
+			duration_ms: 9000
+		});
+
+	/** The mirror's mtime is how long the run has been silent. */
+	function silentFor(runId: string, ms: number) {
+		const at = (Date.now() - ms) / 1000;
+		utimesSync(runMirrorPath(runId), at, at);
+	}
+
+	test('settles as done with its answer once it has sat silent long enough', async () => {
+		const calls = fakeDocker([pollReply({ stream: answered }), pollReply({}), pollReply({})]);
+		const inst = seed();
+		created.push(inst.id);
+		const run = startRun(inst, 'start the dev server', { jsonSchema: '{"type":"object"}' });
+		await pollRunNow(run.id); // launches
+		await pollRunNow(run.id); // the result arrives; claude stays up
+
+		// Answering is not finishing: a task notification can still start another turn.
+		expect((await pollRunNow(run.id))?.status).toBe('running');
+		expect(calls.map(scriptOf).some((s) => s.includes('kill -INT'))).toBe(false);
+
+		silentFor(run.id, 11 * 60_000);
+		const done = await pollRunNow(run.id);
+		expect(done?.status).toBe('done');
+		expect(done?.is_error).toBe(0);
+		expect(done?.error).toBeNull();
+		expect(done?.exit_code).toBeNull();
+		expect(runDetail(done!).structured_output).toEqual(answer);
+		expect(done?.result).toBe(JSON.stringify(answer));
+		expect(done?.num_turns).toBe(10);
+		expect(done?.finished_at).not.toBeNull();
+		expect(openRunFor(inst.id)).toBeNull();
+		// The process holding the background work is put down, not left beside the next run.
+		expect(calls.map(scriptOf).some((s) => s.includes('kill -INT'))).toBe(true);
+		rmSync(runMirrorPath(run.id), { force: true });
+	});
+
+	test('waits out a turn that follows the answer, and reports the final one', async () => {
+		// The background work finished and Claude answered again; that second answer is the run's.
+		const revised = { summary: 'dev server started; checks pass' };
+		const followUp =
+			line({ type: 'system', subtype: 'task_notification', status: 'completed' }) +
+			line({
+				type: 'assistant',
+				message: { content: [{ type: 'tool_use', name: 'StructuredOutput', input: revised }] }
+			});
+		fakeDocker([
+			pollReply({ stream: answered + followUp }),
+			pollReply({}),
+			pollReply({
+				exit: '0',
+				alive: '0',
+				stream: line({
+					type: 'result',
+					subtype: 'success',
+					is_error: false,
+					result: JSON.stringify(revised),
+					structured_output: revised,
+					num_turns: 12
+				})
+			})
+		]);
+		const inst = seed();
+		created.push(inst.id);
+		const run = startRun(inst, 'go', { jsonSchema: '{"type":"object"}' });
+		await pollRunNow(run.id);
+		await pollRunNow(run.id);
+
+		silentFor(run.id, 11 * 60_000);
+		expect((await pollRunNow(run.id))?.status).toBe('running');
+
+		const done = await pollRunNow(run.id);
+		expect(done?.status).toBe('done');
+		expect(done?.exit_code).toBe(0);
+		expect(runDetail(done!).structured_output).toEqual(revised);
+		rmSync(runMirrorPath(run.id), { force: true });
+	});
+
+	test('a stop keeps the answer it had already delivered', async () => {
+		fakeDocker([pollReply({ stream: answered })]);
+		const inst = seed();
+		created.push(inst.id);
+		const run = startRun(inst, 'go', { jsonSchema: '{"type":"object"}' });
+		await pollRunNow(run.id);
+		await pollRunNow(run.id);
+
+		const stopped = await stopRun(run.id);
+		expect(stopped.status).toBe('cancelled');
+		expect(stopped.error).toBe('cancelled by the caller');
+		expect(stopped.result).toBe(JSON.stringify(answer));
+		expect(runDetail(stopped).structured_output).toEqual(answer);
+		rmSync(runMirrorPath(run.id), { force: true });
 	});
 });
 
