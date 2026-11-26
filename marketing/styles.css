@@ -322,6 +322,9 @@ h1.headline {
 	color: #c2410c;
 }
 .hero-rotator .word:nth-child(2) {
+	color: #2563eb;
+}
+.hero-rotator .word:nth-child(3) {
 	color: var(--ok-line);
 }
 .soon-badge {

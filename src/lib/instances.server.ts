@@ -65,6 +65,9 @@ import { resolveInjectionStages } from './injections.server.ts';
 import { cloneRepo, readGitBranch } from './git.server.ts';
 import { isRepoUrl, parseRepoUrl } from './repo-url.ts';
 import { getClaudePermissionMode } from '../container-injections/claude-permission-mode.ts';
+import { getAntigravityPermissionMode } from '../container-injections/antigravity-config.ts';
+import { configuredGeminiApiKey } from '../container-injections/antigravity-credentials.ts';
+import { antigravityEnabled, getDefaultAgent } from './host-antigravity.server.ts';
 import {
 	customEnvVarsConfig,
 	customEnvVarValues
@@ -152,7 +155,8 @@ let secretValuesCache: string[] | null = null;
 
 function getSecretValues(): string[] {
 	if (secretValuesCache === null) {
-		secretValuesCache = customEnvVarValues()
+		const geminiKey = configuredGeminiApiKey();
+		secretValuesCache = [...customEnvVarValues(), ...(geminiKey ? [geminiKey] : [])]
 			.filter((v) => v.length >= 4)
 			.sort((a, b) => b.length - a.length);
 	}
@@ -520,7 +524,12 @@ async function provision(row: InstanceRow, opts: { noCache?: boolean } = {}): Pr
 			row.mode,
 			getClaudePermissionMode(),
 			customEnvVarsConfig()?.vars ?? [],
-			mirrorDir
+			mirrorDir,
+			{
+				enabled: antigravityEnabled(),
+				defaultAgent: getDefaultAgent(),
+				permissionMode: getAntigravityPermissionMode()
+			}
 		);
 		updateInstance(row.id, { image_source: imageSource });
 

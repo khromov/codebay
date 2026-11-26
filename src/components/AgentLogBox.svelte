@@ -9,10 +9,11 @@
 	import { untrack } from 'svelte';
 	import { apiFetch } from '../api.ts';
 	import type { RunTimelineEntry } from '../lib/agent-run-stream.ts';
-	import type { AgentRunStatus } from '../types.ts';
+	import type { AgentProvider, AgentRunStatus } from '../types.ts';
 
 	interface AgentRun {
 		id: string;
+		provider?: AgentProvider;
 		status: AgentRunStatus;
 		prompt: string;
 		/** The id Claude reported once it started; null until then. */
@@ -111,7 +112,8 @@
 		if (run.model && run.requested_model && run.model !== run.requested_model) {
 			return `Requested as ${run.requested_model}`;
 		}
-		return run.model ? undefined : 'Requested; Claude has not reported the model it is using yet';
+		const agent = run.provider === 'antigravity' ? 'Antigravity' : 'Claude';
+		return run.model ? undefined : `Requested; ${agent} has not reported the model it is using yet`;
 	}
 
 	/** A resumed run reports the session it continued, so the two ids match and one short form labels both. */
@@ -174,6 +176,9 @@
 						{#if isLive(run)}<span class="pulse"></span>{/if}
 						{run.status}
 					</span>
+					{#if run.provider === 'antigravity'}
+						<span class="provider" title="Antigravity CLI (agy)">agy</span>
+					{/if}
 					{#if modelOf(run)}
 						<span class="model" title={modelTitle(run)}>{modelOf(run)}</span>
 					{/if}
@@ -301,12 +306,19 @@
 	}
 	.when,
 	.status,
+	.provider,
 	.model,
 	.session,
 	.run-meta,
 	.peek {
 		font-family: var(--font-mono);
 		font-size: 11px;
+	}
+	.provider {
+		flex: none;
+		border: 1px solid var(--rule);
+		padding: 0 4px;
+		color: var(--ink-soft);
 	}
 	.session {
 		flex: none;

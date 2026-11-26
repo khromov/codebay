@@ -558,4 +558,45 @@ describe('the effort level a calling model sees and gets', () => {
 		});
 		expect((pinned.payload as { run?: { effort: string } }).run!.effort).toBe('low');
 	});
+
+	test('run_agent exposes provider parameter and supports Antigravity when enabled', async () => {
+		try {
+			const offTools = await listedTools();
+			expect(offTools.run_agent!.inputSchema.properties.provider).toMatchObject({
+				enum: ['claude', 'antigravity']
+			});
+			expect(offTools.run_agent!.inputSchema.properties.provider!.description).toContain(
+				'Antigravity is currently disabled'
+			);
+
+			fakeDocker();
+			const headers = await session();
+			const row = seed();
+			const refused = await callTool(headers, 'run_agent', {
+				sandbox_id: row.id,
+				prompt: 'hi',
+				provider: 'antigravity'
+			});
+			expect(refused.error).toContain('Antigravity is not enabled');
+
+			setOption('antigravity_enabled', '1');
+			setOption('default_agent', 'antigravity');
+			const onTools = await listedTools();
+			expect(onTools.run_agent!.inputSchema.properties.provider!.description).toContain(
+				'currently antigravity'
+			);
+
+			const started = await callTool(headers, 'run_agent', {
+				sandbox_id: row.id,
+				prompt: 'hi'
+			});
+			expect(started.error).toBeNull();
+			const run = (started.payload as { run?: { run_id: string; provider: string } }).run!;
+			expect(run.provider).toBe('antigravity');
+			await callTool(headers, 'stop_run', { run_id: run.run_id });
+		} finally {
+			setOption('antigravity_enabled', '0');
+			setOption('default_agent', 'claude');
+		}
+	});
 });

@@ -26,6 +26,7 @@ import {
 	pollRunNow,
 	runDetail,
 	runMirrorPath,
+	runTimeline,
 	startRun,
 	stopRun
 } from './agent-runs.server.ts';
@@ -711,4 +712,193 @@ describe('stopRun', () => {
 
 test('run mirrors live in the shared logs dir, so they outlive the sandbox', () => {
 	expect(runMirrorPath('abc')).toBe(join(LOGS_DIR, 'run-abc.jsonl'));
+});
+
+describe('Antigravity (-p) runs', () => {
+	afterEach(() => {
+		setOption('antigravity_enabled', '0');
+		setOption('default_agent', 'claude');
+		setOption('antigravity_effort_level', 'default');
+		setOption('antigravity_model', '');
+	});
+
+	test('rejects provider=antigravity while Antigravity is disabled in Settings', () => {
+		fakeDocker();
+		const inst = seed();
+		created.push(inst.id);
+		expect(() => startRun(inst, 'hello', { provider: 'antigravity' })).toThrow(
+			/Antigravity is not enabled/
+		);
+	});
+
+	test('validates provider-specific options (maxTurns for agy, accept-edits for claude)', () => {
+		setOption('antigravity_enabled', '1');
+		fakeDocker();
+		const inst = seed();
+		created.push(inst.id);
+		expect(() => startRun(inst, 'hello', { provider: 'antigravity', maxTurns: 3 })).toThrow(
+			/max_turns is only supported for Claude/
+		);
+		expect(() =>
+			startRun(inst, 'hello', { provider: 'claude', permissionMode: 'accept-edits' })
+		).toThrow(/accept-edits/);
+	});
+
+	test('stages agy -p with stream-json, no guardrails by default, conversation resume, and schema path', async () => {
+		setOption('antigravity_enabled', '1');
+		setOption('antigravity_effort_level', 'high');
+		const calls = fakeDocker();
+		const inst = seed();
+		created.push(inst.id);
+
+		const run = startRun(inst, 'fix the bug', {
+			provider: 'antigravity',
+			resumeSessionId: 'conv-prev',
+			model: 'gemini-4-neon-xhigh',
+			jsonSchema: '{"type":"object"}'
+		});
+		expect(run.provider).toBe('antigravity');
+		await pollRunNow(run.id);
+
+		const runSh = calls.find((c) => stdinOf(c).includes('agy -p'))!;
+		const body = stdinOf(runSh);
+		expect(body).toContain('agy -p "$(cat "$d/prompt.txt")"');
+		expect(body).toContain('--output-format stream-json');
+		expect(body).toContain('--dangerously-skip-permissions');
+		expect(body).toContain("--conversation 'conv-prev'");
+		expect(body).toContain("--model 'gemini-4-neon-xhigh'");
+		expect(body).toContain("--effort 'high'");
+		expect(body).toContain('--json-schema "$d/schema.json"');
+		expect(body).toContain('--settings "$d/settings.json"');
+		expect(body).not.toContain('--verbose');
+		expect(body).not.toContain('IS_SANDBOX=1');
+
+		const settings = calls.find((c) => stdinOf(c).includes('"toolPermission"'))!;
+		expect(JSON.parse(stdinOf(settings)).toolPermission).toBe('always-proceed');
+	});
+
+	test('a manual run stages request-review settings instead of inheriting the container mode', async () => {
+		setOption('antigravity_enabled', '1');
+		const calls = fakeDocker();
+		const inst = seed();
+		created.push(inst.id);
+
+		const run = startRun(inst, 'look around', {
+			provider: 'antigravity',
+			permissionMode: 'manual'
+		});
+		await pollRunNow(run.id);
+
+		const body = stdinOf(calls.find((c) => stdinOf(c).includes('agy -p'))!);
+		expect(body).toContain('--settings "$d/settings.json"');
+		expect(body).not.toContain('--dangerously-skip-permissions');
+		const settings = calls.find((c) => stdinOf(c).includes('"toolPermission"'))!;
+		expect(JSON.parse(stdinOf(settings)).toolPermission).toBe('request-review');
+	});
+
+	test('a resume without provider keeps the provider that created the session', () => {
+		setOption('antigravity_enabled', '1');
+		fakeDocker();
+		const inst = seed();
+		created.push(inst.id);
+
+		const first = startRun(inst, 'start', { provider: 'claude' });
+		updateRun(first.id, { status: 'done', session_id: 'sess-claude' });
+		setOption('default_agent', 'antigravity');
+
+		const resumed = startRun(inst, 'continue', { resumeSessionId: 'sess-claude' });
+		expect(resumed.provider).toBe('claude');
+		updateRun(resumed.id, { status: 'done' });
+
+		expect(startRun(inst, 'fresh', {}).provider).toBe('antigravity');
+	});
+
+	test('polls Antigravity stream-json events into the run row and Agent log timeline', async () => {
+		setOption('antigravity_enabled', '1');
+		const stream =
+			line({
+				event: 'init',
+				conversation_id: 'conv-42',
+				init: { model: 'gemini-4-neon-xhigh', permission_mode: 'always-proceed' }
+			}) +
+			line({
+				event: 'step_update',
+				step_update: {
+					conversation_id: 'conv-42',
+					step_index: 1,
+					state: 'DONE',
+					step_type: 'tool',
+					tool_name: 'run_command',
+					tool_info: { name: 'run_command', parameters: { CommandLine: 'bun test' } }
+				}
+			});
+		fakeDocker([
+			pollReply({ stream, alive: '1' }),
+			pollReply({
+				exit: '0',
+				alive: '0',
+				stream: line({
+					event: 'result',
+					result: {
+						conversation_id: 'conv-42',
+						status: 'SUCCESS',
+						response: 'Fixed.\n',
+						structured_output: { fixed: true },
+						duration_seconds: 2.5,
+						num_turns: 2
+					}
+				})
+			})
+		]);
+		const inst = seed();
+		created.push(inst.id);
+		const run = startRun(inst, 'go', { provider: 'antigravity' });
+
+		await pollRunNow(run.id);
+		const mid = await pollRunNow(run.id);
+		expect(mid?.session_id).toBe('conv-42');
+		expect(mid?.model).toBe('gemini-4-neon-xhigh');
+		expect(mid?.last_activity).toBe('run_command(bun test)');
+
+		const done = await pollRunNow(run.id);
+		expect(done?.status).toBe('done');
+		expect(done?.result).toBe('Fixed.');
+		expect(done?.duration_ms).toBe(2500);
+		expect(done?.num_turns).toBe(2);
+		expect(runDetail(done!).provider).toBe('antigravity');
+		expect(runDetail(done!).structured_output).toEqual({ fixed: true });
+		expect(runTimeline(run.id)).toEqual([
+			{ kind: 'tool', name: 'run_command', text: 'bun test' },
+			{ kind: 'result', text: 'Fixed.', isError: false }
+		]);
+		rmSync(runMirrorPath(run.id), { force: true });
+	});
+
+	test('a schema run that ends on prose fails as structured_output_failed, keeping the answer', async () => {
+		setOption('antigravity_enabled', '1');
+		fakeDocker([
+			pollReply({
+				exit: '0',
+				alive: '0',
+				stream: line({
+					event: 'result',
+					result: { conversation_id: 'conv-7', status: 'SUCCESS', response: 'It is fixed.\n' }
+				})
+			})
+		]);
+		const inst = seed();
+		created.push(inst.id);
+		const run = startRun(inst, 'go', {
+			provider: 'antigravity',
+			jsonSchema: '{"type":"object","properties":{"fixed":{"type":"boolean"}}}'
+		});
+
+		await pollRunNow(run.id);
+		const done = await pollRunNow(run.id);
+		expect(done?.status).toBe('error');
+		expect(done?.error).toBe('structured_output_failed');
+		expect(done?.result).toBe('It is fixed.');
+		expect(runDetail(done!).structured_output).toBeNull();
+		rmSync(runMirrorPath(run.id), { force: true });
+	});
 });

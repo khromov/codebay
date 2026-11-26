@@ -43,8 +43,16 @@ import {
 import { currentHealthSnapshots } from '../lib/health.server.ts';
 import { proxyPathFor } from '../lib/proxy.server.ts';
 import { PUBLIC_ORIGIN } from '../lib/config.server.ts';
-import { CLAUDE_EFFORT_LEVELS, CLAUDE_PERMISSION_MODES, normalizeMode } from '../types.ts';
+import {
+	AGENT_PROVIDERS,
+	ANTIGRAVITY_PERMISSION_MODES,
+	CLAUDE_EFFORT_LEVELS,
+	normalizeMode,
+	type AgentProvider
+} from '../types.ts';
 import { describeDefaultEffort } from '../container-injections/claude-effort-level.ts';
+import { describeAntigravityDefaultEffort } from '../container-injections/antigravity-config.ts';
+import { antigravityEnabled, getDefaultAgent } from '../lib/host-antigravity.server.ts';
 
 /** Long-polling `get_run` past this would start tripping MCP clients' own request timeouts. */
 const MAX_WAIT_SECONDS = 60;
@@ -137,30 +145,44 @@ function liveDescription<T>(text: () => string) {
 	return action;
 }
 
+/** Each provider resolves its own default effort, so name both once Antigravity runs are possible. */
+const describeEffortDefaults = () =>
+	antigravityEnabled()
+		? `Claude: ${describeDefaultEffort()}; Antigravity: ${describeAntigravityDefaultEffort()}`
+		: describeDefaultEffort();
+
 /** Exported for the descriptor test, which asserts the exact text a calling model reads. */
 export const effortParamDescription = () =>
 	`Reasoning effort for this run. Omit to use the configured default (currently ` +
-	`${describeDefaultEffort()}). Callers should normally omit it; pass a level only when the user ` +
+	`${describeEffortDefaults()}). Callers should normally omit it; pass a level only when the user ` +
 	`explicitly asks for a different effort, since any value here overrides theirs.`;
 
 /** Appended to the descriptions of the tools that start a run. */
 export const effortToolNote = () =>
 	` Leave \`effort\` unset to run at the user's configured effort (currently ` +
-	`${describeDefaultEffort()}).`;
+	`${describeEffortDefaults()}).`;
+
+export const providerParamDescription = () =>
+	antigravityEnabled()
+		? `Which agent CLI to run ("claude" or "antigravity"). Omit to use the configured default (currently ${getDefaultAgent()}).`
+		: 'Which agent CLI to run ("claude" or "antigravity"). Omit to use Claude (Antigravity is currently disabled in Settings).';
 
 const runOptions = {
+	provider: v.optional(
+		v.pipe(v.picklist(AGENT_PROVIDERS), liveDescription<AgentProvider>(providerParamDescription))
+	),
 	resume_session_id: v.optional(
 		v.pipe(
 			v.string(),
-			v.description('Continue a previous run’s Claude session instead of starting fresh.')
+			v.description('Continue a previous run’s agent session instead of starting fresh.')
 		)
 	),
 	model: v.optional(
 		v.pipe(
 			v.string(),
 			v.description(
-				'Model alias or id, e.g. "sonnet". Omit for the sandbox default. The run reports the id ' +
-					'Claude actually used as `model` once it starts.'
+				'Model alias, slug, or id (e.g. "sonnet" for Claude or "gemini-4-neon-xhigh" for Antigravity). ' +
+					'Omit for the sandbox default. The run reports the model actually used once it starts.'
 			)
 		)
 	),
@@ -170,23 +192,30 @@ const runOptions = {
 			liveDescription<(typeof CLAUDE_EFFORT_LEVELS)[number]>(effortParamDescription)
 		)
 	),
-	max_turns: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+	max_turns: v.optional(
+		v.pipe(
+			v.number(),
+			v.integer(),
+			v.minValue(1),
+			v.description('Maximum agent turns (Claude runs only).')
+		)
+	),
 	json_schema: v.optional(
 		v.pipe(
 			v.string(),
 			v.description(
 				'A JSON Schema (as a string). When set, the run’s structured_output matches it. If no ' +
 					'payload ever validates the run fails with error "structured_output_failed", and its ' +
-					'result holds Claude’s plain-text answer with rejected_structured_output the last ' +
-					'payload the schema refused.'
+					'result holds the agent’s plain-text answer; for Claude runs, rejected_structured_output ' +
+					'holds the last payload the schema refused (Antigravity reports none).'
 			)
 		)
 	),
 	permission_mode: v.optional(
 		v.pipe(
-			v.picklist(CLAUDE_PERMISSION_MODES),
+			v.picklist(ANTIGRAVITY_PERMISSION_MODES),
 			v.description(
-				'Tightens what Claude may do. Omit for full autonomy, which is the default for MCP runs.'
+				'Tightens what the agent may do ("accept-edits" is Antigravity-only). Omit for full autonomy, which is the default for MCP runs.'
 			)
 		)
 	),
@@ -208,6 +237,7 @@ const promptSchema = (description: string) =>
 
 function toStartOptions(input: RunOptionInput) {
 	return {
+		provider: input.provider,
 		resumeSessionId: input.resume_session_id,
 		model: input.model,
 		maxTurns: input.max_turns,
@@ -453,15 +483,15 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			name: 'run_agent',
 			get description() {
 				return (
-					'Run Claude Code non-interactively against the sandbox and return a run handle. The run ' +
-					'continues in the background; poll get_run for progress and the final result. Only one ' +
-					'run at a time per sandbox.' +
+					'Run an agent CLI (Claude Code or Antigravity when enabled) non-interactively against ' +
+					'the sandbox and return a run handle. The run continues in the background; poll get_run ' +
+					'for progress and the final result. Only one run at a time per sandbox.' +
 					effortToolNote()
 				);
 			},
 			schema: v.object({
 				sandbox_id: sandboxId,
-				prompt: promptSchema('What Claude should do.'),
+				prompt: promptSchema('What the agent should do.'),
 				...runOptions
 			})
 		},
@@ -477,7 +507,7 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			description:
 				'Status and result of an agent run. While it is still going you get the live session id, ' +
 				'model, turn count, cost and what Claude is doing right now. Set wait_seconds to block until it ' +
-				'finishes instead of polling. A run whose agent has answered but left background work going ' +
+				'finishes instead of polling. A Claude run that has answered but left background work going ' +
 				'(a dev server, a background command) stays running while Claude Code waits on it, and ' +
 				'settles as done with that answer after ten minutes without further activity.',
 			schema: v.object({

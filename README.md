@@ -25,6 +25,8 @@ The UI opens at `http://localhost:6969`. State (SQLite DB + per-instance workspa
 - `BASIC_AUTH_PASSWORD` — enables HTTP Basic Auth over the whole UI (disabled when unset); required if you bind beyond loopback with `HOST=0.0.0.0`
 - `CODEBAY_CLAUDE_CODE_TOKEN` — Claude Code token to inject into every container (e.g. from `claude setup-token`) instead of discovering the host's credentials
 - `CODEBAY_GITHUB_TOKEN` — GitHub token to inject instead of reading `gh auth token` from the host
+- `CODEBAY_GEMINI_API_KEY` — Gemini API key for Antigravity (`agy`), used instead of the host's `agy` sign-in when Antigravity is enabled in Settings. A key saved in Settings wins over this. Without either, codebay falls back to the host's OAuth token, then to a host `GEMINI_API_KEY`; `GOOGLE_GEMINI_BASE_URL` on the host sets a custom endpoint. In the Docker image there's no keychain or `~/.gemini` to read, so this (or Settings) is the way to sign Antigravity in
+- `CODEBAY_ANTIGRAVITY_KEYCHAIN_SERVICE` / `CODEBAY_ANTIGRAVITY_KEYCHAIN_ACCOUNT` — keychain entry codebay reads the host's `agy` OAuth token from (default `gemini` / `antigravity`)
 - `DISABLE_OPEN_BROWSER=1` — skip opening the browser on startup
 
 ## MCP server

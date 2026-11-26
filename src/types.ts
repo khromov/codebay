@@ -35,10 +35,23 @@ export interface Instance {
 
 export type AgentRunStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
 
+/** Agent CLI provider that can be launched interactively or driven via MCP `-p` runs. */
+export type AgentProvider = 'claude' | 'antigravity';
+
+export const AGENT_PROVIDERS: AgentProvider[] = ['claude', 'antigravity'];
+
+export const isAgentProvider = (value: unknown): value is AgentProvider =>
+	AGENT_PROVIDERS.includes(value as AgentProvider);
+
+export function normalizeAgentProvider(value: unknown): AgentProvider {
+	return isAgentProvider(value) ? value : 'claude';
+}
+
 /** The slice of an agent run the dashboard renders; the prompt and result never ride the stream. */
 export interface AgentRunSummary {
 	id: string;
 	instance_id: string;
+	provider?: AgentProvider;
 	status: AgentRunStatus;
 	last_activity: string | null;
 	started_at: number | null;
@@ -74,6 +87,30 @@ export function normalizePermissionMode(value: unknown): ClaudePermissionMode {
 /** The flags every managed `claude` invocation carries — the launchers and the shell alias share them. */
 export function claudePermissionFlags(mode: ClaudePermissionMode): string {
 	return mode === 'default' ? '--dangerously-skip-permissions' : `--permission-mode ${mode}`;
+}
+
+/** The permission mode Antigravity starts in. `'default'` disables guardrails inside throwaway containers. */
+export type AntigravityPermissionMode = 'default' | 'manual' | 'accept-edits' | 'auto' | 'plan';
+
+export const ANTIGRAVITY_PERMISSION_MODES: AntigravityPermissionMode[] = [
+	'default',
+	'manual',
+	'accept-edits',
+	'auto',
+	'plan'
+];
+
+export function normalizeAntigravityPermissionMode(value: unknown): AntigravityPermissionMode {
+	return ANTIGRAVITY_PERMISSION_MODES.includes(value as AntigravityPermissionMode)
+		? (value as AntigravityPermissionMode)
+		: 'default';
+}
+
+/** CLI flags shared by the launchers, shell alias, and `-p` runs; `'manual'` leaves guardrails to `settings.json`. */
+export function antigravityPermissionFlags(mode: AntigravityPermissionMode): string {
+	if (mode === 'default') return '--dangerously-skip-permissions';
+	if (mode === 'manual') return '';
+	return `--mode=${mode}`;
 }
 
 /** A Claude Code reasoning-effort level, as `--effort` and `settings.json` spell it. */

@@ -43,14 +43,22 @@
 	import Avatar from './Avatar.svelte';
 	import { avatars, findAvatar, type AvatarArt } from '../avatars/index.ts';
 	import {
+		AGENT_PROVIDERS,
+		ANTIGRAVITY_PERMISSION_MODES,
 		CLAUDE_PERMISSION_MODES,
 		CLAUDE_EFFORT_SETTINGS,
 		CLAUDE_OUTPUT_STYLES,
+		type AgentProvider,
+		type AntigravityPermissionMode,
 		type ClaudePermissionMode,
 		type ClaudeEffortSetting,
 		type ClaudeOutputStyle,
 		type InstanceMode
 	} from '../types.ts';
+	import Bot from '@lucide/svelte/icons/bot';
+	import Asterisk from '@lucide/svelte/icons/asterisk';
+	import Orbit from '@lucide/svelte/icons/orbit';
+	import Globe from '@lucide/svelte/icons/globe';
 	import Terminal from '@lucide/svelte/icons/terminal';
 	import LayoutTemplate from '@lucide/svelte/icons/layout-template';
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
@@ -68,6 +76,14 @@
 		claudePermissionMode,
 		claudeEffortLevel,
 		claudeOutputStyle,
+		antigravityEnabled,
+		defaultAgent,
+		antigravityPermissionMode,
+		antigravityEffortLevel,
+		antigravityModel,
+		antigravityConfigDir,
+		antigravityGeminiApiKeySet,
+		antigravityGeminiBaseUrl,
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
@@ -115,6 +131,14 @@
 		claudePermissionMode: ClaudePermissionMode;
 		claudeEffortLevel: ClaudeEffortSetting;
 		claudeOutputStyle: ClaudeOutputStyle;
+		antigravityEnabled: boolean;
+		defaultAgent: AgentProvider;
+		antigravityPermissionMode: AntigravityPermissionMode;
+		antigravityEffortLevel: ClaudeEffortSetting;
+		antigravityModel: string;
+		antigravityConfigDir: string;
+		antigravityGeminiApiKeySet: boolean;
+		antigravityGeminiBaseUrl: string;
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
@@ -352,6 +376,174 @@
 		outputStyleFormEl?.requestSubmit();
 	}
 
+	// Antigravity (agy) provider settings — opt-in, off by default.
+	// svelte-ignore state_referenced_locally
+	let antigravity = $state(antigravityEnabled);
+	let savingAntigravityToggle = $state(false);
+	let antigravityToggleError = $state<string | null>(null);
+	// Both agent boxes start collapsed; switching Antigravity off also closes its box.
+	let claudeOpen = $state(false);
+	let agyOpen = $state(false);
+
+	const antigravityToggleOpts = toggleOpts({
+		set: (v) => (antigravity = v),
+		setSaving: (v) => (savingAntigravityToggle = v),
+		setError: (v) => (antigravityToggleError = v)
+	});
+
+	// svelte-ignore state_referenced_locally
+	let agentChoice = $state<AgentProvider>(defaultAgent);
+	let savingAgent = $state(false);
+	let agentError = $state<string | null>(null);
+	let agentFormEl = $state<HTMLFormElement>();
+
+	const defaultAgentOpts = saveOpts<{ agent: AgentProvider }>({
+		setSaving: (v) => (savingAgent = v),
+		setError: (v) => (agentError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.agent) agentChoice = data.agent;
+		}
+	});
+
+	const AGENT_LABELS: Record<AgentProvider, string> = {
+		claude: 'Claude',
+		antigravity: 'Antigravity'
+	};
+
+	function chooseDefaultAgent(next: AgentProvider) {
+		if (next === agentChoice) return;
+		flushSync(() => (agentChoice = next));
+		agentFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let agyPermissionChoice = $state<AntigravityPermissionMode>(antigravityPermissionMode);
+	let savingAgyPermission = $state(false);
+	let agyPermissionError = $state<string | null>(null);
+	let agyPermissionFormEl = $state<HTMLFormElement>();
+
+	const agyPermissionModeOpts = saveOpts<{ mode: AntigravityPermissionMode }>({
+		setSaving: (v) => (savingAgyPermission = v),
+		setError: (v) => (agyPermissionError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.mode) agyPermissionChoice = data.mode;
+		}
+	});
+
+	const AGY_PERMISSION_LABELS: Record<AntigravityPermissionMode, string> = {
+		default: 'Default',
+		manual: 'Manual',
+		'accept-edits': 'Edits',
+		auto: 'Auto',
+		plan: 'Plan'
+	};
+
+	function chooseAgyPermissionMode(next: AntigravityPermissionMode) {
+		if (next === agyPermissionChoice) return;
+		flushSync(() => (agyPermissionChoice = next));
+		agyPermissionFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let agyEffortChoice = $state<ClaudeEffortSetting>(antigravityEffortLevel);
+	let savingAgyEffort = $state(false);
+	let agyEffortError = $state<string | null>(null);
+	let agyEffortFormEl = $state<HTMLFormElement>();
+
+	const agyEffortLevelOpts = saveOpts<{ level: ClaudeEffortSetting }>({
+		setSaving: (v) => (savingAgyEffort = v),
+		setError: (v) => (agyEffortError = v),
+		setMsg: () => {},
+		onSuccess: (data) => {
+			if (data?.level) agyEffortChoice = data.level;
+		}
+	});
+
+	function chooseAgyEffort(next: ClaudeEffortSetting) {
+		if (next === agyEffortChoice) return;
+		flushSync(() => (agyEffortChoice = next));
+		agyEffortFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let agyModel = $state(antigravityModel);
+	let savingAgyModel = $state(false);
+	let agyModelError = $state<string | null>(null);
+	let agyModelSaved = $state(false);
+	let agyModelFormEl = $state<HTMLFormElement>();
+
+	const agyModelOpts = saveOpts<{ model: string }>({
+		setSaving: (v) => (savingAgyModel = v),
+		setError: (v) => (agyModelError = v),
+		setMsg: (v) => (agyModelSaved = !!v),
+		onSuccess: (data) => {
+			agyModel = data?.model ?? agyModel;
+			agyModelSaved = true;
+		}
+	});
+
+	function resetAgyModel() {
+		flushSync(() => (agyModel = ''));
+		agyModelFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let agyDir = $state(antigravityConfigDir);
+	let savingAgyDir = $state(false);
+	let agyDirError = $state<string | null>(null);
+	let agyDirSaved = $state(false);
+	let agyDirFormEl = $state<HTMLFormElement>();
+
+	const agyDirOpts = saveOpts<{ dir: string }>({
+		setSaving: (v) => (savingAgyDir = v),
+		setError: (v) => (agyDirError = v),
+		setMsg: (v) => (agyDirSaved = !!v),
+		onSuccess: (data) => {
+			agyDir = data?.dir ?? agyDir;
+			agyDirSaved = true;
+		}
+	});
+
+	function resetAgyDir() {
+		flushSync(() => (agyDir = ''));
+		agyDirFormEl?.requestSubmit();
+	}
+
+	// svelte-ignore state_referenced_locally
+	let agyApiKeySaved = $state(antigravityGeminiApiKeySet);
+	let agyApiKey = $state('');
+	let savingAgyApiKey = $state(false);
+	let agyApiKeyMsg = $state<string | null>(null);
+	let agyApiKeyError = $state<string | null>(null);
+
+	const agyApiKeyOpts = saveOpts<{ set: boolean }>({
+		setSaving: (v) => (savingAgyApiKey = v),
+		setError: (v) => (agyApiKeyError = v),
+		setMsg: (v) => (agyApiKeyMsg = v),
+		onSuccess: (data) => {
+			agyApiKeySaved = data?.set ?? false;
+			agyApiKey = '';
+			agyApiKeyMsg = agyApiKeySaved ? 'Saved.' : 'Cleared.';
+		}
+	});
+
+	// svelte-ignore state_referenced_locally
+	let agyBaseUrl = $state(antigravityGeminiBaseUrl);
+	let savingAgyBaseUrl = $state(false);
+	let agyBaseUrlMsg = $state<string | null>(null);
+	let agyBaseUrlError = $state<string | null>(null);
+
+	const agyBaseUrlOpts = saveOpts<{ set: boolean }>({
+		setSaving: (v) => (savingAgyBaseUrl = v),
+		setError: (v) => (agyBaseUrlError = v),
+		setMsg: (v) => (agyBaseUrlMsg = v),
+		onSuccess: (data) => {
+			agyBaseUrlMsg = data?.set ? 'Saved.' : 'Cleared.';
+		}
+	});
+
 	// svelte-ignore state_referenced_locally
 	let image = $state(defaultImage);
 	let savingImage = $state(false);
@@ -462,6 +654,11 @@
 
 	const mcpCommand = $derived(
 		`claude mcp add --transport http codebay ${mcpUrl} --header "Authorization: Bearer ${mcpTokenValue}"`
+	);
+
+	// `agy mcp add` requires flags before `<name>`, unlike `claude mcp add`.
+	const agyMcpCommand = $derived(
+		`agy mcp add --header "Authorization: Bearer ${mcpTokenValue}" codebay ${mcpUrl}`
 	);
 
 	async function copyMcp(label: string, text: string) {
@@ -1011,6 +1208,945 @@
 		{/if}
 
 		<section class="card">
+			<div class="row">
+				<div class="label">
+					<Bot size={20} />
+					<div class="text">
+						<div class="name">Agents</div>
+						<div class="desc">
+							Which agent CLIs every new container gets. Each agent's settings are in its own box
+							below.
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="row divided locked">
+				<div class="label">
+					<Asterisk size={20} />
+					<div class="text">
+						<div class="name">Claude Code <span class="arch">Always on</span></div>
+						<div class="desc">
+							Installed and configured in every container. It can't be turned off.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input type="checkbox" checked disabled aria-label="Claude Code (always on)" />
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</div>
+			<form
+				class="row divided"
+				method="POST"
+				action="?/antigravityToggle"
+				{@attach enhance(antigravityToggleOpts)}
+			>
+				<div class="label">
+					<Orbit size={20} />
+					<div class="text">
+						<div class="name">Antigravity (agy)</div>
+						<div class="desc">
+							Install and configure Antigravity CLI alongside Claude Code in every new container,
+							transfer host credentials and model/effort settings, and enable Antigravity runs over
+							MCP. Off by default.
+						</div>
+					</div>
+				</div>
+				<label class="switch">
+					<input
+						type="checkbox"
+						name="enabled"
+						aria-label="Antigravity (agy)"
+						checked={antigravity}
+						disabled={savingAntigravityToggle}
+						onchange={(e) => {
+							antigravity = e.currentTarget.checked;
+							if (!antigravity) agyOpen = false;
+							e.currentTarget.form?.requestSubmit();
+						}}
+					/>
+					<span class="track"><span class="thumb"></span></span>
+				</label>
+			</form>
+			{#if antigravityToggleError}
+				<div class="sub"><div class="msg error">{antigravityToggleError}</div></div>
+			{/if}
+			{#if antigravity}
+				<form
+					class="row divided"
+					method="POST"
+					action="?/defaultAgent"
+					bind:this={agentFormEl}
+					{@attach enhance(defaultAgentOpts)}
+				>
+					<div class="label">
+						<Bot size={20} />
+						<div class="text">
+							<div class="name">Default agent</div>
+							<div class="desc">
+								Which CLI auto-launches in the IDE terminal and Terminal mode, and runs when an MCP
+								call omits <code>provider</code>. Applies on create and rebuild; MCP runs pick up a
+								change immediately.
+							</div>
+						</div>
+					</div>
+					<input type="hidden" name="agent" value={agentChoice} />
+					<div class="mode-toggle" role="group" aria-label="Default agent">
+						{#each AGENT_PROVIDERS as option (option)}
+							<button
+								type="button"
+								class="mode-btn"
+								class:active={agentChoice === option}
+								aria-pressed={agentChoice === option}
+								disabled={savingAgent}
+								onclick={() => chooseDefaultAgent(option)}
+							>
+								{AGENT_LABELS[option]}
+							</button>
+						{/each}
+					</div>
+				</form>
+				{#if agentError}
+					<div class="sub"><div class="msg error">{agentError}</div></div>
+				{/if}
+			{/if}
+		</section>
+
+		<section class="card">
+			<details class="collapsible" bind:open={claudeOpen}>
+				<summary>
+					<Asterisk size={20} />
+					<span class="name">Claude Code settings</span>
+					<span class="hint">permissions, effort, output style, models</span>
+				</summary>
+
+				<div class="setting">
+					<form
+						class="row"
+						method="POST"
+						action="?/claudePermissionMode"
+						bind:this={permissionFormEl}
+						{@attach enhance(permissionModeOpts)}
+					>
+						<div class="label">
+							<ShieldCheck size={20} />
+							<div class="text">
+								<div class="name">Claude permission mode</div>
+								<div class="desc">
+									The mode Claude Code starts in inside new instances. <strong>Default</strong>
+									runs
+									<code>--dangerously-skip-permissions</code>, which never prompts; the other three
+									pass
+									<code>--permission-mode</code> instead, because the skip flag overrides them. Applies
+									on create and rebuild, not to already-running instances.
+								</div>
+							</div>
+						</div>
+						<input type="hidden" name="mode" value={permissionChoice} />
+						<div class="mode-toggle" role="group" aria-label="Claude permission mode">
+							{#each CLAUDE_PERMISSION_MODES as option (option)}
+								<button
+									type="button"
+									class="mode-btn"
+									class:active={permissionChoice === option}
+									aria-pressed={permissionChoice === option}
+									disabled={savingPermission}
+									onclick={() => choosePermissionMode(option)}
+								>
+									{PERMISSION_LABELS[option]}
+								</button>
+							{/each}
+						</div>
+					</form>
+					{#if permissionError}
+						<div class="sub"><div class="msg error">{permissionError}</div></div>
+					{/if}
+				</div>
+
+				<div class="setting">
+					<form
+						class="row"
+						method="POST"
+						action="?/claudeEffortLevel"
+						bind:this={effortFormEl}
+						{@attach enhance(effortLevelOpts)}
+					>
+						<div class="label">
+							<Gauge size={20} />
+							<div class="text">
+								<div class="name">Claude effort level</div>
+								<div class="desc">
+									The reasoning effort Claude Code starts new sessions and MCP runs at inside
+									instances.
+									<b>Host</b> carries over the per-model levels from your own
+									<code>~/.claude/settings.json</code>; any other choice applies to every model.
+									Applies on create and rebuild; MCP runs pick up a change immediately.
+								</div>
+							</div>
+						</div>
+						<input type="hidden" name="level" value={effortChoice} />
+						<div class="mode-toggle" role="group" aria-label="Claude effort level">
+							{#each CLAUDE_EFFORT_SETTINGS as option (option)}
+								<button
+									type="button"
+									class="mode-btn"
+									class:active={effortChoice === option}
+									aria-pressed={effortChoice === option}
+									disabled={savingEffort}
+									onclick={() => chooseEffort(option)}
+								>
+									{EFFORT_LABELS[option]}
+								</button>
+							{/each}
+						</div>
+					</form>
+					{#if effortError}
+						<div class="sub"><div class="msg error">{effortError}</div></div>
+					{/if}
+				</div>
+
+				<div class="setting">
+					<form
+						class="row"
+						method="POST"
+						action="?/claudeOutputStyle"
+						bind:this={outputStyleFormEl}
+						{@attach enhance(outputStyleOpts)}
+					>
+						<div class="label">
+							<MessageSquare size={20} />
+							<div class="text">
+								<div class="name">Claude output style</div>
+								<div class="desc">
+									The output style Claude Code starts new sessions in, written to
+									<code>~/.claude/settings.json</code>. <strong>Default</strong> inherits your host
+									<code>~/.claude/settings.json</code> (including any custom styles);
+									<strong>None</strong>
+									forces it off. Applies on create and rebuild, not to already-running instances.
+								</div>
+							</div>
+						</div>
+						<input type="hidden" name="style" value={outputStyleChoice} />
+						<div class="mode-toggle" role="group" aria-label="Claude output style">
+							{#each CLAUDE_OUTPUT_STYLES as option (option)}
+								<button
+									type="button"
+									class="mode-btn"
+									class:active={outputStyleChoice === option}
+									aria-pressed={outputStyleChoice === option}
+									disabled={savingOutputStyle}
+									onclick={() => chooseOutputStyle(option)}
+								>
+									{OUTPUT_STYLE_LABELS[option]}
+								</button>
+							{/each}
+						</div>
+					</form>
+					{#if outputStyleError}
+						<div class="sub"><div class="msg error">{outputStyleError}</div></div>
+					{/if}
+				</div>
+
+				<div class="setting">
+					<form
+						class="row image-row"
+						method="POST"
+						action="?/claudeConfigDir"
+						bind:this={claudeDirFormEl}
+						{@attach enhance(claudeDirOpts)}
+					>
+						<div class="label">
+							<FolderCog size={20} />
+							<div class="text">
+								<div class="name">Claude config directory</div>
+								<div class="desc">
+									Host directory the Claude Code injections read from — credentials, statusLine,
+									output styles, and global skills / <code>CLAUDE.md</code>. Leave blank to use
+									<code>~/.claude</code>. Takes effect for instances created from now on.
+								</div>
+							</div>
+						</div>
+						<div class="image-controls">
+							<input
+								type="text"
+								name="dir"
+								class="image-input"
+								bind:value={claudeDir}
+								spellcheck="false"
+								autocapitalize="off"
+								autocorrect="off"
+								placeholder="~/.claude"
+							/>
+							<Button type="submit" disabled={savingClaudeDir}>Save</Button>
+							<Button
+								type="button"
+								icon={RotateCcw}
+								disabled={savingClaudeDir}
+								onclick={resetClaudeDir}
+								title="Reset to default (~/.claude)"
+								aria-label="Reset to default Claude config directory"
+							/>
+						</div>
+						{#if claudeDirError}
+							<div class="msg error">{claudeDirError}</div>
+						{:else if claudeDirSaved}
+							<div class="msg ok">Saved.</div>
+						{/if}
+					</form>
+				</div>
+
+				<div class="setting" class:disabled-card={litellmBlocker}>
+					<form
+						class="row"
+						method="POST"
+						action="?/customEndpointToggle"
+						{@attach enhance(customEndpointToggleOpts)}
+					>
+						<div class="label">
+							<KeyRound size={20} />
+							<div class="text">
+								<div class="name">
+									LiteLLM + Bedrock
+									{#if litellmBlocker}
+										<span class="arch" title="Disabled while {litellmBlocker} is on">
+											disabled
+										</span>
+									{/if}
+								</div>
+								<div class="desc">
+									{#if litellmBlocker}
+										Not available while "{litellmBlocker}" is enabled — these modes are mutually
+										incompatible.
+									{:else}
+										Route <code>claude</code> through a LiteLLM proxy fronting AWS Bedrock instead of
+										Anthropic's default API. When enabled, the Bedrock endpoint variables are injected
+										into every new container, host OAuth credentials are not used, and "Set tokens manually"
+										is disabled.
+									{/if}
+								</div>
+							</div>
+						</div>
+						<label class="switch">
+							<input
+								type="checkbox"
+								name="enabled"
+								checked={customEndpoint}
+								disabled={savingCustomToggle || !!litellmBlocker}
+								onchange={(e) => {
+									customEndpoint = e.currentTarget.checked;
+									e.currentTarget.form?.requestSubmit();
+								}}
+							/>
+							<span class="track"><span class="thumb"></span></span>
+						</label>
+					</form>
+					{#if customToggleError}
+						<div class="sub"><div class="msg error">{customToggleError}</div></div>
+					{/if}
+
+					{#if customEndpoint}
+						<form
+							class="row divided token-row"
+							method="POST"
+							action="?/customBaseUrl"
+							{@attach enhance(customBaseUrlOpts)}
+						>
+							<div class="label">
+								<div class="text">
+									<div class="name">Base URL</div>
+									<div class="desc">
+										The LiteLLM proxy endpoint, e.g.
+										<code>https://litellm.example.com/bedrock</code>. Passed as
+										<code>ANTHROPIC_BEDROCK_BASE_URL</code>.
+									</div>
+								</div>
+							</div>
+							<div class="image-controls">
+								<input
+									type="text"
+									name="baseUrl"
+									class="image-input"
+									bind:value={customBaseUrl}
+									spellcheck="false"
+									autocapitalize="off"
+									autocorrect="off"
+									autocomplete="off"
+									placeholder="https://litellm.example.com/bedrock"
+								/>
+								<Button type="submit" disabled={savingCustomBaseUrl}>Save</Button>
+							</div>
+							{#if customBaseUrlError}
+								<div class="msg error">{customBaseUrlError}</div>
+							{:else if customBaseUrlMsg}
+								<div class="msg ok">{customBaseUrlMsg}</div>
+							{/if}
+						</form>
+
+						<form
+							class="row divided token-row"
+							method="POST"
+							action="?/customToken"
+							{@attach enhance(customTokenOpts)}
+						>
+							<div class="label">
+								<div class="text">
+									<div class="name">Auth token</div>
+									<div class="desc">
+										Your LiteLLM API key. Passed as <code>ANTHROPIC_AUTH_TOKEN</code>. Leave blank
+										and Save to clear.
+									</div>
+								</div>
+							</div>
+							<div class="image-controls">
+								<input
+									type="password"
+									name="token"
+									class="image-input"
+									bind:value={customToken}
+									spellcheck="false"
+									autocapitalize="off"
+									autocorrect="off"
+									autocomplete="off"
+									placeholder={customTokenSaved ? '•••••••• (saved)' : 'sk-…'}
+								/>
+								<Button type="submit" disabled={savingCustomToken}>Save</Button>
+							</div>
+							{#if customTokenError}
+								<div class="msg error">{customTokenError}</div>
+							{:else if customTokenMsg}
+								<div class="msg ok">{customTokenMsg}</div>
+							{/if}
+						</form>
+
+						<form
+							class="row divided token-row"
+							method="POST"
+							action="?/customModels"
+							{@attach enhance(customModelsOpts)}
+						>
+							<div class="label">
+								<div class="text">
+									<div class="name">Model IDs</div>
+									<div class="desc">
+										Model aliases to use for each tier. Prefilled with defaults from the reference
+										launcher script. Leave a field as-is to keep its current value.
+									</div>
+								</div>
+							</div>
+							<div class="model-fields">
+								<label class="model-row">
+									<span class="model-label">Opus</span>
+									<input
+										type="text"
+										name="opusModel"
+										class="image-input"
+										bind:value={customOpusModel}
+										spellcheck="false"
+										autocapitalize="off"
+										autocorrect="off"
+										autocomplete="off"
+									/>
+								</label>
+								<label class="model-row">
+									<span class="model-label">Sonnet</span>
+									<input
+										type="text"
+										name="sonnetModel"
+										class="image-input"
+										bind:value={customSonnetModel}
+										spellcheck="false"
+										autocapitalize="off"
+										autocorrect="off"
+										autocomplete="off"
+									/>
+								</label>
+								<label class="model-row">
+									<span class="model-label">Haiku</span>
+									<input
+										type="text"
+										name="haikuModel"
+										class="image-input"
+										bind:value={customHaikuModel}
+										spellcheck="false"
+										autocapitalize="off"
+										autocorrect="off"
+										autocomplete="off"
+									/>
+								</label>
+								<label class="model-row">
+									<span class="model-label">Small/fast</span>
+									<input
+										type="text"
+										name="smallFastModel"
+										class="image-input"
+										bind:value={customSmallFastModel}
+										spellcheck="false"
+										autocapitalize="off"
+										autocorrect="off"
+										autocomplete="off"
+									/>
+								</label>
+								<label class="model-row">
+									<span class="model-label">Default</span>
+									<input
+										type="text"
+										name="defaultModel"
+										class="image-input"
+										bind:value={customDefaultModel}
+										spellcheck="false"
+										autocapitalize="off"
+										autocorrect="off"
+										autocomplete="off"
+									/>
+								</label>
+								<div class="model-save-row">
+									<Button type="submit" disabled={savingCustomModels}>Save models</Button>
+								</div>
+							</div>
+							{#if customModelsError}
+								<div class="msg error">{customModelsError}</div>
+							{:else if customModelsMsg}
+								<div class="msg ok">{customModelsMsg}</div>
+							{/if}
+						</form>
+					{/if}
+				</div>
+
+				<div class="setting" class:disabled-card={customEndpoint}>
+					<form
+						class="row"
+						method="POST"
+						action="?/manualModelToggle"
+						{@attach enhance(manualModelToggleOpts)}
+					>
+						<div class="label">
+							<Cpu size={18} />
+							<div class="text">
+								<div class="name">
+									Override models manually
+									{#if customEndpoint}
+										<span class="arch" title="Disabled while LiteLLM + Bedrock is on">
+											disabled
+										</span>
+									{/if}
+								</div>
+								<div class="desc">
+									{#if customEndpoint}
+										Not available while "LiteLLM + Bedrock" is enabled — these modes are mutually
+										incompatible.
+									{:else}
+										Pin which model <code>claude</code> uses on the standard (subscription) path.
+										Only the fields you fill are injected into new containers as
+										<code>ANTHROPIC_*_MODEL</code>
+										variables; blanks fall through to Claude Code's own defaults.
+									{/if}
+								</div>
+							</div>
+						</div>
+						<label class="switch">
+							<input
+								type="checkbox"
+								name="enabled"
+								checked={manualModelOverride}
+								disabled={savingManualModelToggle || customEndpoint}
+								onchange={(e) => {
+									manualModelOverride = e.currentTarget.checked;
+									e.currentTarget.form?.requestSubmit();
+								}}
+							/>
+							<span class="track"><span class="thumb"></span></span>
+						</label>
+					</form>
+					{#if manualModelToggleError}
+						<div class="sub"><div class="msg error">{manualModelToggleError}</div></div>
+					{/if}
+
+					{#if manualModelOverride}
+						<form
+							class="row divided token-row"
+							method="POST"
+							action="?/manualModels"
+							{@attach enhance(manualModelsOpts)}
+						>
+							<div class="label">
+								<div class="text">
+									<div class="name">Model IDs</div>
+									<div class="desc">
+										A model name or alias per tier, e.g. <code>opusplan</code>, <code>opus</code>,
+										<code>sonnet</code>, or a full
+										<code>claude-…</code> id. Leave a field blank to skip it.
+									</div>
+								</div>
+							</div>
+							<div class="model-fields">
+								<label class="model-row">
+									<span class="model-label">Opus</span>
+									<input
+										type="text"
+										name="opusModel"
+										class="image-input"
+										bind:value={manualOpus}
+										spellcheck="false"
+										autocapitalize="off"
+										autocorrect="off"
+										autocomplete="off"
+									/>
+								</label>
+								<label class="model-row">
+									<span class="model-label">Sonnet</span>
+									<input
+										type="text"
+										name="sonnetModel"
+										class="image-input"
+										bind:value={manualSonnet}
+										spellcheck="false"
+										autocapitalize="off"
+										autocorrect="off"
+										autocomplete="off"
+									/>
+								</label>
+								<label class="model-row">
+									<span class="model-label">Haiku</span>
+									<input
+										type="text"
+										name="haikuModel"
+										class="image-input"
+										bind:value={manualHaiku}
+										spellcheck="false"
+										autocapitalize="off"
+										autocorrect="off"
+										autocomplete="off"
+									/>
+								</label>
+								<label class="model-row">
+									<span class="model-label">Small/fast</span>
+									<input
+										type="text"
+										name="smallFastModel"
+										class="image-input"
+										bind:value={manualSmallFast}
+										spellcheck="false"
+										autocapitalize="off"
+										autocorrect="off"
+										autocomplete="off"
+									/>
+								</label>
+								<label class="model-row">
+									<span class="model-label">Default</span>
+									<input
+										type="text"
+										name="defaultModel"
+										class="image-input"
+										bind:value={manualDefault}
+										spellcheck="false"
+										autocapitalize="off"
+										autocorrect="off"
+										autocomplete="off"
+									/>
+								</label>
+								<div class="model-save-row">
+									<Button type="submit" disabled={savingManualModels}>Save models</Button>
+								</div>
+							</div>
+							{#if manualModelsError}
+								<div class="msg error">{manualModelsError}</div>
+							{:else if manualModelsMsg}
+								<div class="msg ok">{manualModelsMsg}</div>
+							{/if}
+						</form>
+					{/if}
+				</div>
+			</details>
+		</section>
+
+		<section class="card" class:disabled-card={!antigravity}>
+			<details class="collapsible" bind:open={agyOpen}>
+				<summary
+					aria-disabled={!antigravity}
+					tabindex={antigravity ? 0 : -1}
+					onclick={(e) => {
+						if (!antigravity) e.preventDefault();
+					}}
+				>
+					<Orbit size={20} />
+					<span class="name">Antigravity settings</span>
+					<span class="hint">
+						{antigravity
+							? 'permissions, effort, model, credentials'
+							: 'turn on Antigravity above to configure'}
+					</span>
+				</summary>
+				<div inert={!antigravity}>
+					<div class="setting">
+						<form
+							class="row"
+							method="POST"
+							action="?/antigravityPermissionMode"
+							bind:this={agyPermissionFormEl}
+							{@attach enhance(agyPermissionModeOpts)}
+						>
+							<div class="label">
+								<ShieldCheck size={20} />
+								<div class="text">
+									<div class="name">Antigravity permission mode</div>
+									<div class="desc">
+										The mode <code>agy</code> starts in inside new instances.
+										<strong>Default</strong>
+										runs <code>--dangerously-skip-permissions</code> with
+										<code>always-proceed</code>
+										(no guardrails); <strong>Manual</strong> asks before edits and commands;
+										<strong>Edits</strong>, <strong>Auto</strong>, and <strong>Plan</strong> pass
+										<code>--mode</code>. Applies on create and rebuild.
+									</div>
+								</div>
+							</div>
+							<input type="hidden" name="mode" value={agyPermissionChoice} />
+							<div class="mode-toggle" role="group" aria-label="Antigravity permission mode">
+								{#each ANTIGRAVITY_PERMISSION_MODES as option (option)}
+									<button
+										type="button"
+										class="mode-btn"
+										class:active={agyPermissionChoice === option}
+										aria-pressed={agyPermissionChoice === option}
+										disabled={savingAgyPermission}
+										onclick={() => chooseAgyPermissionMode(option)}
+									>
+										{AGY_PERMISSION_LABELS[option]}
+									</button>
+								{/each}
+							</div>
+						</form>
+						{#if agyPermissionError}
+							<div class="sub"><div class="msg error">{agyPermissionError}</div></div>
+						{/if}
+					</div>
+
+					<div class="setting">
+						<form
+							class="row"
+							method="POST"
+							action="?/antigravityEffortLevel"
+							bind:this={agyEffortFormEl}
+							{@attach enhance(agyEffortLevelOpts)}
+						>
+							<div class="label">
+								<Gauge size={20} />
+								<div class="text">
+									<div class="name">Antigravity effort level</div>
+									<div class="desc">
+										Reasoning effort for Antigravity sessions and MCP runs. <strong>Host</strong>
+										carries over your host <code>~/.gemini/antigravity-cli/settings.json</code>; any
+										other choice passes <code>--effort</code>.
+									</div>
+								</div>
+							</div>
+							<input type="hidden" name="level" value={agyEffortChoice} />
+							<div class="mode-toggle" role="group" aria-label="Antigravity effort level">
+								{#each CLAUDE_EFFORT_SETTINGS as option (option)}
+									<button
+										type="button"
+										class="mode-btn"
+										class:active={agyEffortChoice === option}
+										aria-pressed={agyEffortChoice === option}
+										disabled={savingAgyEffort}
+										onclick={() => chooseAgyEffort(option)}
+									>
+										{EFFORT_LABELS[option]}
+									</button>
+								{/each}
+							</div>
+						</form>
+						{#if agyEffortError}
+							<div class="sub"><div class="msg error">{agyEffortError}</div></div>
+						{/if}
+					</div>
+
+					<div class="setting">
+						<form
+							class="row image-row"
+							method="POST"
+							action="?/antigravityModel"
+							bind:this={agyModelFormEl}
+							{@attach enhance(agyModelOpts)}
+						>
+							<div class="label">
+								<Cpu size={20} />
+								<div class="text">
+									<div class="name">Antigravity model</div>
+									<div class="desc">
+										Optional model slug or label (e.g. <code>gemini-4-neon-xhigh</code>). Leave
+										blank to inherit your host
+										<code>~/.gemini/antigravity-cli/settings.json</code>.
+									</div>
+								</div>
+							</div>
+							<div class="image-controls">
+								<input
+									type="text"
+									name="model"
+									aria-label="Antigravity model"
+									class="image-input"
+									bind:value={agyModel}
+									spellcheck="false"
+									autocapitalize="off"
+									autocorrect="off"
+									placeholder="inherit from host"
+								/>
+								<Button type="submit" disabled={savingAgyModel}>Save</Button>
+								<Button
+									type="button"
+									icon={RotateCcw}
+									disabled={savingAgyModel}
+									onclick={resetAgyModel}
+									title="Reset to host default"
+									aria-label="Reset Antigravity model to host default"
+								/>
+							</div>
+							{#if agyModelError}
+								<div class="msg error">{agyModelError}</div>
+							{:else if agyModelSaved}
+								<div class="msg ok">Saved.</div>
+							{/if}
+						</form>
+					</div>
+
+					<div class="setting">
+						<form
+							class="row image-row"
+							method="POST"
+							action="?/antigravityGeminiApiKey"
+							{@attach enhance(agyApiKeyOpts)}
+						>
+							<div class="label">
+								<KeyRound size={20} />
+								<div class="text">
+									<div class="name">Gemini API key</div>
+									<div class="desc">
+										Optional override instead of discovering your host <code>agy</code> OAuth
+										session (Keychain / Secret Service / <code>antigravity-oauth-token</code>).
+										Injects
+										<code>GEMINI_API_KEY</code> and sets <code>modelProvider: "gemini"</code>. Leave
+										blank and Save to clear.
+									</div>
+								</div>
+							</div>
+							<div class="image-controls">
+								<input
+									type="password"
+									name="apiKey"
+									aria-label="Gemini API key"
+									class="image-input"
+									bind:value={agyApiKey}
+									spellcheck="false"
+									autocapitalize="off"
+									autocorrect="off"
+									autocomplete="off"
+									placeholder={agyApiKeySaved ? '•••••••• (saved)' : 'AIza…'}
+								/>
+								<Button type="submit" disabled={savingAgyApiKey}>Save</Button>
+							</div>
+							{#if agyApiKeyError}
+								<div class="msg error">{agyApiKeyError}</div>
+							{:else if agyApiKeyMsg}
+								<div class="msg ok">{agyApiKeyMsg}</div>
+							{/if}
+						</form>
+					</div>
+
+					<div class="setting">
+						<form
+							class="row image-row"
+							method="POST"
+							action="?/antigravityGeminiBaseUrl"
+							{@attach enhance(agyBaseUrlOpts)}
+						>
+							<div class="label">
+								<Globe size={20} />
+								<div class="text">
+									<div class="name">Gemini base URL</div>
+									<div class="desc">
+										Optional custom Gemini-compatible endpoint passed as
+										<code>GOOGLE_GEMINI_BASE_URL</code> when using a Gemini API key. Leave blank for Google's
+										default endpoint.
+									</div>
+								</div>
+							</div>
+							<div class="image-controls">
+								<input
+									type="text"
+									name="baseUrl"
+									aria-label="Gemini base URL"
+									class="image-input"
+									bind:value={agyBaseUrl}
+									spellcheck="false"
+									autocapitalize="off"
+									autocorrect="off"
+									autocomplete="off"
+									placeholder="https://generativelanguage.googleapis.com"
+								/>
+								<Button type="submit" disabled={savingAgyBaseUrl}>Save</Button>
+							</div>
+							{#if agyBaseUrlError}
+								<div class="msg error">{agyBaseUrlError}</div>
+							{:else if agyBaseUrlMsg}
+								<div class="msg ok">{agyBaseUrlMsg}</div>
+							{/if}
+						</form>
+					</div>
+
+					<div class="setting">
+						<form
+							class="row image-row"
+							method="POST"
+							action="?/antigravityConfigDir"
+							bind:this={agyDirFormEl}
+							{@attach enhance(agyDirOpts)}
+						>
+							<div class="label">
+								<FolderCog size={20} />
+								<div class="text">
+									<div class="name">Antigravity config directory</div>
+									<div class="desc">
+										Host directory Antigravity helpers read from (<code>settings.json</code> and
+										<code>antigravity-oauth-token</code>). Leave blank to use
+										<code>~/.gemini/antigravity-cli</code>.
+									</div>
+								</div>
+							</div>
+							<div class="image-controls">
+								<input
+									type="text"
+									name="dir"
+									aria-label="Antigravity config directory"
+									class="image-input"
+									bind:value={agyDir}
+									spellcheck="false"
+									autocapitalize="off"
+									autocorrect="off"
+									placeholder="~/.gemini/antigravity-cli"
+								/>
+								<Button type="submit" disabled={savingAgyDir}>Save</Button>
+								<Button
+									type="button"
+									icon={RotateCcw}
+									disabled={savingAgyDir}
+									onclick={resetAgyDir}
+									title="Reset to default (~/.gemini/antigravity-cli)"
+									aria-label="Reset to default Antigravity config directory"
+								/>
+							</div>
+							{#if agyDirError}
+								<div class="msg error">{agyDirError}</div>
+							{:else if agyDirSaved}
+								<div class="msg ok">Saved.</div>
+							{/if}
+						</form>
+					</div>
+				</div>
+			</details>
+		</section>
+
+		<section class="card">
 			<form
 				class="row"
 				method="POST"
@@ -1057,130 +2193,6 @@
 			</form>
 			{#if modeError}
 				<div class="sub"><div class="msg error">{modeError}</div></div>
-			{/if}
-		</section>
-
-		<section class="card">
-			<form
-				class="row"
-				method="POST"
-				action="?/claudePermissionMode"
-				bind:this={permissionFormEl}
-				{@attach enhance(permissionModeOpts)}
-			>
-				<div class="label">
-					<ShieldCheck size={20} />
-					<div class="text">
-						<div class="name">Claude permission mode</div>
-						<div class="desc">
-							The mode Claude Code starts in inside new instances. <strong>Default</strong> runs
-							<code>--dangerously-skip-permissions</code>, which never prompts; the other three pass
-							<code>--permission-mode</code> instead, because the skip flag overrides them. Applies on
-							create and rebuild, not to already-running instances.
-						</div>
-					</div>
-				</div>
-				<input type="hidden" name="mode" value={permissionChoice} />
-				<div class="mode-toggle" role="group" aria-label="Claude permission mode">
-					{#each CLAUDE_PERMISSION_MODES as option (option)}
-						<button
-							type="button"
-							class="mode-btn"
-							class:active={permissionChoice === option}
-							aria-pressed={permissionChoice === option}
-							disabled={savingPermission}
-							onclick={() => choosePermissionMode(option)}
-						>
-							{PERMISSION_LABELS[option]}
-						</button>
-					{/each}
-				</div>
-			</form>
-			{#if permissionError}
-				<div class="sub"><div class="msg error">{permissionError}</div></div>
-			{/if}
-		</section>
-
-		<section class="card">
-			<form
-				class="row"
-				method="POST"
-				action="?/claudeEffortLevel"
-				bind:this={effortFormEl}
-				{@attach enhance(effortLevelOpts)}
-			>
-				<div class="label">
-					<Gauge size={20} />
-					<div class="text">
-						<div class="name">Claude effort level</div>
-						<div class="desc">
-							The reasoning effort Claude Code starts new sessions and MCP runs at inside instances.
-							<b>Host</b> carries over the per-model levels from your own
-							<code>~/.claude/settings.json</code>; any other choice applies to every model. Applies
-							on create and rebuild; MCP runs pick up a change immediately.
-						</div>
-					</div>
-				</div>
-				<input type="hidden" name="level" value={effortChoice} />
-				<div class="mode-toggle" role="group" aria-label="Claude effort level">
-					{#each CLAUDE_EFFORT_SETTINGS as option (option)}
-						<button
-							type="button"
-							class="mode-btn"
-							class:active={effortChoice === option}
-							aria-pressed={effortChoice === option}
-							disabled={savingEffort}
-							onclick={() => chooseEffort(option)}
-						>
-							{EFFORT_LABELS[option]}
-						</button>
-					{/each}
-				</div>
-			</form>
-			{#if effortError}
-				<div class="sub"><div class="msg error">{effortError}</div></div>
-			{/if}
-		</section>
-
-		<section class="card">
-			<form
-				class="row"
-				method="POST"
-				action="?/claudeOutputStyle"
-				bind:this={outputStyleFormEl}
-				{@attach enhance(outputStyleOpts)}
-			>
-				<div class="label">
-					<MessageSquare size={20} />
-					<div class="text">
-						<div class="name">Claude output style</div>
-						<div class="desc">
-							The output style Claude Code starts new sessions in, written to
-							<code>~/.claude/settings.json</code>. <strong>Default</strong> inherits your host
-							<code>~/.claude/settings.json</code> (including any custom styles);
-							<strong>None</strong>
-							forces it off. Applies on create and rebuild, not to already-running instances.
-						</div>
-					</div>
-				</div>
-				<input type="hidden" name="style" value={outputStyleChoice} />
-				<div class="mode-toggle" role="group" aria-label="Claude output style">
-					{#each CLAUDE_OUTPUT_STYLES as option (option)}
-						<button
-							type="button"
-							class="mode-btn"
-							class:active={outputStyleChoice === option}
-							aria-pressed={outputStyleChoice === option}
-							disabled={savingOutputStyle}
-							onclick={() => chooseOutputStyle(option)}
-						>
-							{OUTPUT_STYLE_LABELS[option]}
-						</button>
-					{/each}
-				</div>
-			</form>
-			{#if outputStyleError}
-				<div class="sub"><div class="msg error">{outputStyleError}</div></div>
 			{/if}
 		</section>
 
@@ -1332,54 +2344,6 @@
 		</section>
 
 		<section class="card">
-			<form
-				class="row image-row"
-				method="POST"
-				action="?/claudeConfigDir"
-				bind:this={claudeDirFormEl}
-				{@attach enhance(claudeDirOpts)}
-			>
-				<div class="label">
-					<FolderCog size={20} />
-					<div class="text">
-						<div class="name">Claude config directory</div>
-						<div class="desc">
-							Host directory the Claude Code injections read from — credentials, statusLine, output
-							styles, and global skills / <code>CLAUDE.md</code>. Leave blank to use
-							<code>~/.claude</code>. Takes effect for instances created from now on.
-						</div>
-					</div>
-				</div>
-				<div class="image-controls">
-					<input
-						type="text"
-						name="dir"
-						class="image-input"
-						bind:value={claudeDir}
-						spellcheck="false"
-						autocapitalize="off"
-						autocorrect="off"
-						placeholder="~/.claude"
-					/>
-					<Button type="submit" disabled={savingClaudeDir}>Save</Button>
-					<Button
-						type="button"
-						icon={RotateCcw}
-						disabled={savingClaudeDir}
-						onclick={resetClaudeDir}
-						title="Reset to default (~/.claude)"
-						aria-label="Reset to default Claude config directory"
-					/>
-				</div>
-				{#if claudeDirError}
-					<div class="msg error">{claudeDirError}</div>
-				{:else if claudeDirSaved}
-					<div class="msg ok">Saved.</div>
-				{/if}
-			</form>
-		</section>
-
-		<section class="card">
 			<form class="row" method="POST" action="?/mcpToggle" {@attach enhance(mcpToggleOpts)}>
 				<div class="label">
 					<Plug size={20} />
@@ -1440,6 +2404,11 @@
 							<Button type="button" onclick={() => copyMcp('command', mcpCommand)}>
 								{mcpCopied === 'command' ? 'Copied' : 'Copy claude mcp add'}
 							</Button>
+							{#if antigravity}
+								<Button type="button" onclick={() => copyMcp('agy-command', agyMcpCommand)}>
+									{mcpCopied === 'agy-command' ? 'Copied' : 'Copy agy mcp add'}
+								</Button>
+							{/if}
 							<form method="POST" action="?/mcpRegenerateToken" {@attach enhance(mcpTokenOpts)}>
 								<Button type="submit" disabled={savingMcpToken}>
 									{savingMcpToken ? 'Regenerating…' : 'Regenerate'}
@@ -1447,6 +2416,9 @@
 							</form>
 						</div>
 						<code class="mcp-command">{mcpCommand}</code>
+						{#if antigravity}
+							<code class="mcp-command">{agyMcpCommand}</code>
+						{/if}
 						{#if mcpTokenError}
 							<div class="msg error">{mcpTokenError}</div>
 						{/if}
@@ -1798,363 +2770,6 @@
 			{/if}
 		</section>
 
-		<section class="card" class:disabled-card={litellmBlocker}>
-			<form
-				class="row"
-				method="POST"
-				action="?/customEndpointToggle"
-				{@attach enhance(customEndpointToggleOpts)}
-			>
-				<div class="label">
-					<KeyRound size={20} />
-					<div class="text">
-						<div class="name">
-							LiteLLM + Bedrock
-							{#if litellmBlocker}
-								<span class="arch" title="Disabled while {litellmBlocker} is on">disabled</span>
-							{/if}
-						</div>
-						<div class="desc">
-							{#if litellmBlocker}
-								Not available while "{litellmBlocker}" is enabled — these modes are mutually
-								incompatible.
-							{:else}
-								Route <code>claude</code> through a LiteLLM proxy fronting AWS Bedrock instead of Anthropic's
-								default API. When enabled, the Bedrock endpoint variables are injected into every new
-								container, host OAuth credentials are not used, and "Set tokens manually" is disabled.
-							{/if}
-						</div>
-					</div>
-				</div>
-				<label class="switch">
-					<input
-						type="checkbox"
-						name="enabled"
-						checked={customEndpoint}
-						disabled={savingCustomToggle || !!litellmBlocker}
-						onchange={(e) => {
-							customEndpoint = e.currentTarget.checked;
-							e.currentTarget.form?.requestSubmit();
-						}}
-					/>
-					<span class="track"><span class="thumb"></span></span>
-				</label>
-			</form>
-			{#if customToggleError}
-				<div class="sub"><div class="msg error">{customToggleError}</div></div>
-			{/if}
-
-			{#if customEndpoint}
-				<form
-					class="row divided token-row"
-					method="POST"
-					action="?/customBaseUrl"
-					{@attach enhance(customBaseUrlOpts)}
-				>
-					<div class="label">
-						<div class="text">
-							<div class="name">Base URL</div>
-							<div class="desc">
-								The LiteLLM proxy endpoint, e.g.
-								<code>https://litellm.example.com/bedrock</code>. Passed as
-								<code>ANTHROPIC_BEDROCK_BASE_URL</code>.
-							</div>
-						</div>
-					</div>
-					<div class="image-controls">
-						<input
-							type="text"
-							name="baseUrl"
-							class="image-input"
-							bind:value={customBaseUrl}
-							spellcheck="false"
-							autocapitalize="off"
-							autocorrect="off"
-							autocomplete="off"
-							placeholder="https://litellm.example.com/bedrock"
-						/>
-						<Button type="submit" disabled={savingCustomBaseUrl}>Save</Button>
-					</div>
-					{#if customBaseUrlError}
-						<div class="msg error">{customBaseUrlError}</div>
-					{:else if customBaseUrlMsg}
-						<div class="msg ok">{customBaseUrlMsg}</div>
-					{/if}
-				</form>
-
-				<form
-					class="row divided token-row"
-					method="POST"
-					action="?/customToken"
-					{@attach enhance(customTokenOpts)}
-				>
-					<div class="label">
-						<div class="text">
-							<div class="name">Auth token</div>
-							<div class="desc">
-								Your LiteLLM API key. Passed as <code>ANTHROPIC_AUTH_TOKEN</code>. Leave blank and
-								Save to clear.
-							</div>
-						</div>
-					</div>
-					<div class="image-controls">
-						<input
-							type="password"
-							name="token"
-							class="image-input"
-							bind:value={customToken}
-							spellcheck="false"
-							autocapitalize="off"
-							autocorrect="off"
-							autocomplete="off"
-							placeholder={customTokenSaved ? '•••••••• (saved)' : 'sk-…'}
-						/>
-						<Button type="submit" disabled={savingCustomToken}>Save</Button>
-					</div>
-					{#if customTokenError}
-						<div class="msg error">{customTokenError}</div>
-					{:else if customTokenMsg}
-						<div class="msg ok">{customTokenMsg}</div>
-					{/if}
-				</form>
-
-				<form
-					class="row divided token-row"
-					method="POST"
-					action="?/customModels"
-					{@attach enhance(customModelsOpts)}
-				>
-					<div class="label">
-						<div class="text">
-							<div class="name">Model IDs</div>
-							<div class="desc">
-								Model aliases to use for each tier. Prefilled with defaults from the reference
-								launcher script. Leave a field as-is to keep its current value.
-							</div>
-						</div>
-					</div>
-					<div class="model-fields">
-						<label class="model-row">
-							<span class="model-label">Opus</span>
-							<input
-								type="text"
-								name="opusModel"
-								class="image-input"
-								bind:value={customOpusModel}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								autocomplete="off"
-							/>
-						</label>
-						<label class="model-row">
-							<span class="model-label">Sonnet</span>
-							<input
-								type="text"
-								name="sonnetModel"
-								class="image-input"
-								bind:value={customSonnetModel}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								autocomplete="off"
-							/>
-						</label>
-						<label class="model-row">
-							<span class="model-label">Haiku</span>
-							<input
-								type="text"
-								name="haikuModel"
-								class="image-input"
-								bind:value={customHaikuModel}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								autocomplete="off"
-							/>
-						</label>
-						<label class="model-row">
-							<span class="model-label">Small/fast</span>
-							<input
-								type="text"
-								name="smallFastModel"
-								class="image-input"
-								bind:value={customSmallFastModel}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								autocomplete="off"
-							/>
-						</label>
-						<label class="model-row">
-							<span class="model-label">Default</span>
-							<input
-								type="text"
-								name="defaultModel"
-								class="image-input"
-								bind:value={customDefaultModel}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								autocomplete="off"
-							/>
-						</label>
-						<div class="model-save-row">
-							<Button type="submit" disabled={savingCustomModels}>Save models</Button>
-						</div>
-					</div>
-					{#if customModelsError}
-						<div class="msg error">{customModelsError}</div>
-					{:else if customModelsMsg}
-						<div class="msg ok">{customModelsMsg}</div>
-					{/if}
-				</form>
-			{/if}
-		</section>
-
-		<section class="card" class:disabled-card={customEndpoint}>
-			<form
-				class="row"
-				method="POST"
-				action="?/manualModelToggle"
-				{@attach enhance(manualModelToggleOpts)}
-			>
-				<div class="label">
-					<Cpu size={18} />
-					<div class="text">
-						<div class="name">
-							Override models manually
-							{#if customEndpoint}
-								<span class="arch" title="Disabled while LiteLLM + Bedrock is on">disabled</span>
-							{/if}
-						</div>
-						<div class="desc">
-							{#if customEndpoint}
-								Not available while "LiteLLM + Bedrock" is enabled — these modes are mutually
-								incompatible.
-							{:else}
-								Pin which model <code>claude</code> uses on the standard (subscription) path. Only
-								the fields you fill are injected into new containers as
-								<code>ANTHROPIC_*_MODEL</code>
-								variables; blanks fall through to Claude Code's own defaults.
-							{/if}
-						</div>
-					</div>
-				</div>
-				<label class="switch">
-					<input
-						type="checkbox"
-						name="enabled"
-						checked={manualModelOverride}
-						disabled={savingManualModelToggle || customEndpoint}
-						onchange={(e) => {
-							manualModelOverride = e.currentTarget.checked;
-							e.currentTarget.form?.requestSubmit();
-						}}
-					/>
-					<span class="track"><span class="thumb"></span></span>
-				</label>
-			</form>
-			{#if manualModelToggleError}
-				<div class="sub"><div class="msg error">{manualModelToggleError}</div></div>
-			{/if}
-
-			{#if manualModelOverride}
-				<form
-					class="row divided token-row"
-					method="POST"
-					action="?/manualModels"
-					{@attach enhance(manualModelsOpts)}
-				>
-					<div class="label">
-						<div class="text">
-							<div class="name">Model IDs</div>
-							<div class="desc">
-								A model name or alias per tier, e.g. <code>opusplan</code>, <code>opus</code>,
-								<code>sonnet</code>, or a full
-								<code>claude-…</code> id. Leave a field blank to skip it.
-							</div>
-						</div>
-					</div>
-					<div class="model-fields">
-						<label class="model-row">
-							<span class="model-label">Opus</span>
-							<input
-								type="text"
-								name="opusModel"
-								class="image-input"
-								bind:value={manualOpus}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								autocomplete="off"
-							/>
-						</label>
-						<label class="model-row">
-							<span class="model-label">Sonnet</span>
-							<input
-								type="text"
-								name="sonnetModel"
-								class="image-input"
-								bind:value={manualSonnet}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								autocomplete="off"
-							/>
-						</label>
-						<label class="model-row">
-							<span class="model-label">Haiku</span>
-							<input
-								type="text"
-								name="haikuModel"
-								class="image-input"
-								bind:value={manualHaiku}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								autocomplete="off"
-							/>
-						</label>
-						<label class="model-row">
-							<span class="model-label">Small/fast</span>
-							<input
-								type="text"
-								name="smallFastModel"
-								class="image-input"
-								bind:value={manualSmallFast}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								autocomplete="off"
-							/>
-						</label>
-						<label class="model-row">
-							<span class="model-label">Default</span>
-							<input
-								type="text"
-								name="defaultModel"
-								class="image-input"
-								bind:value={manualDefault}
-								spellcheck="false"
-								autocapitalize="off"
-								autocorrect="off"
-								autocomplete="off"
-							/>
-						</label>
-						<div class="model-save-row">
-							<Button type="submit" disabled={savingManualModels}>Save models</Button>
-						</div>
-					</div>
-					{#if manualModelsError}
-						<div class="msg error">{manualModelsError}</div>
-					{:else if manualModelsMsg}
-						<div class="msg ok">{manualModelsMsg}</div>
-					{/if}
-				</form>
-			{/if}
-		</section>
-
 		<section class="card">
 			<form
 				class="row"
@@ -2468,7 +3083,7 @@
 		</section>
 
 		<section class="card">
-			<details class="advanced">
+			<details class="collapsible">
 				<summary>
 					<SlidersHorizontal size={20} />
 					<span class="name">Advanced</span>
@@ -2668,7 +3283,22 @@
 	.danger-card {
 		border-color: var(--danger);
 	}
-	details.advanced > summary {
+	/* Each setting inside an agent's collapsible box reads as its own section, like Advanced's rows. */
+	.setting {
+		border-top: 1px solid var(--rule);
+	}
+	/* A segmented toggle is flex: none, so on narrow cards it drops below its text instead of crushing it. */
+	.row:has(> .mode-toggle) {
+		flex-wrap: wrap;
+	}
+	.row:has(> .mode-toggle) > .label {
+		flex: 1 1 260px;
+	}
+	.locked .switch,
+	.locked .switch input {
+		cursor: not-allowed;
+	}
+	details.collapsible > summary {
 		display: flex;
 		align-items: center;
 		gap: 10px;
@@ -2677,24 +3307,45 @@
 		list-style: none;
 		font-family: var(--font-mono);
 	}
-	details.advanced > summary::-webkit-details-marker {
+	details.collapsible > summary::-webkit-details-marker {
 		display: none;
 	}
-	details.advanced > summary .name {
+	details.collapsible > summary .name {
 		font-size: 13px;
 	}
-	details.advanced > summary .hint {
+	details.collapsible > summary .hint {
 		color: var(--ink-soft);
 		font-size: 12px;
 	}
 	/* The chevron affordance a hidden native marker would otherwise provide. */
-	details.advanced > summary::after {
+	details.collapsible > summary::after {
 		content: '▸';
 		margin-left: auto;
 		color: var(--ink-soft);
 	}
-	details.advanced[open] > summary::after {
+	details.collapsible[open] > summary::after {
 		content: '▾';
+	}
+	/* Inline, the hint squeezes the title into a one-word column on phones, so it stacks beneath it there. */
+	@media (max-width: 600px) {
+		details.collapsible > summary {
+			display: grid;
+			grid-template-columns: auto 1fr auto;
+			column-gap: 10px;
+			row-gap: 2px;
+		}
+		details.collapsible > summary > :global(svg) {
+			grid-area: 1 / 1 / 3 / 2;
+		}
+		details.collapsible > summary .name {
+			grid-area: 1 / 2;
+		}
+		details.collapsible > summary .hint {
+			grid-area: 2 / 2;
+		}
+		details.collapsible > summary::after {
+			grid-area: 1 / 3 / 3 / 4;
+		}
 	}
 	.disabled-card {
 		opacity: 0.55;

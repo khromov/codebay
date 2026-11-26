@@ -4,6 +4,8 @@
 	import SettingsView from '../components/SettingsView.svelte';
 	import type { AvatarArt } from '../avatars/index.ts';
 	import type {
+		AgentProvider,
+		AntigravityPermissionMode,
 		ClaudeEffortSetting,
 		ClaudeOutputStyle,
 		ClaudePermissionMode,
@@ -16,6 +18,14 @@
 		claudePermissionMode,
 		claudeEffortLevel,
 		claudeOutputStyle,
+		antigravityEnabled,
+		defaultAgent,
+		antigravityPermissionMode,
+		antigravityEffortLevel,
+		antigravityModel,
+		antigravityConfigDir,
+		antigravityGeminiApiKeySet,
+		antigravityGeminiBaseUrl,
 		defaultImage,
 		builtinImage,
 		disableBuildCache,
@@ -63,6 +73,14 @@
 		claudePermissionMode: ClaudePermissionMode;
 		claudeEffortLevel: ClaudeEffortSetting;
 		claudeOutputStyle: ClaudeOutputStyle;
+		antigravityEnabled: boolean;
+		defaultAgent: AgentProvider;
+		antigravityPermissionMode: AntigravityPermissionMode;
+		antigravityEffortLevel: ClaudeEffortSetting;
+		antigravityModel: string;
+		antigravityConfigDir: string;
+		antigravityGeminiApiKeySet: boolean;
+		antigravityGeminiBaseUrl: string;
 		defaultImage: string;
 		builtinImage: string;
 		disableBuildCache: boolean;
@@ -113,6 +131,14 @@
 	{claudePermissionMode}
 	{claudeEffortLevel}
 	{claudeOutputStyle}
+	{antigravityEnabled}
+	{defaultAgent}
+	{antigravityPermissionMode}
+	{antigravityEffortLevel}
+	{antigravityModel}
+	{antigravityConfigDir}
+	{antigravityGeminiApiKeySet}
+	{antigravityGeminiBaseUrl}
 	{defaultImage}
 	{builtinImage}
 	{disableBuildCache}

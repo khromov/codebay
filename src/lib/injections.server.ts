@@ -27,6 +27,11 @@ import { claudeNoCoauthor } from '../container-injections/claude-no-coauthor.ts'
 import { shellPath } from '../container-injections/shell-path.ts';
 import { hostEnvVars } from '../container-injections/host-env-vars.ts';
 import { customEnvVars } from '../container-injections/custom-env-vars.ts';
+import { antigravityInstall } from '../container-injections/antigravity-install.ts';
+import { antigravityCredentials } from '../container-injections/antigravity-credentials.ts';
+import { antigravityConfig } from '../container-injections/antigravity-config.ts';
+import { antigravityAttentionHooks } from '../container-injections/antigravity-attention-hooks.ts';
+import { antigravityEnabled } from './host-antigravity.server.ts';
 
 /** Extends `ExecTarget` so exec-user semantics have a single source of truth. */
 export interface ContainerTarget extends ExecTarget {
@@ -59,7 +64,7 @@ export interface Injection {
  * resource; the stage boundaries serialize each shared resource in the same relative order the
  * old flat list ran it (gitconfig, ~/.claude/settings.json, rc files, ~/.claude.json, apt/dpkg).
  */
-function buildStages(claudeInjection: Injection): Injection[][] {
+function buildStages(claudeInjection: Injection, includeAntigravity = false): Injection[][] {
 	return [
 		// Disjoint resources — and the slow network installs (apt tmux, npm/standalone claude,
 		// Open VSX extension) start immediately instead of queueing behind one another.
@@ -75,7 +80,9 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 			claudeEffortLevel,
 			// Only writes `projects/**` + `history.jsonl`, which no other injection touches, and
 			// lands before the injections-done sentinel releases the launcher's `claude`.
-			claudeHistory
+			claudeHistory,
+			// Writes only ~/.gemini/config/hooks.json + .bridge-header, disjoint from every Claude file.
+			...(includeAntigravity ? [antigravityAttentionHooks] : [])
 		],
 		// git-identity needs stage 1's safe.directory; ttyd shares the apt/dpkg lock with tmux and
 		// the /usr/local/bin symlink with claude-code-install, so it trails both. code-server-dark
@@ -86,6 +93,11 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 		// claude-trust edits ~/.claude.json, which the stage-1 Claude slot also writes.
 		// custom-env-vars writes nothing (values ride containerEnv) — it only verifies + health-checks.
 		[claudeTrust, hostEnvVars, customEnvVars],
+		// Antigravity stages each touch rc files (install runs `agy install`, credentials installs its
+		// env file, config writes settings + alias), so they serialize before shell-path snapshots PATH.
+		...(includeAntigravity
+			? [[antigravityInstall], [antigravityCredentials], [antigravityConfig]]
+			: []),
 		// shell-path is the last rc writer: it appends after every other rc line, and snapshots the
 		// login PATH once the stage-1/2 installs have landed whatever they put on it.
 		[claudeNoCoauthor, shellPath],
@@ -96,14 +108,14 @@ function buildStages(claudeInjection: Injection): Injection[][] {
 }
 
 /**
- * Resolved per call so toggling the custom-endpoint setting takes effect without a restart.
- * `mode` drops injections that don't apply to it (e.g. ttyd off IDE instances, the IDE
+ * Resolved per call so toggling the custom-endpoint or Antigravity settings takes effect without a
+ * restart. `mode` drops injections that don't apply to it (e.g. ttyd off IDE instances, the IDE
  * extension off terminal ones); omit it in mode-agnostic contexts to keep every injection.
  */
 export function resolveInjectionStages(mode?: InstanceMode): Injection[][] {
 	const claudeInjection =
 		getOption('custom_endpoint_enabled') === '1' ? claudeCodeCustom : claudeCodeCredentials;
-	const stages = buildStages(claudeInjection)
+	const stages = buildStages(claudeInjection, antigravityEnabled())
 		.map((stage) => (mode ? stage.filter((i) => !i.modes || i.modes.includes(mode)) : stage))
 		.filter((stage) => stage.length > 0);
 	// One injection per stage restores the fully serial boot for diagnosing injection interference.
