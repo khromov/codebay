@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.3](https://github.com/khromov/codebay/compare/codebay-v0.17.2...codebay-v0.17.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* **agent-runs:** settle a run that answered but stays up for background work ([#244](https://github.com/khromov/codebay/issues/244)) ([79e638e](https://github.com/khromov/codebay/commit/79e638ecc6e9b52d32f4aab56d8917883cb31aab))
+* **deps:** bump dependencies, fix audit, and require Bun 1.4 ([#241](https://github.com/khromov/codebay/issues/241)) ([04bf101](https://github.com/khromov/codebay/commit/04bf101f79cee69e1f815e978f63133ddeca96ff))
+
 ## [0.17.2](https://github.com/khromov/codebay/compare/codebay-v0.17.1...codebay-v0.17.2) (2026-11-14)
 
 
