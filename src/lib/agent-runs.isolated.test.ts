@@ -598,6 +598,30 @@ describe('a run that answered while its background work kept claude up', () => {
 		rmSync(runMirrorPath(run.id), { force: true });
 	});
 
+	test('a sandbox that stops answering keeps the answer the run already gave', async () => {
+		fakeDocker([pollReply({ stream: answered })]);
+		const inst = seed();
+		created.push(inst.id);
+		const run = startRun(inst, 'go', { jsonSchema: '{"type":"object"}' });
+		await pollRunNow(run.id);
+		await pollRunNow(run.id);
+
+		// What every exec gets once the container has been stopped out from under the run.
+		g.__codebayDocker = Promise.resolve({
+			getContainer: () => ({
+				exec: async () => {
+					throw new Error('container is not running');
+				}
+			})
+		});
+		for (let i = 0; i < 5; i++) await pollRunNow(run.id);
+		const lost = getRun(run.id);
+		expect(lost?.status).toBe('error');
+		expect(lost?.error).toContain('lost contact');
+		expect(runDetail(lost!).structured_output).toEqual(answer);
+		rmSync(runMirrorPath(run.id), { force: true });
+	});
+
 	test('a timeout keeps the answer, and the pass that times it out still returns', async () => {
 		const calls = fakeDocker([
 			pollReply({ stream: answered }),

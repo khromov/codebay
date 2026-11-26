@@ -516,7 +516,8 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 				finish(row.id, {
 					status: 'error',
 					error: `lost contact with the sandbox: ${res.error ?? 'unknown error'}`,
-					is_error: 1
+					is_error: 1,
+					...answerOf(stateFromMirror(row.id, cursor.state))
 				});
 			}
 			return;
