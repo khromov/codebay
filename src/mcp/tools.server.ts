@@ -477,7 +477,9 @@ export function registerTools(server: McpServer<v.GenericSchema>): void {
 			description:
 				'Status and result of an agent run. While it is still going you get the live session id, ' +
 				'model, turn count, cost and what Claude is doing right now. Set wait_seconds to block until it ' +
-				'finishes instead of polling.',
+				'finishes instead of polling. A run whose agent has answered but left background work going ' +
+				'(a dev server, a background command) stays running while Claude Code waits on it, and ' +
+				'settles as done with that answer after ten minutes without further activity.',
 			schema: v.object({
 				run_id: v.pipe(v.string(), v.minLength(1)),
 				wait_seconds: v.optional(

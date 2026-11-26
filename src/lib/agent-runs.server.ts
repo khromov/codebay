@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { LOGS_DIR } from './config.server.ts';
 import {
@@ -15,7 +15,8 @@ import {
 	EXEC_STDIN_MAX_BYTES,
 	execInContainer,
 	execTargetFor as targetFor,
-	markerLine
+	markerLine,
+	type ExecTarget
 } from './exec.server.ts';
 import {
 	HOME_PRELUDE,
@@ -75,6 +76,13 @@ export const PROMPT_MAX_BYTES = EXEC_STDIN_MAX_BYTES;
 /** How long a cancel waits for claude to flush the result it records on SIGINT before the last tail. */
 const STOP_DRAIN_SECONDS = 5;
 
+/**
+ * How long a run may sit silent after its result before it counts as finished: `claude -p` stays up
+ * while background work it started is live, and a dev server never ends. Ten minutes is Claude
+ * Code's own default limit on that wait, so only a command Claude explicitly gave longer is cut short.
+ */
+const SETTLE_MS = 10 * 60_000;
+
 export interface StartRunOptions {
 	resumeSessionId?: string;
 	model?: string;
@@ -94,6 +102,15 @@ export function runMirrorPath(runId: string): string {
 }
 
 const mirrorSize = (runId: string) => sizeOnDisk(runMirrorPath(runId));
+
+/** Every fetched byte is appended to the mirror, so its mtime is when the run last said anything. */
+function silentForMs(runId: string): number {
+	try {
+		return Date.now() - statSync(runMirrorPath(runId)).mtimeMs;
+	} catch {
+		return 0;
+	}
+}
 
 /**
  * The script the detached process actually runs. It writes its own PGID first so `stopRun` can
@@ -499,7 +516,8 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 				finish(row.id, {
 					status: 'error',
 					error: `lost contact with the sandbox: ${res.error ?? 'unknown error'}`,
-					is_error: 1
+					is_error: 1,
+					...answerOf(stateFromMirror(row.id, cursor.state))
 				});
 			}
 			return;
@@ -539,36 +557,19 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 
 		if (exitRaw) {
 			const exitCode = Number.parseInt(exitRaw, 10);
-			const failed = state.isError || exitCode !== 0;
 			const stderr = markerLine(res.stdout, ERR_MARKER)?.trim();
-			finish(row.id, {
-				status: failed ? 'error' : 'done',
-				exit_code: exitCode,
-				is_error: failed ? 1 : 0,
-				result: state.result,
-				structured_output: state.structuredOutput,
-				rejected_structured_output: state.rejectedStructuredOutput,
-				duration_ms: state.durationMs ?? (row.started_at ? Date.now() - row.started_at : null),
-				num_turns: state.numTurns,
-				cost_usd: state.costUsd,
-				session_id: state.sessionId,
-				model: state.model,
-				last_activity: state.lastActivity,
-				// A schema failure gets its own marker so a caller can tell "answered but the payload
-				// never validated" (result holds that answer) from "claude crashed"; otherwise the
-				// stream's own result text beats stderr, which only fills in on an outright crash.
-				error: failed
-					? state.structuredOutputFailed
-						? STRUCTURED_OUTPUT_FAILED_ERROR
-						: stderr || state.result || `claude exited ${exitCode}`
-					: null
-			});
+			// The stream's own result text beats stderr, which only fills in on an outright crash.
+			finish(
+				row.id,
+				outcome(row, state, exitCode, stderr || state.result || `claude exited ${exitCode}`)
+			);
 			return;
 		}
 
 		const timeoutMs = optionsOf(row).timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		if (row.started_at && Date.now() - row.started_at > timeoutMs) {
-			await stopRun(row.id, `timed out after ${Math.round(timeoutMs / 60_000)} minutes`, {
+			// Not awaited: its drain waits for this very pass to end, and it settles the row before then.
+			void stopRun(row.id, `timed out after ${Math.round(timeoutMs / 60_000)} minutes`, {
 				failed: true
 			});
 			return;
@@ -582,13 +583,55 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 					status: 'error',
 					error: 'the run process is gone — the sandbox was probably restarted',
 					is_error: 1,
-					result: state.result
+					...answerOf(state)
 				});
 			}
 			return;
 		}
 		cursor.missingStrikes = 0;
+
+		if (state.parked && silentForMs(row.id) >= SETTLE_MS) {
+			// Same reason as the exit fold: the mirror, not the cursor, is the record of what was said.
+			const settled = stateFromMirror(row.id, state);
+			finish(row.id, outcome(row, settled, null, settled.result || 'claude reported an error'));
+			// The background work it was waiting on goes down with it, as it would at claude's own exit.
+			await putDown(targetFor(instance), row.id);
+		}
 	});
+}
+
+/** A finished run's row, folded from the whole stream; `exitCode` is null when claude was still up. */
+function outcome(
+	row: AgentRunRow,
+	state: RunStreamState,
+	exitCode: number | null,
+	crash: string
+): Parameters<typeof updateRun>[1] {
+	const failed = state.isError || (exitCode !== null && exitCode !== 0);
+	return {
+		status: failed ? 'error' : 'done',
+		exit_code: exitCode,
+		is_error: failed ? 1 : 0,
+		...answerOf(state),
+		duration_ms: state.durationMs ?? (row.started_at ? Date.now() - row.started_at : null),
+		num_turns: state.numTurns,
+		cost_usd: state.costUsd,
+		session_id: state.sessionId,
+		model: state.model,
+		last_activity: state.lastActivity,
+		// A schema failure gets its own marker so a caller can tell "answered but the payload never
+		// validated" (result holds that answer) from "claude crashed".
+		error: failed ? (state.structuredOutputFailed ? STRUCTURED_OUTPUT_FAILED_ERROR : crash) : null
+	};
+}
+
+/** Everything a caller reads as the run's answer, so no exit path can keep one field and drop another. */
+function answerOf(state: RunStreamState) {
+	return {
+		result: state.result,
+		structured_output: state.structuredOutput,
+		rejected_structured_output: state.rejectedStructuredOutput
+	};
 }
 
 /** Forces one pass now, so a caller polling `get_run` isn't held to the background cadence. */
@@ -672,27 +715,31 @@ export async function stopRun(
 		status: failed ? 'error' : 'cancelled',
 		is_error: failed ? 1 : 0,
 		error: reason,
-		result: state.result ?? null,
+		// A run stopped after it answered, still waiting on its background work, keeps that answer.
+		...answerOf(state),
 		last_activity: state.lastActivity ?? row.last_activity,
 		duration_ms: row.started_at ? Date.now() - row.started_at : null
 	});
 	const instance = getInstance(row.instance_id);
 	if (instance?.container_id) {
-		const target = targetFor(instance);
-		// SIGINT lets claude flush its result event and exit cleanly; the rest is for a wedged process.
-		await execInContainer(target, { script: stopScript(runId, 'INT'), timeoutMs: 15_000 });
-		for (const [delay, signal] of [
-			[STOP_DRAIN_SECONDS * 1000, 'TERM'],
-			[STOP_DRAIN_SECONDS * 2000, 'KILL']
-		] as const) {
-			// stopScript itself checks the process is still this run, so a clean exit makes these no-ops.
-			setTimeout(() => {
-				void execInContainer(target, { script: stopScript(runId, signal), timeoutMs: 15_000 });
-			}, delay).unref?.();
-		}
+		await putDown(targetFor(instance), runId);
 		await drainAfterStop(runId, instance);
 	}
 	return getRun(runId)!;
+}
+
+/** SIGINT lets claude flush its result event and exit cleanly; the rest is for a wedged process. */
+async function putDown(target: ExecTarget, runId: string): Promise<void> {
+	await execInContainer(target, { script: stopScript(runId, 'INT'), timeoutMs: 15_000 });
+	for (const [delay, signal] of [
+		[STOP_DRAIN_SECONDS * 1000, 'TERM'],
+		[STOP_DRAIN_SECONDS * 2000, 'KILL']
+	] as const) {
+		// stopScript itself checks the process is still this run, so a clean exit makes these no-ops.
+		setTimeout(() => {
+			void execInContainer(target, { script: stopScript(runId, signal), timeoutMs: 15_000 });
+		}, delay).unref?.();
+	}
 }
 
 /**
@@ -714,7 +761,7 @@ async function drainAfterStop(runId: string, instance: InstanceRow): Promise<voi
 			last_activity: state.lastActivity,
 			num_turns: state.numTurns,
 			cost_usd: state.costUsd,
-			result: state.result
+			...answerOf(state)
 		});
 		onRunChanged?.(runId);
 	});
