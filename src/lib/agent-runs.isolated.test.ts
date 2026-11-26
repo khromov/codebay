@@ -18,6 +18,7 @@ import {
 	listRuns,
 	openRunFor,
 	setOption,
+	updateRun,
 	type InstanceRow
 } from './db.server.ts';
 import {
@@ -594,6 +595,28 @@ describe('a run that answered while its background work kept claude up', () => {
 		expect(stopped.error).toBe('cancelled by the caller');
 		expect(stopped.result).toBe(JSON.stringify(answer));
 		expect(runDetail(stopped).structured_output).toEqual(answer);
+		rmSync(runMirrorPath(run.id), { force: true });
+	});
+
+	test('a timeout keeps the answer, and the pass that times it out still returns', async () => {
+		const calls = fakeDocker([
+			pollReply({ stream: answered }),
+			pollReply({}),
+			pollReply({ exit: '130', alive: '0' })
+		]);
+		const inst = seed();
+		created.push(inst.id);
+		const run = startRun(inst, 'go', { jsonSchema: '{"type":"object"}', timeoutMs: 60_000 });
+		await pollRunNow(run.id);
+		await pollRunNow(run.id);
+		updateRun(run.id, { started_at: Date.now() - 2 * 60_000 });
+
+		// The stop's drain waits for this pass to end, so awaiting the stop inside it never returned.
+		const timedOut = await pollRunNow(run.id);
+		expect(timedOut?.status).toBe('error');
+		expect(timedOut?.error).toBe('timed out after 1 minutes');
+		expect(runDetail(timedOut!).structured_output).toEqual(answer);
+		expect(calls.map(scriptOf).some((s) => s.includes('kill -INT'))).toBe(true);
 		rmSync(runMirrorPath(run.id), { force: true });
 	});
 });

@@ -567,7 +567,8 @@ function poll(row: AgentRunRow, instance: InstanceRow): Promise<void> {
 
 		const timeoutMs = optionsOf(row).timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		if (row.started_at && Date.now() - row.started_at > timeoutMs) {
-			await stopRun(row.id, `timed out after ${Math.round(timeoutMs / 60_000)} minutes`, {
+			// Not awaited: its drain waits for this very pass to end, and it settles the row before then.
+			void stopRun(row.id, `timed out after ${Math.round(timeoutMs / 60_000)} minutes`, {
 				failed: true
 			});
 			return;
