@@ -179,6 +179,28 @@ describe('readRunChunk', () => {
 		expect(state.rejectedStructuredOutput).toBeNull();
 	});
 
+	test('parks on a result, and a later turn or subagent step unparks it', () => {
+		// The shape `claude -p` streams when Claude answers with background work still live: the
+		// result first, then a task notification that starts another turn once that work finishes.
+		const notification = line({
+			type: 'system',
+			subtype: 'task_notification',
+			status: 'completed'
+		});
+		const subagentStep = line({
+			type: 'assistant',
+			parent_tool_use_id: 'toolu_bg',
+			message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'sleep 60' } }] }
+		});
+		expect(readRunFile(init + toolUse).parked).toBe(false);
+		expect(readRunFile(init + toolUse + result).parked).toBe(true);
+		// A system event alone is not a new turn.
+		expect(readRunFile(init + toolUse + result + notification).parked).toBe(true);
+		expect(readRunFile(init + result + notification + toolUse).parked).toBe(false);
+		expect(readRunFile(init + result + subagentStep).parked).toBe(false);
+		expect(readRunFile(init + result + notification + toolUse + result).parked).toBe(true);
+	});
+
 	test('carries an incomplete trailing line to the next chunk', () => {
 		// The poller tails raw bytes, so a chunk routinely stops mid-object.
 		const whole = init + toolUse;

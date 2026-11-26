@@ -40,6 +40,11 @@ export interface RunStreamState {
 	isError: boolean;
 	/** True once the terminal `result` event has been seen, whatever its subtype. */
 	resultSeen: boolean;
+	/**
+	 * True while a `result` is the last thing the conversation did: Claude is idle, and `claude -p`
+	 * is only staying up for background work that may or may not start another turn.
+	 */
+	parked: boolean;
 }
 
 export function emptyRunState(): RunStreamState {
@@ -58,7 +63,8 @@ export function emptyRunState(): RunStreamState {
 		structuredOutputFailed: false,
 		errorMessage: null,
 		isError: false,
-		resultSeen: false
+		resultSeen: false,
+		parked: false
 	};
 }
 
@@ -136,6 +142,9 @@ interface StreamEvent {
 
 function applyEvent(state: RunStreamState, event: StreamEvent): void {
 	if (typeof event.session_id === 'string' && !state.sessionId) state.sessionId = event.session_id;
+	// A task notification can start another turn after a result, and a subagent's messages mean its
+	// background work is still moving, so either one unparks the run.
+	if (event.type === 'assistant' || event.type === 'user') state.parked = false;
 
 	if (event.type === 'system' && event.subtype === 'init' && typeof event.model === 'string') {
 		state.model = event.model;
@@ -168,6 +177,7 @@ function applyEvent(state: RunStreamState, event: StreamEvent): void {
 
 	if (event.type === 'result') {
 		state.resultSeen = true;
+		state.parked = true;
 		state.isError = event.is_error === true || event.subtype !== 'success';
 		if (typeof event.result === 'string') state.result = event.result;
 		if (event.structured_output !== undefined && event.structured_output !== null) {
